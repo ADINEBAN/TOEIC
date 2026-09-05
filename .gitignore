@@ -1,4 +1,4 @@
-# ==========================================
+﻿# ==========================================
 # Backend (Spring Boot / Maven / Java)
 # ==========================================
 target/
@@ -78,5 +78,10 @@ Thumbs.db
 # ==========================================
 /KE_HOACH_THUC_HIEN_QLDA.md
 /DANH_SACH_ISSUES_GITHUB.md
-/HƯỚNG DẪN & YÊU CẦU ĐỒ ÁN MÔN HỌC QUẢN TRỊ DỰ ÁN PHẦN MỀM (QLDA).pdf
+/HÆ¯á»šNG DáºªN & YÃŠU Cáº¦U Äá»’ ÃN MÃ”N Há»ŒC QUáº¢N TRá»Š Dá»° ÃN PHáº¦N Má»€M (QLDA).pdf
+/KICH_BAN_COMMIT_THEO_CHUC_NANG_QLDA.pdf
+/auto_commit_25_dot.ps1
+/.commit_state.json
+
+
 
