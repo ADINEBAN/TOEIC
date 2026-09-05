@@ -1,0 +1,82 @@
+# ==========================================
+# Backend (Spring Boot / Maven / Java)
+# ==========================================
+target/
+**/target/
+!**/src/main/**/target/
+!**/src/test/**/target/
+.mvn/wrapper/maven-wrapper.jar
+build/
+**/build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+.gradle/
+
+# ==========================================
+# Frontend (Node.js / Expo / React Native)
+# ==========================================
+node_modules/
+**/node_modules/
+.expo/
+**/.expo/
+dist/
+**/dist/
+web-build/
+**/web-build/
+expo-env.d.ts
+**/expo-env.d.ts
+.kotlin/
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.tsbuildinfo
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+/ios
+/android
+frontend/ios/
+frontend/android/
+
+# ==========================================
+# IDEs & Editors
+# ==========================================
+.idea/
+**/.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+**/.vscode/
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache
+.history/
+
+# ==========================================
+# Environment, Logs & OS Metadata
+# ==========================================
+.env
+.env.*
+!.env.example
+.env*.local
+*.pem
+*.log
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# Local Course Handouts & Scratch Notes
+# ==========================================
+/KE_HOACH_THUC_HIEN_QLDA.md
+/DANH_SACH_ISSUES_GITHUB.md
+/HƯỚNG DẪN & YÊU CẦU ĐỒ ÁN MÔN HỌC QUẢN TRỊ DỰ ÁN PHẦN MỀM (QLDA).pdf
+
