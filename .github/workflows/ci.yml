@@ -1,0 +1,20 @@
+﻿name: TOEIC Trainer CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  verify-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Backend & Frontend configuration
+        run: |
+          test -f backend/pom.xml
+          test -f frontend/package.json
+          echo "Project structure verified successfully."
