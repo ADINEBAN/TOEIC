@@ -1,120 +1,94 @@
-﻿package org.example.backend.controller;
+package org.example.backend.controller;
 
-import jakarta.validation.Valid;
-import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.example.backend.dto.request.AskAIExplainRequest;
 import org.example.backend.dto.request.SubmitTestAttemptRequest;
+import org.example.backend.dto.response.AIExplainResponse;
 import org.example.backend.dto.response.ApiResponse;
 import org.example.backend.dto.response.TestAttemptResponse;
-import org.example.backend.dto.response.TestResponse;
 import org.example.backend.dto.response.UserTestLeaderboardResponse;
+import org.example.backend.dto.response.TestResponse;
 import org.example.backend.enums.SuccessCode;
+import org.example.backend.service.GeminiAIService;
 import org.example.backend.service.UserTestService;
 import org.example.backend.util.ApiResponseUtil;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/users/tests")
+@PreAuthorize("hasRole('USER')")
+@RequiredArgsConstructor
 public class UserTestController {
 
     private final UserTestService userTestService;
-
-    public UserTestController(UserTestService userTestService) {
-        this.userTestService = userTestService;
-    }
+    private final GeminiAIService geminiAIService;
 
     @GetMapping("/published")
-    @PreAuthorize("hasAuthority('VIEW_TESTS')")
     public ResponseEntity<ApiResponse<List<TestResponse>>> getPublishedTests() {
-        return ResponseEntity.ok(
-                ApiResponseUtil.success(SuccessCode.TEST_LISTED, userTestService.getPublishedTests())
-        );
+        List<TestResponse> response = userTestService.getPublishedTests();
+        return ApiResponseUtil.success(response, SuccessCode.TEST_LISTED);
     }
 
     @GetMapping("/{testId}")
-    @PreAuthorize("hasAuthority('VIEW_TESTS')")
-    public ResponseEntity<ApiResponse<TestResponse>> getPublishedTestDetail(@PathVariable Long testId) {
-        return ResponseEntity.ok(
-                ApiResponseUtil.success(SuccessCode.TEST_RETRIEVED, userTestService.getPublishedTestDetail(testId))
-        );
+    public ResponseEntity<ApiResponse<TestResponse>> getTestById(@PathVariable Long testId) {
+        TestResponse response = userTestService.getTestById(testId);
+        return ApiResponseUtil.success(response, SuccessCode.TEST_GET);
     }
 
     @PostMapping("/{testId}/start")
-    @PreAuthorize("hasAuthority('SUBMIT_TEST')")
-    public ResponseEntity<ApiResponse<TestAttemptResponse>> startAttempt(
+    public ResponseEntity<ApiResponse<TestAttemptResponse>> startTest(
             Authentication authentication,
             @PathVariable Long testId
     ) {
-        return ResponseEntity.status(SuccessCode.TEST_ATTEMPT_STARTED.getHttpStatus())
-                .body(ApiResponseUtil.success(
-                        SuccessCode.TEST_ATTEMPT_STARTED,
-                        userTestService.startAttempt(authentication.getName(), testId)
-                ));
+        TestAttemptResponse response = userTestService.startTest(authentication.getName(), testId);
+        return ApiResponseUtil.success(response, SuccessCode.TEST_ATTEMPT_STARTED);
     }
 
     @PostMapping("/attempts/{attemptId}/submit")
-    @PreAuthorize("hasAuthority('SUBMIT_TEST')")
     public ResponseEntity<ApiResponse<TestAttemptResponse>> submitAttempt(
             Authentication authentication,
             @PathVariable Long attemptId,
-            @Valid @RequestBody SubmitTestAttemptRequest request
+            @RequestBody SubmitTestAttemptRequest request
     ) {
-        return ResponseEntity.ok(
-                ApiResponseUtil.success(
-                        SuccessCode.TEST_ATTEMPT_SUBMITTED,
-                        userTestService.submitAttempt(authentication.getName(), attemptId, request)
-                )
-        );
+        TestAttemptResponse response = userTestService.submitAttempt(authentication.getName(), attemptId, request);
+        return ApiResponseUtil.success(response, SuccessCode.TEST_ATTEMPT_SUBMITTED);
     }
 
     @GetMapping("/attempts")
-    @PreAuthorize("hasAuthority('VIEW_TEST_RESULT')")
-    public ResponseEntity<ApiResponse<List<TestAttemptResponse>>> getMyAttempts(
-            Authentication authentication,
-            @RequestParam(required = false) Long testId
-    ) {
-        return ResponseEntity.ok(
-                ApiResponseUtil.success(
-                        SuccessCode.TEST_ATTEMPT_LISTED,
-                        userTestService.getMyAttempts(authentication.getName(), testId)
-                )
-        );
+    public ResponseEntity<ApiResponse<List<TestAttemptResponse>>> getMyAttempts(Authentication authentication) {
+        List<TestAttemptResponse> response = userTestService.getAttemptsForUser(authentication.getName());
+        return ApiResponseUtil.success(response, SuccessCode.TEST_ATTEMPT_LISTED);
     }
 
     @GetMapping("/leaderboard")
-    @PreAuthorize("hasAuthority('VIEW_TEST_RESULT')")
-    public ResponseEntity<ApiResponse<UserTestLeaderboardResponse>> getLeaderboard(
-            Authentication authentication,
-            @RequestParam(required = false) Long testId,
-            @RequestParam(defaultValue = "10") int limit
-    ) {
-        return ResponseEntity.ok(
-                ApiResponseUtil.success(
-                        SuccessCode.TEST_LEADERBOARD_LISTED,
-                        userTestService.getLeaderboard(authentication.getName(), testId, limit)
-                )
-        );
+    public ResponseEntity<ApiResponse<List<UserTestLeaderboardResponse>>> getLeaderboardTop3() {
+        List<UserTestLeaderboardResponse> response = userTestService.getLeaderboardTop3();
+        return ApiResponseUtil.success(response, SuccessCode.TEST_LEADERBOARD_LISTED);
     }
 
     @GetMapping("/attempts/{attemptId}/details")
-    @PreAuthorize("hasAuthority('VIEW_TEST_RESULT')")
-    public ResponseEntity<ApiResponse<TestAttemptResponse>> getAttemptDetail(
+    public ResponseEntity<ApiResponse<TestAttemptResponse>> getAttemptDetails(
             Authentication authentication,
             @PathVariable Long attemptId
     ) {
-        return ResponseEntity.ok(
-                ApiResponseUtil.success(
-                        SuccessCode.TEST_ATTEMPT_RETRIEVED,
-                        userTestService.getAttemptDetail(authentication.getName(), attemptId)
-                )
+        TestAttemptResponse response = userTestService.getAttemptDetails(authentication.getName(), attemptId);
+        return ApiResponseUtil.success(response, SuccessCode.TEST_ATTEMPT_LISTED);
+    }
+
+    @PostMapping("/questions/explain")
+    public ResponseEntity<ApiResponse<AIExplainResponse>> askAIExplain(@RequestBody AskAIExplainRequest request) {
+        String type = request.getType() != null ? request.getType() : "BOTH";
+        AIExplainResponse response = geminiAIService.explainQuestion(
+                request.getTestPartQuestionId(),
+                request.getSelectedAnswer(),
+                type
         );
+        return ApiResponseUtil.success(response, SuccessCode.TEST_QUESTION_EXPLAINED);
     }
 }
+
