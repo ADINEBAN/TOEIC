@@ -307,3 +307,5 @@ For architecture questions: Refer to README.md Domain Model section
 For security questions: Check SecurityConfig.java and JwtService.java
 
 
+
+- **Milestone M3 & M4 Backend Sign-off:** Completed Vocabulary, Question Bank, Practice Sets, Placement Onboarding (CR-02), and Timed Mock Exam APIs.
