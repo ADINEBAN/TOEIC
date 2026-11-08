@@ -612,3 +612,5 @@ Content-Type: application/json
 
 
 
+
+- **QA Regression Sign-off:** 100% pass rate across JUnit controller tests (AdminLearningPathControllerTest) and Postman E2E collections (TOEIC_Trainer_Admin_Flow, TOEIC_Trainer_Admin_LearningPath_Milestones).
