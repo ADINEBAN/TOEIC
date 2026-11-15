@@ -24,4 +24,23 @@ public class CorsConfig {
         source.registerCorsConfiguration("/**", config);
         return source;
     }
+
+     @Bean
+    public WebMvcConfigurer corsConfigurer() {
+        return new WebMvcConfigurer() {
+            @Override
+            public void addCorsMappings(CorsRegistry registry) {
+                registry.addMapping("/**")
+                    .allowedOrigins(
+                        "https://toeic.daovuanh2207.workers.dev"
+                    )
+                    .allowedMethods(
+                        "GET", "POST", "PUT",
+                        "DELETE", "PATCH", "OPTIONS"
+                    )
+                    .allowedHeaders("*")
+                    .allowCredentials(true);
+            }
+        };
+    }
 }
