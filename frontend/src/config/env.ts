@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-const DEFAULT_PORT = '8080';
+const DEFAULT_PORT = '8082';
 const ANDROID_EMULATOR_URL = `http://10.0.2.2:${DEFAULT_PORT}`;
 const LOCALHOST_URL = `http://localhost:${DEFAULT_PORT}`;
 
