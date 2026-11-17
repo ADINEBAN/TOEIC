@@ -14,8 +14,16 @@ public class CorsConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
+<<<<<<< Updated upstream
         config.setAllowedOrigins(Arrays.asList("*"));
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+=======
+        config.setAllowedOrigins(Arrays.asList(
+                "http://localhost:8081"
+                //, "https://toeic.daovuanh2207.workers.dev"
+        ));
+        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+>>>>>>> Stashed changes
         config.setAllowedHeaders(Arrays.asList("*"));
         config.setAllowCredentials(false);
         config.setMaxAge(3600L);
@@ -24,4 +32,24 @@ public class CorsConfig {
         source.registerCorsConfiguration("/**", config);
         return source;
     }
+<<<<<<< Updated upstream
+=======
+
+    @Bean
+    public WebMvcConfigurer corsConfigurer() {
+        return new WebMvcConfigurer() {
+            @Override
+            public void addCorsMappings(CorsRegistry registry) {
+                registry.addMapping("/**")
+                        .allowedOrigins(
+                                "http://localhost:8081"
+                                //, "https://toeic.daovuanh2207.workers.dev"
+                        )
+                        .allowedMethods("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
+                        .allowedHeaders("*")
+                        .allowCredentials(true);
+            }
+        };
+    }
+>>>>>>> Stashed changes
 }

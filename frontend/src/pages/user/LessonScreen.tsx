@@ -36,27 +36,9 @@ export default function LessonScreen() {
   }, [params.moduleId]);
 
   useEffect(() => {
-    if (Platform.OS === "web") return;
-    let cancelled = false;
-
-    const loadNativeVideo = async () => {
-      try {
-        const expoAv = await import("expo-av");
-        if (!cancelled) {
-          setNativeVideoComponent(() => expoAv.Video);
-        }
-      } catch {
-        if (!cancelled) {
-          setNativeVideoMissing(true);
-        }
-      }
-    };
-
-    void loadNativeVideo();
-
-    return () => {
-      cancelled = true;
-    };
+    if (Platform.OS !== "web") {
+      setNativeVideoMissing(true);
+    }
   }, []);
 
   const loadLessons = useCallback(async () => {
@@ -196,7 +178,7 @@ export default function LessonScreen() {
     return (
       <View style={styles.placeholderWrap}>
         <Text style={styles.placeholderText}>
-          Cần cài player mobile để phát video trong app: `npx expo install expo-av`
+          Nhấn "Mở link" bên dưới hoặc xem trên trình duyệt web để phát video bài học này.
         </Text>
       </View>
     );
@@ -235,7 +217,7 @@ export default function LessonScreen() {
       </SurfaceCard>
 
       {nativeVideoMissing && Platform.OS !== "web" ? (
-        <Text style={styles.warningText}>Gợi ý: cài `expo-av` để xem video trực tiếp trong app mobile.</Text>
+        <Text style={styles.warningText}>Gợi ý: Nhấn "Mở link" để xem video trực tiếp ngoài trình duyệt.</Text>
       ) : null}
       {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
