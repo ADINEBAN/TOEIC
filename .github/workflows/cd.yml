@@ -1,0 +1,36 @@
+name: TOEIC Trainer CD (Azure VPS)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-toeic-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy main to Azure VPS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH and Docker Compose
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" << 'EOF'
+            set -euo pipefail
+            cd /opt/toeic/app
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+            docker compose --env-file /opt/toeic/.env up -d --build
+            docker image prune -f
+          EOF
+          rm -f ~/.ssh/deploy_key
