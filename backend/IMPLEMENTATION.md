@@ -309,3 +309,30 @@ For security questions: Check SecurityConfig.java and JwtService.java
 
 
 - **Milestone M3 & M4 Backend Sign-off:** Completed Vocabulary, Question Bank, Practice Sets, Placement Onboarding (CR-02), and Timed Mock Exam APIs.
+
+---
+
+## Document-to-Test AI & Full-Length Video Engine (Flyway V2 Upgrade)
+
+### Database Schema Additions (`V2__document_test_and_video_engine.sql`)
+- [x] `imported_documents`, `imported_document_passages`, `imported_document_questions` (source fidelity metadata, Part 5/6/7 classification, official vs unverified answer keys, validation warnings)
+- [x] `imported_videos`, `video_processing_jobs` (async chunk checkpoints, cancel/retry state, duration verification)
+- [x] `video_audio_tracks`, `video_transcripts`, `video_subtitle_segments` (per-segment confidence, uncertainty markers, chunk index)
+- [x] `user_video_learning_states`, `video_bookmarks`, `video_vocabulary_items`
+- [x] Safe additive columns on `tests` (`source_document_id`, `owner_user_id`, `visibility_scope`, `ai_generated`) and `questions` (`source_document_id`, `source_page_number`, `source_question_number`, `extraction_confidence`, `answer_key_verified`, `ai_suggested_label`)
+
+### Python Tooling & Runtime Properties (`application.yaml`)
+- [x] `toeic.storage-dir` (`./data` default for document uploads & video audio chunks)
+- [x] `toeic.python-bin` (`python`) + scripts `ocr_bridge.py` (`rapidocr-onnxruntime`) & `video_processor.py` (`yt-dlp`, `youtube-transcript-api`, `imageio-ffmpeg`, `faster-whisper`)
+- [x] `toeic.whisper-model` (`tiny.en`), `toeic.video-chunk-seconds` (`300`), `toeic.resume-jobs-on-startup` (`true`)
+- [x] `openai.api-key` (`OPENAI_API_KEY`) and `speechify.api-key` (`SPEECHIFY_API_KEY`) for cloud LLM/Whisper/TTS with graceful local fallbacks
+
+---
+
+## Admin-Controlled Video Learning Library (Flyway V3 & V4 Upgrade)
+- [x] `V3__admin_controlled_video_library.sql` & `V4__expand_permission_role_constraint.sql`: Non-destructive migration adding `CONTENT_MANAGER` role support, `workflow_status` (`DRAFT` → `DOWNLOADING` → `TRANSCRIBING` → `TRANSLATING` → `REVIEWING` → `PUBLISHED` / `ARCHIVED` / `FAILED`), `is_published`, `published_at`, `reviewed_by_user_id`, `description`, and per-user `user_video_learning_states.is_favorite` while preserving all existing videos and progress.
+- [x] `AdminVideoLibraryController` (`/api/admin/videos`) + `SecurityConfig` + service-level RBAC enforcing **HTTP 403 Forbidden** for regular `USER` accounts on all video import, job control, subtitle edit, publish, unpublish, archive, and delete endpoints.
+- [x] Strict Publish Readiness Gate (`evaluatePublishBlockers`) verifying `COMPLETED` job, verified full media duration, non-blank transcript, completed EN–VI bilingual subtitle segments, and valid metadata before publication.
+- [x] `UserVideoController` (`/api/users/videos`) exposing only `PUBLISHED` videos to regular learners with search/level/topic/favorites filtering, per-user progress tracking, and per-user timestamp bookmarks.
+
+
