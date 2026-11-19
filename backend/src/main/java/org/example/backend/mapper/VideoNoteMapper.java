@@ -8,6 +8,9 @@ import java.util.List;
 public interface VideoNoteMapper {
     @Mapping(target = "userId", source = "user.id")
     @Mapping(target = "lessonId", source = "lesson.id")
+    @Mapping(target = "lessonTitle", source = "lesson.title")
+    @Mapping(target = "moduleId", source = "lesson.module.id")
+    @Mapping(target = "moduleTitle", source = "lesson.module.title")
     VideoNoteResponse toResponse(VideoNote entity);
     List<VideoNoteResponse> toResponseList(List<VideoNote> entities);
 }

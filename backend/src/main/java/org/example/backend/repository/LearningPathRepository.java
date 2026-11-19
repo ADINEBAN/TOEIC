@@ -16,4 +16,6 @@ public interface LearningPathRepository extends JpaRepository<LearningPath, Long
 	boolean existsByCodeIgnoreCase(String code);
 
 	List<LearningPath> findAllByOrderByTargetScoreAsc();
+
+	List<LearningPath> findAllByActiveTrueOrderByTargetScoreAsc();
 }

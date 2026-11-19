@@ -13,9 +13,24 @@ public class TestAttemptResponse {
     private LocalDateTime startedAt;
     private LocalDateTime submittedAt;
     private Double score;
+    private Integer listeningScore;
+    private Integer readingScore;
+    private Integer toeicScore;
     private Integer correctCount;
     private Integer totalQuestions;
+    private Integer diamondsEarned;
+    private Integer currentDiamonds;
+    private List<PartScoreBreakdown> partBreakdown;
     private List<QuestionAnswerResult> answers;
+
+    @Data
+    public static class PartScoreBreakdown {
+        private Integer partNo;
+        private String partSection;
+        private Integer correctCount;
+        private Integer totalCount;
+        private Double accuracy;
+    }
 
     @Data
     public static class QuestionAnswerResult {
@@ -26,6 +41,11 @@ public class TestAttemptResponse {
         private String difficultyLevel;
         private String sourceType;
         private Integer sourceYear;
+        private String audioUrl;
+        private String imageUrl;
+        private String passageText;
+        private String transcript;
+        private String questionGroupCode;
         private String selectedLabel;
         private String correctLabel;
         private Boolean correct;

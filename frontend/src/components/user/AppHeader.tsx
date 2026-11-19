@@ -1,8 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { ReactNode, useState } from "react";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { colors, radius, spacing } from "@/src/assets/styles/user-theme";
+import { radius, spacing } from "@/src/assets/styles/user-theme";
+import { LiquidCard, LiquidIconButton, LiquidSwitch } from "@/src/components/ui/LiquidGlass";
+import {
+  ACCENT_SWATCHES,
+  LIQUID_THEME_PRESETS,
+  useAppTheme,
+} from "@/src/store/theme-store";
+import { useResponsiveLayout } from "@/src/utils/responsive";
 
 type AppHeaderProps = {
   title: string;
@@ -10,99 +18,340 @@ type AppHeaderProps = {
   onLeftPress?: () => void;
   leftIcon?: keyof typeof Ionicons.glyphMap;
   rightSlot?: ReactNode;
+  hideThemeTrigger?: boolean;
 };
 
 export default function AppHeader({
   title,
   subtitle,
   onLeftPress,
-  leftIcon = "menu-outline",
+  leftIcon = "chevron-back-outline",
   rightSlot,
+  hideThemeTrigger = false,
 }: AppHeaderProps) {
+  const {
+    theme,
+    presetId,
+    accentId,
+    prismaticGlow,
+    setPresetId,
+    setAccentId,
+    setPrismaticGlow,
+  } = useAppTheme();
+  const { height, isNarrow, rf, screenPadding } = useResponsiveLayout();
+  const c = theme.colors;
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   return (
-    <View style={styles.row}>
-      <View style={styles.leftSection}>
-        <Pressable onPress={onLeftPress} style={styles.iconButton}>
-          <Ionicons color={colors.primaryDark} name={leftIcon} size={24} />
-        </Pressable>
-        <View style={styles.copyBlock}>
-          <Text style={styles.title}>{title}</Text>
-          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+    <>
+      <View style={styles.row}>
+        <View style={styles.leftSection}>
+          {onLeftPress ? (
+            <LiquidIconButton
+              accessibilityLabel="Quay lại"
+              onPress={onLeftPress}
+            >
+              <Ionicons color={c.primaryDark} name={leftIcon} size={20} />
+            </LiquidIconButton>
+          ) : null}
+
+          <View style={styles.copyBlock}>
+            {subtitle ? (
+              <Text
+                numberOfLines={1}
+                style={[styles.subtitle, { color: c.primary, fontSize: rf(10.5) }]}
+              >
+                {subtitle}
+              </Text>
+            ) : null}
+            <Text
+              numberOfLines={1}
+              style={[styles.title, { color: c.text, fontSize: rf(isNarrow ? 19 : 21) }]}
+            >
+              {title}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.rightCluster}>
+          {!hideThemeTrigger ? (
+            <LiquidIconButton
+              accessibilityLabel="Chọn màu giao diện"
+              onPress={() => setPickerOpen(true)}
+            >
+              <Ionicons color={c.primary} name="color-palette-outline" size={19} />
+            </LiquidIconButton>
+          ) : null}
+          {rightSlot}
         </View>
       </View>
-      {rightSlot}
-    </View>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setPickerOpen(false)}
+        transparent
+        visible={pickerOpen}
+      >
+        <View style={[styles.modalBackdrop, { padding: screenPadding }]}>
+          <LiquidCard style={[styles.modalCard, { maxHeight: Math.round(height * 0.84) }]}>
+            <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+              <View style={styles.modalHeader}>
+                <View style={{ flex: 1, minWidth: 0, paddingRight: spacing.sm }}>
+                  <Text style={[styles.modalEyebrow, { color: c.primary }]}>CLAY PASTEL STUDIO</Text>
+                  <Text style={[styles.modalTitle, { color: c.text, fontSize: rf(19) }]}>
+                    Chọn màu giao diện
+                  </Text>
+                </View>
+                <LiquidIconButton onPress={() => setPickerOpen(false)}>
+                  <Ionicons color={c.text} name="close" size={18} />
+                </LiquidIconButton>
+              </View>
+
+              <Text style={[styles.sectionLabel, { color: c.textMuted }]}>Nền & Bảng màu 3D</Text>
+              <View style={styles.presetGrid}>
+                {LIQUID_THEME_PRESETS.map((preset) => {
+                  const active = preset.id === presetId;
+                  return (
+                    <Pressable
+                      key={preset.id}
+                      onPress={() => setPresetId(preset.id)}
+                      style={[
+                        styles.presetPill,
+                        {
+                          backgroundColor: active ? c.primarySoft : c.glassFill,
+                          borderColor: active ? c.primary : c.glassBorder,
+                        },
+                      ]}
+                    >
+                      <LinearGradient
+                        colors={preset.previewStops}
+                        end={{ x: 1, y: 1 }}
+                        start={{ x: 0, y: 0 }}
+                        style={styles.presetOrb}
+                      />
+                      <Text numberOfLines={1} style={[styles.presetName, { color: c.text, fontSize: rf(12.5) }]}>
+                        {preset.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.sectionLabel, { color: c.textMuted }]}>Màu điểm nhấn nút 3D</Text>
+              <View style={styles.swatchRow}>
+                {ACCENT_SWATCHES.map((sw) => {
+                  const active = sw.id === accentId;
+                  return (
+                    <Pressable
+                      key={sw.id}
+                      hitSlop={6}
+                      onPress={() => setAccentId(sw.id)}
+                      style={[
+                        styles.swatchWrap,
+                        active ? { borderColor: c.text, borderWidth: 2 } : null,
+                      ]}
+                    >
+                      {sw.id === "preset" ? (
+                        <View style={[styles.swatchCircle, { backgroundColor: c.primaryDark }]}>
+                          <Ionicons color="#FFF" name="sparkles" size={13} />
+                        </View>
+                      ) : (
+                        <LinearGradient
+                          colors={[sw.gradient[0], sw.gradient[1]]}
+                          end={{ x: 1, y: 1 }}
+                          start={{ x: 0, y: 0 }}
+                          style={styles.swatchCircle}
+                        />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={styles.switchRow}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.switchTitle, { color: c.text }]}>Sắc thái Pastel nổi khối</Text>
+                  <Text style={[styles.switchSub, { color: c.textMuted }]}>
+                    Ánh pastel dịu nhẹ phía sau thẻ 3D
+                  </Text>
+                </View>
+                <LiquidSwitch onValueChange={setPrismaticGlow} value={prismaticGlow} />
+              </View>
+            </ScrollView>
+          </LiquidCard>
+        </View>
+      </Modal>
+    </>
   );
 }
 
 export function AvatarBadge({ label = "A" }: { label?: string }) {
+  const { theme } = useAppTheme();
+  const { isNarrow } = useResponsiveLayout();
+  const c = theme.colors;
+  const size = isNarrow ? 38 : 42;
+
   return (
-    <View style={styles.avatar}>
-      <Text style={styles.avatarText}>{label}</Text>
+    <View
+      style={[
+        styles.avatarOuter,
+        {
+          borderColor: c.glassBorder,
+          height: size,
+          shadowColor: c.primary,
+          width: size,
+        },
+      ]}
+    >
+      <LinearGradient
+        colors={c.primaryGradient}
+        end={{ x: 1, y: 1 }}
+        start={{ x: 0, y: 0 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <Text style={[styles.avatarText, { color: c.onPrimary }]}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  avatar: {
-    alignItems: "center",
-    backgroundColor: colors.primaryDark,
-    borderColor: "rgba(255,255,255,0.72)",
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    height: 50,
-    justifyContent: "center",
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.16,
-    shadowRadius: 20,
-    width: 50,
-  },
-  avatarText: {
-    color: colors.surface,
-    fontSize: 18,
-    fontWeight: "900",
-  },
-  copyBlock: {
-    gap: 4,
-  },
-  iconButton: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,253,248,0.72)",
-    borderColor: "rgba(191,181,159,0.6)",
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    height: 46,
-    justifyContent: "center",
-    marginLeft: -4,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    width: 46,
-  },
-  leftSection: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
   row: {
     alignItems: "center",
     flexDirection: "row",
+    gap: 10,
     justifyContent: "space-between",
-    marginBottom: spacing.xl,
+    marginBottom: 14,
   },
-  subtitle: {
-    color: colors.accent,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1.5,
-    marginTop: 2,
-    textTransform: "uppercase",
+  leftSection: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: 10,
+    minWidth: 0,
+  },
+  copyBlock: {
+    flex: 1,
+    gap: 1,
+    minWidth: 0,
   },
   title: {
-    color: colors.primaryDark,
-    fontSize: 20,
     fontWeight: "900",
+    letterSpacing: -0.3,
+  },
+  subtitle: {
+    fontWeight: "800",
+    letterSpacing: 1.1,
+    textTransform: "uppercase",
+  },
+  rightCluster: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  avatarOuter: {
+    alignItems: "center",
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    elevation: Platform.OS === "android" ? 0 : 4,
+    justifyContent: "center",
+    overflow: "hidden",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+  },
+  avatarText: {
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  modalBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(7, 13, 28, 0.68)",
+    flex: 1,
+    justifyContent: "center",
+  },
+  modalCard: {
+    maxWidth: 440,
+    width: "100%",
+  },
+  modalHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
+  modalEyebrow: {
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.3,
+  },
+  modalTitle: {
+    fontWeight: "900",
+    marginTop: 2,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    marginBottom: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  presetGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: spacing.sm,
+  },
+  presetPill: {
+    alignItems: "center",
+    borderRadius: radius.pill,
+    borderWidth: 1.25,
+    flexBasis: "48%",
+    flexDirection: "row",
+    flexGrow: 1,
+    gap: 8,
+    minWidth: 128,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  presetOrb: {
+    borderColor: "rgba(255,255,255,0.8)",
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 18,
+    width: 18,
+  },
+  presetName: {
+    flex: 1,
+    fontWeight: "800",
+  },
+  swatchRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 9,
+    marginBottom: spacing.sm,
+  },
+  swatchWrap: {
+    borderRadius: 999,
+    padding: 2,
+  },
+  swatchCircle: {
+    alignItems: "center",
+    borderRadius: 999,
+    height: 28,
+    justifyContent: "center",
+    width: 28,
+  },
+  switchRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    marginTop: spacing.xs,
+  },
+  switchTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  switchSub: {
+    fontSize: 12,
+    marginTop: 2,
   },
 });

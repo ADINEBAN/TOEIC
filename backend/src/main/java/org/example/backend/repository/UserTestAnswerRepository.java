@@ -11,6 +11,15 @@ import java.util.List;
 public interface UserTestAnswerRepository extends JpaRepository<UserTestAnswer, Long> {
     List<UserTestAnswer> findByAttemptIdOrderByIdAsc(Long attemptId);
 
+    @Query("""
+            select a from UserTestAnswer a
+            join fetch a.testPartQuestion tpq
+            join fetch tpq.question q
+            where a.attempt.user.id = :userId and (a.correct = false or a.correct is null)
+            order by a.id desc
+            """)
+    List<UserTestAnswer> findIncorrectAnswersByUserId(@Param("userId") Long userId);
+
     @Modifying
     @Query("delete from UserTestAnswer a where a.testPartQuestion.id = :tpqId")
     void deleteByTestPartQuestionId(@Param("tpqId") Long testPartQuestionId);

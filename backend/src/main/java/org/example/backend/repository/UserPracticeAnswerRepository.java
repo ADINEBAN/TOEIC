@@ -8,6 +8,14 @@ import java.util.List;
 public interface UserPracticeAnswerRepository extends JpaRepository<UserPracticeAnswer, Long> {
 	List<UserPracticeAnswer> findByAttemptIdOrderByIdAsc(Long attemptId);
 
+	@Query("""
+			select a from UserPracticeAnswer a
+			join fetch a.question q
+			where a.attempt.user.id = :userId and (a.correct = false or a.correct is null)
+			order by a.id desc
+			""")
+	List<UserPracticeAnswer> findIncorrectAnswersByUserId(@Param("userId") Long userId);
+
 	@Modifying
 	@Query("delete from UserPracticeAnswer a where a.attempt.practiceSet.id = :practiceSetId")
 	void deleteByPracticeSetId(@Param("practiceSetId") Long practiceSetId);

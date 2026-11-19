@@ -20,6 +20,8 @@ public class UserPracticeAttemptDetailResponse {
     private Integer totalQuestions;
     private Integer durationSeconds;
     private AttemptStatus status;
+    private Integer diamondsEarned;
+    private Integer currentDiamonds;
     private List<QuestionReviewItem> answers;
 
     @Data
@@ -33,6 +35,11 @@ public class UserPracticeAttemptDetailResponse {
         private String difficultyLevel;
         private String sourceType;
         private Integer sourceYear;
+        private String audioUrl;
+        private String imageUrl;
+        private String passageText;
+        private String transcript;
+        private String questionGroupCode;
         private Long selectedOptionId;
         private String selectedLabel;
         private String selectedText;

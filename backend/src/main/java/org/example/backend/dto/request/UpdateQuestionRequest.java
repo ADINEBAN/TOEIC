@@ -13,6 +13,11 @@ public class UpdateQuestionRequest {
     private String difficultyLevel;
     private QuestionSourceType sourceType;
     private Integer sourceYear;
+    private String audioUrl;
+    private String imageUrl;
+    private String passageText;
+    private String transcript;
+    private String questionGroupCode;
     private List<CreateQuestionOptionRequest> options;
 }
 

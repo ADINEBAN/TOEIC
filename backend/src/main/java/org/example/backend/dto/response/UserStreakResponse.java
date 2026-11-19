@@ -16,4 +16,6 @@ public class UserStreakResponse {
     private LocalDate lastLoginDate;
     private LocalDateTime lastLoginAt;
     private Boolean todayLoggedIn;
+    private Integer diamondsEarned;
+    private Integer currentDiamonds;
 }

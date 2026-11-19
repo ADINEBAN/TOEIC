@@ -60,3 +60,27 @@ export async function logout(
     method: 'POST',
   });
 }
+
+export async function refreshTokenSession(
+  refreshToken: string
+): Promise<LoginResponse> {
+  const payload = await apiRequest<LoginResponse>('/api/auth/refresh', {
+    body: JSON.stringify({ refreshToken }),
+    method: 'POST',
+  });
+
+  return validateLoginResponse(payload);
+}
+
+export async function changePassword(
+  accessToken: string,
+  payload: { currentPassword: string; newPassword: string }
+): Promise<ApiResponse<null>> {
+  return apiRequest<ApiResponse<null>>('/api/auth/change-password', {
+    body: JSON.stringify(payload),
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    method: 'POST',
+  });
+}

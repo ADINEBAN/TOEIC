@@ -1,5 +1,6 @@
 import { apiRequest } from "@/src/services/api.client";
 import {
+  QuestionExplainApiResponse,
   SubmitPracticeAttemptRequest,
   UserPracticeAttemptApiResponse,
   UserPracticeAttemptDetailApiResponse,
@@ -54,5 +55,24 @@ export function getPracticeAttemptDetail(accessToken: string, attemptId: number)
   return apiRequest<UserPracticeAttemptDetailApiResponse>(`/api/users/practice-sets/attempts/${attemptId}/details`, {
     headers: buildAuthHeaders(accessToken),
     method: "GET",
+  });
+}
+
+export function explainPracticeQuestion(
+  accessToken: string,
+  payload: {
+    practiceSetQuestionId: number;
+    selectedAnswer: string;
+    type?: "EXPLANATION" | "TIPS" | "BOTH";
+  },
+) {
+  return apiRequest<QuestionExplainApiResponse>("/api/users/practice-sets/questions/explain", {
+    body: JSON.stringify({
+      practiceSetQuestionId: payload.practiceSetQuestionId,
+      selectedAnswer: payload.selectedAnswer,
+      type: payload.type ?? "BOTH",
+    }),
+    headers: buildAuthHeaders(accessToken),
+    method: "POST",
   });
 }

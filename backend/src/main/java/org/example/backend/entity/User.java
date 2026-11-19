@@ -33,8 +33,20 @@ public class User extends BaseEntity {
     @Column(name = "full_name", length = 255)
     private String fullName;
 
+    @Column(name = "username", length = 60)
+    private String username;
+
+    @Column(name = "bio", length = 300)
+    private String bio;
+
     @Column(name = "avatar_url")
     private String avatarUrl;
+
+    @Column(name = "equipped_frame_id", length = 64)
+    private String equippedFrameId;
+
+    @Column(name = "equipped_avatar_id", length = 64)
+    private String equippedAvatarId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "auth_provider", nullable = false, length = 30)
@@ -64,8 +76,26 @@ public class User extends BaseEntity {
     @Column(name = "is_premium", nullable = false)
     private Boolean premium = false;
 
+    @Column(name = "diamonds", nullable = false)
+    private Integer diamonds = 50;
+
+    @Column(name = "arena_wins", nullable = false)
+    private Integer arenaWins = 0;
+
+    @Column(name = "arena_losses", nullable = false)
+    private Integer arenaLosses = 0;
+
+    @Column(name = "arena_elo", nullable = false)
+    private Integer arenaElo = 1000;
+
+    @Column(name = "learning_xp", nullable = false)
+    private Integer learningXp = 0;
+
+    @Column(name = "total_study_minutes", nullable = false)
+    private Integer totalStudyMinutes = 0;
+
     @Enumerated(EnumType.STRING)
-    @Column(name = "role", nullable = false, length = 20)
+    @Column(name = "role", nullable = false, length = 30)
     private UserRole role = UserRole.USER;
 
     @Enumerated(EnumType.STRING)

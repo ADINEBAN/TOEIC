@@ -7,6 +7,7 @@ public class UploadAndCreateVideoLessonRequest {
     private Long moduleId;
     private String title;
     private String description;
+    private Integer durationSeconds;
     private Integer sortOrder;
     private Boolean free;
     private Boolean published;
