@@ -7,6 +7,7 @@ import org.example.backend.entity.UserProfile;
 import org.example.backend.enums.ErrorCode;
 import org.example.backend.exception.AppException;
 import org.example.backend.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +23,9 @@ public class UserLoginStreakService {
     private static final String DEFAULT_TIMEZONE = "Asia/Ho_Chi_Minh";
 
     private final UserRepository userRepository;
+
+    @Autowired(required = false)
+    private DiamondRewardService diamondRewardService;
 
     @Transactional
     public UserStreakResponse recordLogin(String email) {
@@ -54,17 +58,35 @@ public class UserLoginStreakService {
         user.setLongestLoginStreak(longestStreak);
 
         User savedUser = userRepository.save(user);
-        return toResponse(savedUser);
+
+        int diamondsEarned = 0;
+        if (diamondRewardService != null) {
+            int bonus = (currentStreak > 0 && currentStreak % 7 == 0) ? 25 : 0;
+            diamondsEarned = diamondRewardService.grantStudyReward(
+                    savedUser,
+                    "DAILY_STREAK",
+                    "streak:" + today,
+                    10 + bonus,
+                    15,
+                    1,
+                    bonus > 0
+                            ? "Điểm danh chuỗi " + currentStreak + " ngày liên tiếp (thưởng mốc tuần!)"
+                            : "Điểm danh học tập hằng ngày (ngày " + currentStreak + ")",
+                    true
+            );
+        }
+
+        return toResponse(savedUser, diamondsEarned);
     }
 
     @Transactional(readOnly = true)
     public UserStreakResponse getMyStreak(String email) {
         User user = userRepository.findByEmail(normalizeEmail(email))
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
-        return toResponse(user);
+        return toResponse(user, 0);
     }
 
-    private UserStreakResponse toResponse(User user) {
+    private UserStreakResponse toResponse(User user, int diamondsEarned) {
         ZoneId zoneId = resolveZoneId(user);
         LocalDate today = LocalDate.now(zoneId);
         LocalDate lastLoginDate = user.getLastLoginDate();
@@ -77,6 +99,8 @@ public class UserLoginStreakService {
                 .lastLoginDate(lastLoginDate)
                 .lastLoginAt(user.getLastLoginAt())
                 .todayLoggedIn(lastLoginDate != null && lastLoginDate.equals(today))
+                .diamondsEarned(diamondsEarned)
+                .currentDiamonds(user.getDiamonds())
                 .build();
     }
 

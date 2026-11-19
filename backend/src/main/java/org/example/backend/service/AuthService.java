@@ -1,7 +1,9 @@
 package org.example.backend.service;
 
 import lombok.RequiredArgsConstructor;
+import org.example.backend.dto.request.ChangePasswordRequest;
 import org.example.backend.dto.request.LoginRequest;
+import org.example.backend.dto.request.RefreshTokenRequest;
 import org.example.backend.dto.request.RegisterRequest;
 import org.example.backend.dto.response.AuthResponse;
 import org.example.backend.dto.response.UserResponse;
@@ -17,6 +19,7 @@ import org.example.backend.repository.UserRepository;
 import org.example.backend.security.JwtService;
 import org.example.backend.security.TokenBlacklistService;
 import org.example.backend.security.UserPrincipal;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -35,6 +38,9 @@ public class AuthService {
     private final TokenBlacklistService tokenBlacklistService;
     private final UserMapper userMapper;
     private final UserLoginStreakService userLoginStreakService;
+
+    @Autowired(required = false)
+    private PlacementOnboardingService placementOnboardingService;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -62,6 +68,13 @@ public class AuthService {
         user.setProfile(profile);
 
         User savedUser = userRepository.save(user);
+        if (savedUser.getUsername() == null || savedUser.getUsername().isBlank()) {
+            savedUser.setUsername(DiamondRewardService.resolveUsername(savedUser));
+            savedUser = userRepository.save(savedUser);
+        }
+        if (placementOnboardingService != null && savedUser.getTargetScore() != null) {
+            placementOnboardingService.tryAutoAssignForTargetScore(savedUser);
+        }
         return buildAuthResponse(savedUser);
     }
 
@@ -88,6 +101,53 @@ public class AuthService {
         return buildAuthResponse(user);
     }
 
+    public AuthResponse refresh(RefreshTokenRequest request) {
+        if (request == null || request.getRefreshToken() == null || request.getRefreshToken().isBlank()) {
+            throw new AppException(ErrorCode.INVALID_TOKEN);
+        }
+        String token = extractBearerToken(request.getRefreshToken());
+        if (tokenBlacklistService.isTokenRevoked(token)) {
+            throw new AppException(ErrorCode.INVALID_TOKEN);
+        }
+        String username;
+        try {
+            username = jwtService.extractUsername(token);
+        } catch (RuntimeException ex) {
+            throw new AppException(ErrorCode.INVALID_TOKEN);
+        }
+        if (username == null || !jwtService.isRefreshTokenValid(token, username)) {
+            throw new AppException(ErrorCode.INVALID_TOKEN);
+        }
+
+        User user = userRepository.findByEmail(username)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new AppException(ErrorCode.ACCOUNT_LOCKED);
+        }
+
+        tokenBlacklistService.revokeToken(token);
+        return buildAuthResponse(user);
+    }
+
+    @Transactional
+    public void changePassword(String email, ChangePasswordRequest request) {
+        if (request == null
+                || request.getCurrentPassword() == null || request.getCurrentPassword().isBlank()
+                || request.getNewPassword() == null || request.getNewPassword().trim().length() < 6) {
+            throw new AppException(ErrorCode.INVALID_ACCOUNT_DATA);
+        }
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+
+        if (user.getPasswordHash() == null
+                || !passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
+            throw new AppException(ErrorCode.INVALID_PASSWORD);
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword().trim()));
+        userRepository.save(user);
+    }
+
     public void logout(String authorizationHeader) {
         String token = extractBearerToken(authorizationHeader);
 
@@ -102,10 +162,12 @@ public class AuthService {
     private AuthResponse buildAuthResponse(User user) {
         UserPrincipal principal = new UserPrincipal(user);
         String token = jwtService.generateToken(principal);
+        String refreshToken = jwtService.generateRefreshToken(principal);
         UserResponse userResponse = userMapper.toResponse(user);
 
         return AuthResponse.builder()
                 .accessToken(token)
+                .refreshToken(refreshToken)
                 .tokenType("Bearer")
                 .expiresIn(jwtService.getJwtExpirationMs())
                 .user(userResponse)

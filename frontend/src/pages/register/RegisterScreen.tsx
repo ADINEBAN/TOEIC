@@ -1,26 +1,24 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useMemo, useState } from "react";
-import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Alert, Image, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { colors, radius, spacing } from "@/src/assets/styles/theme";
+import { radius } from "@/src/assets/styles/user-theme";
 import PrimaryButton from "@/src/components/common/PrimaryButton";
 import TextField, { FieldIconButton } from "@/src/components/common/TextField";
 import AuthLayout from "@/src/layouts/AuthLayout";
 import { register } from "@/src/services/auth.service";
+import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
 import { RegisterRequest } from "@/src/types/auth";
+import { useResponsiveLayout } from "@/src/utils/responsive";
 
 const LEVEL_OPTIONS = ["BEGINNER", "INTERMEDIATE", "ADVANCED"] as const;
 
 export default function RegisterScreen() {
+  const { theme } = useAppTheme();
+  const { isNarrow, rf } = useResponsiveLayout();
+  const colors = theme.colors;
+  const styles = useThemedStyles(createStyles);
   const [form, setForm] = useState<RegisterRequest>({
     avatarUrl: "",
     currentLevel: "BEGINNER",
@@ -96,249 +94,214 @@ export default function RegisterScreen() {
   };
 
   return (
-    <AuthLayout scrollable>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <View style={styles.header}>
-          <View style={styles.brandRow}>
-            <View style={styles.brandIcon}>
-              <Ionicons color={colors.primaryDark} name="school" size={18} />
-            </View>
-            <Text style={styles.brandText}>TOEIC_trainer</Text>
-          </View>
-          <Text style={styles.subtitle}>Tiếp tục hành trình luyện thi TOEIC</Text>
-               
+    <AuthLayout compact scrollable>
+      <View style={styles.header}>
+        <View style={styles.brandRow}>
+          <Image
+            resizeMode="cover"
+            source={require("@/assets/images/brand-logo.png")}
+            style={styles.brandLogo}
+          />
+          <Text style={styles.brandText}>Toeic Trainer</Text>
         </View>
+        <Text style={[styles.title, { fontSize: rf(22) }]}>Tạo tài khoản mới</Text>
+        <Text style={[styles.subtitle, { fontSize: rf(13.5) }]}>
+          Cá nhân hóa lộ trình đạt mục tiêu điểm số của bạn
+        </Text>
+      </View>
 
-        <View style={styles.form}>
-          <TextField
-            error={errors.fullName}
-            label="Họ và tên"
-            leftIcon={
+      <View style={styles.form}>
+        <TextField
+          error={errors.fullName}
+          label="Họ và tên"
+          leftIcon={<Ionicons color={colors.textMuted} name="person-outline" size={19} />}
+          onChangeText={(value) => updateField("fullName", value)}
+          placeholder="Nhập họ tên"
+          value={form.fullName}
+          variant="light"
+        />
+
+        <TextField
+          autoCapitalize="none"
+          error={errors.email}
+          keyboardType="email-address"
+          label="Email"
+          leftIcon={<MaterialCommunityIcons color={colors.textMuted} name="email-outline" size={19} />}
+          onChangeText={(value) => updateField("email", value)}
+          placeholder="example@email.com"
+          value={form.email}
+          variant="light"
+        />
+
+        <TextField
+          autoCapitalize="none"
+          error={errors.password}
+          label="Mật khẩu"
+          leftIcon={<MaterialCommunityIcons color={colors.textMuted} name="lock-outline" size={19} />}
+          onChangeText={(value) => updateField("password", value)}
+          placeholder="Ít nhất 8 ký tự"
+          rightSlot={
+            <FieldIconButton onPress={() => setShowPassword((current) => !current)}>
               <Ionicons
                 color={colors.textMuted}
-                name="person-outline"
-                size={20}
+                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                size={19}
               />
-            }
-            onChangeText={(value) => updateField("fullName", value)}
-            placeholder="Nhập họ tên của bạn"
-            variant="light"
-            value={form.fullName}
-          />
+            </FieldIconButton>
+          }
+          secureTextEntry={!showPassword}
+          value={form.password}
+          variant="light"
+        />
 
-          <TextField
-            autoCapitalize="none"
-            error={errors.email}
-            keyboardType="email-address"
-            label="Địa chỉ email"
-            leftIcon={
-              <MaterialCommunityIcons
-                color={colors.textMuted}
-                name="email-outline"
-                size={20}
-              />
-            }
-            onChangeText={(value) => updateField("email", value)}
-            placeholder="Nhập email đăng ký"
-            variant="light"
-            value={form.email}
-          />
-
-          <TextField
-            autoCapitalize="none"
-            error={errors.password}
-            label="Mật khẩu"
-            leftIcon={
-              <MaterialCommunityIcons
-                color={colors.textMuted}
-                name="lock-outline"
-                size={20}
-              />
-            }
-            onChangeText={(value) => updateField("password", value)}
-            placeholder="Tạo mật khẩu ít nhất 8 ký tự"
-            rightSlot={
-              <FieldIconButton
-                onPress={() => setShowPassword((current) => !current)}
-              >
-                <Ionicons
-                  color={colors.textMuted}
-                  name={showPassword ? "eye-off-outline" : "eye-outline"}
-                  size={20}
-                />
-              </FieldIconButton>
-            }
-            secureTextEntry={!showPassword}
-            variant="light"
-            value={form.password}
-          />
-
-          <View style={styles.fieldBlock}>
-            <Text style={styles.fieldLabel}>Trình độ hiện tại</Text>
-            <View style={styles.levelGrid}>
-              {LEVEL_OPTIONS.map((level) => {
-                const selected = form.currentLevel === level;
-
-                return (
-                  <Pressable
-                    key={level}
-                    onPress={() => updateField("currentLevel", level)}
+        <View style={styles.fieldBlock}>
+          <Text style={styles.fieldLabel}>Trình độ hiện tại</Text>
+          <View style={styles.levelGrid}>
+            {LEVEL_OPTIONS.map((level) => {
+              const selected = form.currentLevel === level;
+              return (
+                <Pressable
+                  key={level}
+                  onPress={() => updateField("currentLevel", level)}
+                  style={[
+                    styles.levelChip,
+                    selected ? styles.levelChipActive : null,
+                    { paddingHorizontal: isNarrow ? 10 : 12 },
+                  ]}
+                >
+                  <Text
+                    numberOfLines={1}
                     style={[
-                      styles.levelChip,
-                      selected ? styles.levelChipActive : null,
+                      styles.levelText,
+                      { fontSize: rf(11.5) },
+                      selected ? styles.levelTextActive : null,
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.levelText,
-                        selected ? styles.levelTextActive : null,
-                      ]}
-                    >
-                      {level}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+                    {level}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
-
-          <TextField
-            error={errors.targetScore}
-            label="Mục điểm mục tiêu"
-            leftIcon={
-              <MaterialCommunityIcons
-                color={colors.textMuted}
-                name="target"
-                size={20}
-              />
-            }
-            onChangeText={(value) =>
-              updateField(
-                "targetScore",
-                Number(value.replace(/[^0-9]/g, "")) || 0,
-              )
-            }
-            placeholder="Nhập mức điểm mong muốn"
-            variant="light"
-            value={form.targetScore ? String(form.targetScore) : ""}
-          />
-
-          {errorMessage ? (
-            <Text style={styles.errorText}>{errorMessage}</Text>
-          ) : null}
-
-          <PrimaryButton
-            label="TẠO TÀI KHOẢN"
-            loading={loading}
-            onPress={handleRegister}
-          />
-
-          <Pressable onPress={() => router.back()} style={styles.footerLink}>
-            <Text style={styles.footerText}>
-              Đã có tài khoản?{" "}
-              <Text style={styles.footerHighlight}>Đăng nhập</Text>
-            </Text>
-          </Pressable>
         </View>
-      </KeyboardAvoidingView>
+
+        <TextField
+          error={errors.targetScore}
+          keyboardType="numeric"
+          label="Mục tiêu điểm TOEIC (100 - 990)"
+          leftIcon={<MaterialCommunityIcons color={colors.textMuted} name="target" size={19} />}
+          onChangeText={(value) =>
+            updateField("targetScore", Number(value.replace(/[^0-9]/g, "")) || 0)
+          }
+          placeholder="Ví dụ: 650"
+          value={form.targetScore ? String(form.targetScore) : ""}
+          variant="light"
+        />
+
+        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
+        <PrimaryButton label="TẠO TÀI KHOẢN" loading={loading} onPress={handleRegister} />
+
+        <Pressable hitSlop={8} onPress={() => router.back()} style={styles.footerLink}>
+          <Text style={styles.footerText}>
+            Đã có tài khoản? <Text style={styles.footerHighlight}>Đăng nhập</Text>
+          </Text>
+        </Pressable>
+      </View>
     </AuthLayout>
   );
 }
 
-const styles = StyleSheet.create({
-  brandIcon: {
-    alignItems: "center",
-    backgroundColor: '#DCE8FB',
-    borderRadius: radius.pill,
-    height: 28,
-    justifyContent: "center",
-    width: 28,
-  },
-  brandRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.xs,
-    marginBottom: spacing.sm,
-  },
-  brandText: {
-    color: '#274A83',
-    fontSize: 15,
-    fontWeight: "900",
-    letterSpacing: 0.6,
-  },
-  errorText: {
-    color: '#C0392B',
-    fontSize: 14,
-    marginBottom: spacing.md,
-    textAlign: "center",
-  },
-  fieldBlock: {
-    marginBottom: spacing.md,
-  },
-  fieldLabel: {
-    color: '#43546F',
-    fontSize: 15,
-    fontWeight: "700",
-    marginBottom: spacing.xs,
-  },
-  footerHighlight: {
-    color: '#2E5DA3',
-    fontWeight: "800",
-  },
-  footerLink: {
-    alignItems: "center",
-    marginTop: spacing.lg,
-  },
-  footerText: {
-    color: '#5B6C86',
-    fontSize: 15,
-  },
-  form: {
-    marginTop: spacing.lg,
-  },
-  header: {
-    alignItems: "center",
-  },
-  levelChip: {
-    alignItems: "center",
-    backgroundColor: '#F4F8FF',
-    borderColor: '#D7E2F2',
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    minHeight: 44,
-    paddingHorizontal: spacing.md,
-  },
-  levelChipActive: {
-    backgroundColor: '#2E5DA3',
-    borderColor: '#2E5DA3',
-  },
-  levelGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  levelText: {
-    color: '#36527D',
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 22,
-  },
-  levelTextActive: {
-    color: '#F8FBFF',
-  },
-  subtitle: {
-    color: '#6D7F98',
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: "center",
-  },
-  title: {
-    color: colors.text,
-    fontSize: 30,
-    fontWeight: "900",
-    marginBottom: spacing.xs,
-    textAlign: "center",
-  },
-});
+const createStyles = (colors: LiquidThemeColors) =>
+  StyleSheet.create({
+    header: {
+      alignItems: "center",
+      marginBottom: 14,
+    },
+    brandRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 6,
+      marginBottom: 6,
+    },
+    brandLogo: {
+      borderColor: colors.glassBorder,
+      borderRadius: 10,
+      borderWidth: 1,
+      height: 30,
+      width: 30,
+    },
+    brandText: {
+      color: colors.primary,
+      fontSize: 13,
+      fontWeight: "900",
+    },
+    title: {
+      color: colors.text,
+      fontWeight: "900",
+      textAlign: "center",
+    },
+    subtitle: {
+      color: colors.textMuted,
+      marginTop: 4,
+      textAlign: "center",
+    },
+    form: {
+      gap: 2,
+    },
+    fieldBlock: {
+      marginBottom: 12,
+    },
+    fieldLabel: {
+      color: colors.textMuted,
+      fontSize: 12,
+      fontWeight: "800",
+      marginBottom: 6,
+    },
+    levelGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+    levelChip: {
+      alignItems: "center",
+      backgroundColor: colors.glassFillStrong,
+      borderColor: colors.glassBorder,
+      borderRadius: radius.pill,
+      borderWidth: 1.25,
+      flexGrow: 1,
+      justifyContent: "center",
+      minHeight: 40,
+      paddingVertical: 8,
+    },
+    levelChipActive: {
+      backgroundColor: colors.primary,
+      borderColor: "rgba(255,255,255,0.7)",
+    },
+    levelText: {
+      color: colors.text,
+      fontWeight: "800",
+    },
+    levelTextActive: {
+      color: colors.onPrimary,
+    },
+    errorText: {
+      color: colors.danger,
+      fontSize: 13,
+      fontWeight: "700",
+      marginBottom: 12,
+      textAlign: "center",
+    },
+    footerLink: {
+      alignItems: "center",
+      marginTop: 14,
+    },
+    footerText: {
+      color: colors.textMuted,
+      fontSize: 14,
+    },
+    footerHighlight: {
+      color: colors.primary,
+      fontWeight: "800",
+    },
+  });

@@ -23,7 +23,7 @@ public class PlacementOnboardingController {
     private final PlacementOnboardingService placementOnboardingService;
 
     @PostMapping("/assign-path")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<UserLearningPathResponse>> assignRecommendedPath(
             Authentication authentication,
             @RequestBody(required = false) AssignLearningPathRequest request

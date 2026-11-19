@@ -52,8 +52,52 @@ public class PlacementOnboardingService {
         assignment.setSource("PLACEMENT_ONBOARDING");
         assignment.setStatus(PathStatus.ACTIVE);
 
+        userRepository.save(user);
         UserLearningPath saved = userLearningPathRepository.save(assignment);
         return userLearningPathMapper.toResponse(saved);
+    }
+
+    @Transactional
+    public void tryAutoAssignForTargetScore(User user) {
+        if (user == null || user.getId() == null || user.getTargetScore() == null) {
+            return;
+        }
+        Optional<LearningPath> matched = findBestMatchingPathForScore(user.getTargetScore());
+        if (matched.isEmpty()) {
+            return;
+        }
+        LearningPath targetPath = matched.get();
+        List<UserLearningPath> currentActives = userLearningPathRepository.findByUserIdAndStatus(user.getId(), PathStatus.ACTIVE);
+        boolean alreadyMatched = !currentActives.isEmpty()
+                && currentActives.stream().anyMatch(ulp -> ulp.getLearningPath() != null
+                        && targetPath.getId().equals(ulp.getLearningPath().getId()));
+        if (alreadyMatched) {
+            return;
+        }
+
+        archiveActivePaths(user.getId());
+        UserLearningPath assignment = new UserLearningPath();
+        assignment.setUser(user);
+        assignment.setLearningPath(targetPath);
+        assignment.setSource("TARGET_GOAL_SYNC");
+        assignment.setStatus(PathStatus.ACTIVE);
+        userLearningPathRepository.save(assignment);
+    }
+
+    public Optional<LearningPath> findBestMatchingPathForScore(Integer targetScore) {
+        int effective = targetScore != null ? targetScore : 500;
+        List<LearningPath> activePaths = learningPathRepository.findAllByActiveTrueOrderByTargetScoreAsc();
+        if (activePaths != null && !activePaths.isEmpty()) {
+            return activePaths.stream()
+                    .filter(p -> p.getTargetScore() != null && p.getTargetScore().equals(effective))
+                    .findFirst()
+                    .or(() -> activePaths.stream()
+                            .filter(p -> p.getTargetScore() != null && p.getTargetScore() >= effective)
+                            .findFirst())
+                    .or(() -> Optional.of(activePaths.get(activePaths.size() - 1)));
+        }
+        return learningPathRepository.findFirstByActiveTrueAndTargetScoreGreaterThanEqualOrderByTargetScoreAsc(effective)
+                .or(() -> learningPathRepository.findFirstByActiveTrueOrderByTargetScoreDesc());
     }
 
     private LearningPath resolveLearningPath(User user, Long requestedLearningPathId, Integer requestedTargetScore) {
@@ -99,8 +143,7 @@ public class PlacementOnboardingService {
     }
 
     private LearningPath selectLearningPath(Integer targetScore) {
-        return learningPathRepository.findFirstByActiveTrueAndTargetScoreGreaterThanEqualOrderByTargetScoreAsc(targetScore)
-                .or(() -> learningPathRepository.findFirstByActiveTrueOrderByTargetScoreDesc())
+        return findBestMatchingPathForScore(targetScore)
                 .orElseThrow(() -> new AppException(ErrorCode.LEARNING_PATH_NOT_FOUND));
     }
 
