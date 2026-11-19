@@ -23,6 +23,10 @@ import java.util.function.Function;
 public class JwtService {
 
     private static final String ROLE_CLAIM = "role";
+    private static final String TYPE_CLAIM = "typ_kind";
+    private static final String TYPE_ACCESS = "access";
+    private static final String TYPE_REFRESH = "refresh";
+    private static final long REFRESH_EXPIRATION_SECONDS = 7L * 24L * 60L * 60L;
     private static final String DEFAULT_ROLE = "ROLE_USER";
     private static final String HMAC_ALGORITHM = "HmacSHA256";
     private static final Base64.Encoder URL_ENCODER = Base64.getUrlEncoder().withoutPadding();
@@ -60,7 +64,16 @@ public class JwtService {
     public String generateToken(UserDetails userDetails) {
         long issuedAt = Instant.now().getEpochSecond();
         long expiresAt = issuedAt + (jwtExpirationMs / 1000L);
+        return buildSignedJwt(userDetails, issuedAt, expiresAt, TYPE_ACCESS);
+    }
 
+    public String generateRefreshToken(UserDetails userDetails) {
+        long issuedAt = Instant.now().getEpochSecond();
+        long expiresAt = issuedAt + REFRESH_EXPIRATION_SECONDS;
+        return buildSignedJwt(userDetails, issuedAt, expiresAt, TYPE_REFRESH);
+    }
+
+    private String buildSignedJwt(UserDetails userDetails, long issuedAt, long expiresAt, String tokenKind) {
         String role = userDetails.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .filter(authority -> authority != null && authority.startsWith("ROLE_"))
@@ -74,6 +87,7 @@ public class JwtService {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("sub", userDetails.getUsername());
         payload.put(ROLE_CLAIM, role);
+        payload.put(TYPE_CLAIM, tokenKind);
         payload.put("iat", issuedAt);
         payload.put("exp", expiresAt);
 
@@ -87,7 +101,25 @@ public class JwtService {
         try {
             Map<String, Object> claims = extractAllClaims(token);
             String tokenUsername = (String) claims.get("sub");
+            Object kind = claims.get(TYPE_CLAIM);
+            if (Objects.equals(TYPE_REFRESH, kind)) {
+                return false;
+            }
             return Objects.equals(tokenUsername, username) && !isTokenExpired(claims) && isSignatureValid(token);
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    public boolean isRefreshTokenValid(String token, String username) {
+        try {
+            Map<String, Object> claims = extractAllClaims(token);
+            String tokenUsername = (String) claims.get("sub");
+            Object kind = claims.get(TYPE_CLAIM);
+            return Objects.equals(TYPE_REFRESH, kind)
+                    && Objects.equals(tokenUsername, username)
+                    && !isTokenExpired(claims)
+                    && isSignatureValid(token);
         } catch (RuntimeException ex) {
             return false;
         }

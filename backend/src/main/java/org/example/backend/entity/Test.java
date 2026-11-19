@@ -35,6 +35,12 @@ public class Test extends BaseEntity {
     @Column(nullable = false)
     private Boolean published = false;
 
+    @Column(name = "owner_user_id")
+    private Long ownerUserId;
+
+    @Column(name = "source_document_id")
+    private Long sourceDocumentId;
+
     @OneToMany(mappedBy = "test", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("sortOrder ASC")
     private List<TestPart> parts = new ArrayList<>();

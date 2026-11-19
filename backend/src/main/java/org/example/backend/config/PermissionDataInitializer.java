@@ -17,6 +17,7 @@ public class PermissionDataInitializer implements CommandLineRunner {
     public void run(String... args) {
         seed("USER", UserRole.USER);
         seed("ADMIN", UserRole.ADMIN);
+        seed("CONTENT_MANAGER", UserRole.CONTENT_MANAGER);
     }
 
     private void seed(String code, UserRole role) {
@@ -30,4 +31,3 @@ public class PermissionDataInitializer implements CommandLineRunner {
         permissionRepository.save(permission);
     }
 }
-

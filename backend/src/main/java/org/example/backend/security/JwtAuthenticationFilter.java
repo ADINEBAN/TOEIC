@@ -25,8 +25,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getServletPath();
-        boolean isAuthPathButNotLogout = path.startsWith("/auth/") && !path.equals("/auth/logout");
-        return isAuthPathButNotLogout || path.equals("/auth");
+        boolean isProtectedAuthPath = path.equals("/auth/logout") || path.equals("/auth/change-password");
+        boolean isAuthPathButPublic = path.startsWith("/auth/") && !isProtectedAuthPath;
+        return isAuthPathButPublic || path.equals("/auth");
     }
 
     @Override

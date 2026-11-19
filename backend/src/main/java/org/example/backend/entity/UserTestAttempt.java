@@ -32,6 +32,15 @@ public class UserTestAttempt extends BaseEntity {
 
     private Double score;
 
+    @Column(name = "listening_score")
+    private Integer listeningScore;
+
+    @Column(name = "reading_score")
+    private Integer readingScore;
+
+    @Column(name = "toeic_score")
+    private Integer toeicScore;
+
     @Column(name = "correct_count")
     private Integer correctCount = 0;
 

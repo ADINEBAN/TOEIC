@@ -13,5 +13,7 @@ public class ModuleUnlockResponse {
     private Long nextModuleId;
     private Boolean nextModuleUnlocked;
     private Boolean pathCompleted;
+    private Integer diamondsEarned;
+    private Integer currentDiamonds;
 }
 

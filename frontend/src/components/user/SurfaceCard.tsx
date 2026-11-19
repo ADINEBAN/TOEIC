@@ -1,28 +1,22 @@
 import { ReactNode } from "react";
-import { StyleProp, StyleSheet, View, ViewStyle } from "react-native";
+import { StyleProp, ViewStyle } from "react-native";
 
-import { colors, radius, spacing } from "@/src/assets/styles/user-theme";
+import { LiquidCard } from "@/src/components/ui/LiquidGlass";
 
 export default function SurfaceCard({
   children,
   style,
+  hero = false,
+  padding = "md",
 }: {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
+  hero?: boolean;
+  padding?: "none" | "sm" | "md" | "lg";
 }) {
-  return <View style={[styles.card, style]}>{children}</View>;
+  return (
+    <LiquidCard hero={hero} padding={padding} style={style}>
+      {children}
+    </LiquidCard>
+  );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "rgba(255,253,248,0.94)",
-    borderColor: "rgba(191,181,159,0.7)",
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    padding: spacing.lg,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.14,
-    shadowRadius: 28,
-  },
-});

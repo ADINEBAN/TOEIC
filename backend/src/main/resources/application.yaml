@@ -1,19 +1,25 @@
 spring:
   datasource:
-    url: "jdbc:mysql://localhost:3307/toeic"
+    url: "jdbc:mysql://localhost:3306/toeic"
     username: root
-    password: root
-
+    password: 2905
+    driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
-    show-sql: true
+    show-sql: false
     hibernate:
       ddl-auto: update
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+    out-of-order: true
 
   servlet:
     multipart:
       enabled: true
-      # Increased limits to support large video uploads (set to 1GB)
+      # Increased limits to support large video & document uploads (set to 1GB)
       max-file-size: 1GB
       max-request-size: 1GB
       file-size-threshold: 2KB
@@ -43,6 +49,23 @@ cloudinary:
   upload-folder: toeic-trainer/videos
 
 openai:
-  api-key: ${OPENROUTER_API_KEY:}
-  base-url: https://openrouter.ai/api/v1/chat/completions
-  model: openai/gpt-oss-120b:free
+  api-key: ${OPENAI_API_KEY:}
+  base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1/chat/completions}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
+
+speechify:
+  api-key: ${SPEECHIFY_API_KEY:}
+  base-url: ${SPEECHIFY_BASE_URL:https://api.speechify.ai/v1}
+  model: ${SPEECHIFY_MODEL:}
+  default-voice-us: ${SPEECHIFY_VOICE_US:}
+  default-voice-uk: ${SPEECHIFY_VOICE_UK:}
+
+toeic:
+  storage-dir: ${TOEIC_STORAGE_DIR:./data}
+  python-bin: ${TOEIC_PYTHON_BIN:python}
+  ytdlp-bin: ${TOEIC_YTDLP_BIN:yt-dlp}
+  ytdlp-cookies: ${TOEIC_YTDLP_COOKIES:}
+  ytdlp-proxy: ${TOEIC_YTDLP_PROXY:}
+  ffmpeg-bin: ${TOEIC_FFMPEG_BIN:}
+  whisper-model: ${TOEIC_WHISPER_MODEL:tiny.en}
+  video-chunk-seconds: ${TOEIC_VIDEO_CHUNK_SECONDS:480}

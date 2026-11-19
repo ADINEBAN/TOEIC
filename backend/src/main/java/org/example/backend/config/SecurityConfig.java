@@ -1,10 +1,14 @@
 package org.example.backend.config;
 
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.example.backend.security.CustomUserDetailsService;
 import org.example.backend.security.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.Customizer;
@@ -15,11 +19,9 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 
 @Configuration(proxyBeanMethods = false)
 @EnableMethodSecurity
@@ -39,6 +41,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/auth/login",
                                 "/auth/register",
+                                "/auth/refresh",
                                 "/users/admin",
                                 "/ws",
                                 "/ws/**",
@@ -47,14 +50,23 @@ public class SecurityConfig {
                                 "/queue/**",
                                 "/user/**"
                         ).permitAll()
-                        .requestMatchers("/auth/logout").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/admin/learning-paths", "/admin/learning-paths/*").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers(HttpMethod.GET, "/media/**").permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/media/**").permitAll()
+                        .requestMatchers("/auth/logout", "/auth/change-password").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/admin/learning-paths", "/admin/learning-paths/*", "/admin/questions/parts/*").hasAnyRole("ADMIN", "CONTENT_MANAGER", "USER")
+                        .requestMatchers("/admin/videos", "/admin/videos/**").hasAnyRole("ADMIN", "CONTENT_MANAGER")
                         .requestMatchers("/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(authenticationProvider)
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+                        .accessDeniedHandler((request, response, accessDeniedException) -> {
+                            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                            response.setCharacterEncoding("UTF-8");
+                            response.getWriter().write("{\"code\":7051,\"message\":\"Access denied: insufficient permissions for this operation\",\"status\":\"FORBIDDEN\"}");
+                        })
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .httpBasic(AbstractHttpConfigurer::disable)

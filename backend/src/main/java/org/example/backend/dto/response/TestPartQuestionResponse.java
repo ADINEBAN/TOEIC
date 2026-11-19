@@ -10,6 +10,10 @@ public class TestPartQuestionResponse {
     private String questionText;
     private Integer partNo;
     private String difficultyLevel;
+    private String audioUrl;
+    private String imageUrl;
+    private String passageText;
+    private String questionGroupCode;
     private java.util.List<QuestionOptionResponse> options;
 }
 

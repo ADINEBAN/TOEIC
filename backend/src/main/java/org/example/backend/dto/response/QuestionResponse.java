@@ -15,6 +15,11 @@ public class QuestionResponse {
     private String difficultyLevel;
     private QuestionSourceType sourceType;
     private Integer sourceYear;
+    private String audioUrl;
+    private String imageUrl;
+    private String passageText;
+    private String transcript;
+    private String questionGroupCode;
     private List<QuestionOptionResponse> options;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

@@ -9,6 +9,9 @@ public class VideoNoteResponse {
     private Long id;
     private Long userId;
     private Long lessonId;
+    private String lessonTitle;
+    private Long moduleId;
+    private String moduleTitle;
     private Integer timestampSeconds;
     private String noteText;
     private LocalDateTime createdAt;

@@ -33,6 +33,10 @@ public class UserPracticeSetDetailResponse {
         private String difficultyLevel;
         private String sourceType;
         private Integer sourceYear;
+        private String audioUrl;
+        private String imageUrl;
+        private String passageText;
+        private String questionGroupCode;
         private List<OptionItem> options;
     }
 

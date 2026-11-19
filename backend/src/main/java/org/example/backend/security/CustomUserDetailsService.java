@@ -1,7 +1,6 @@
 package org.example.backend.security;
 
 import lombok.RequiredArgsConstructor;
-import org.example.backend.entity.Permission;
 import org.example.backend.entity.User;
 import org.example.backend.enums.UserRole;
 import org.example.backend.repository.PermissionRepository;
@@ -35,7 +34,16 @@ public class CustomUserDetailsService implements UserDetailsService {
                 .map(permission -> new SimpleGrantedAuthority(permission.getCode()))
                 .toList());
 
+        if (role == UserRole.CONTENT_MANAGER) {
+            authorities.addAll(permissionRepository.findByRoleOrderByCodeAsc(UserRole.CONTENT_MANAGER).stream()
+                    .map(permission -> new SimpleGrantedAuthority(permission.getCode()))
+                    .toList());
+        }
+
         if (role == UserRole.ADMIN) {
+            authorities.addAll(permissionRepository.findByRoleOrderByCodeAsc(UserRole.CONTENT_MANAGER).stream()
+                    .map(permission -> new SimpleGrantedAuthority(permission.getCode()))
+                    .toList());
             authorities.addAll(permissionRepository.findByRoleOrderByCodeAsc(UserRole.ADMIN).stream()
                     .map(permission -> new SimpleGrantedAuthority(permission.getCode()))
                     .toList());

@@ -11,5 +11,7 @@ public interface TestRepository extends JpaRepository<Test, Long> {
     List<Test> findByPublishedTrueOrderByCreatedAtDesc();
     List<Test> findByTitleContainingIgnoreCaseOrderByCreatedAtDesc(String title);
     List<Test> findAllByOrderByCreatedAtDesc();
+    List<Test> findByOwnerUserIdOrderByCreatedAtDesc(Long ownerUserId);
+    List<Test> findBySourceDocumentIdOrderByCreatedAtDesc(Long sourceDocumentId);
 }
 

@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { colors, spacing } from "@/src/assets/styles/user-theme";
+import { useAppTheme } from "@/src/store/theme-store";
+import { useResponsiveLayout } from "@/src/utils/responsive";
 
 type SectionTitleProps = {
   title: string;
@@ -13,12 +14,24 @@ export default function SectionTitle({
   actionLabel,
   onActionPress,
 }: SectionTitleProps) {
+  const { theme } = useAppTheme();
+  const { rf } = useResponsiveLayout();
+  const c = theme.colors;
+
   return (
     <View style={styles.row}>
-      <Text style={styles.title}>{title}</Text>
+      <Text numberOfLines={1} style={[styles.title, { color: c.text, fontSize: rf(18) }]}>
+        {title}
+      </Text>
       {actionLabel ? (
-        <Pressable onPress={onActionPress}>
-          <Text style={styles.action}>{actionLabel}</Text>
+        <Pressable
+          hitSlop={8}
+          onPress={onActionPress}
+          style={[styles.actionChip, { backgroundColor: c.primarySoft }]}
+        >
+          <Text style={[styles.action, { color: c.primaryDark, fontSize: rf(12) }]}>
+            {actionLabel}
+          </Text>
         </Pressable>
       ) : null}
     </View>
@@ -27,23 +40,26 @@ export default function SectionTitle({
 
 const styles = StyleSheet.create({
   action: {
-    color: colors.primary,
-    fontSize: 12,
     fontWeight: "800",
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
+    letterSpacing: 0.2,
+  },
+  actionChip: {
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
   },
   row: {
     alignItems: "center",
     flexDirection: "row",
+    gap: 10,
     justifyContent: "space-between",
-    marginBottom: spacing.md,
+    marginBottom: 12,
+    marginTop: 6,
   },
   title: {
-    color: colors.text,
     flex: 1,
-    fontSize: 22,
     fontWeight: "900",
-    paddingRight: spacing.md,
+    marginRight: 8,
+    minWidth: 0,
   },
 });

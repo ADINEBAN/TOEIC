@@ -1,6 +1,8 @@
+import { LinearGradient } from "expo-linear-gradient";
 import { StyleSheet, Text, View } from "react-native";
 
-import { colors, radius, spacing } from "@/src/assets/styles/user-theme";
+import { radius, spacing } from "@/src/assets/styles/user-theme";
+import { useAppTheme } from "@/src/store/theme-store";
 
 type ProgressBarProps = {
   label?: string;
@@ -15,65 +17,78 @@ export default function ProgressBar({
   label,
   value,
   rightLabel,
-  accentColor = colors.primary,
-  labelColor = colors.text,
-  rightLabelColor = colors.primaryDark,
+  accentColor,
+  labelColor,
+  rightLabelColor,
 }: ProgressBarProps) {
+  const { theme } = useAppTheme();
+  const c = theme.colors;
+  const resolvedLabelColor = labelColor ?? c.text;
+  const resolvedRightColor = rightLabelColor ?? c.primaryDark;
+  const safeValue = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const resolvedPercent = Math.max(0, Math.min(100, safeValue));
+  const fillColors: readonly [string, string] = accentColor
+    ? [accentColor, accentColor]
+    : [c.primaryGradient[0], c.primaryGradient[1]];
+
   return (
     <View>
       {label || rightLabel ? (
         <View style={styles.labelRow}>
-          <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
-          {rightLabel ? <Text style={[styles.rightLabel, { color: rightLabelColor }]}>{rightLabel}</Text> : null}
+          <Text style={[styles.label, { color: resolvedLabelColor }]}>{label}</Text>
+          {rightLabel ? (
+            <Text style={[styles.rightLabel, { color: resolvedRightColor }]}>{rightLabel}</Text>
+          ) : null}
         </View>
       ) : null}
-      <View style={styles.track}>
-        <View
-          style={[
-            styles.fill,
-            { backgroundColor: accentColor, width: `${Math.max(0, Math.min(100, value))}%` },
-          ]}
-        />
-        <View style={styles.sheen} />
+      <View
+        style={[
+          styles.track,
+          {
+            backgroundColor: c.isDark ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.62)",
+            borderColor: c.glassBorder,
+          },
+        ]}
+      >
+        <View style={[styles.fillWrap, { width: `${resolvedPercent}%` }]}>
+          <LinearGradient
+            colors={fillColors}
+            end={{ x: 1, y: 0.5 }}
+            start={{ x: 0, y: 0.5 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  fill: {
-    borderRadius: radius.pill,
-    height: "100%",
-  },
-  label: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "800",
-  },
   labelRow: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: spacing.xs,
   },
-  rightLabel: {
-    color: colors.primaryDark,
+  label: {
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: "800",
   },
-  sheen: {
-    backgroundColor: "rgba(255,255,255,0.42)",
-    borderRadius: radius.pill,
-    height: "100%",
-    position: "absolute",
-    right: 0,
-    top: 0,
-    width: "28%",
+  rightLabel: {
+    fontSize: 13,
+    fontWeight: "800",
   },
   track: {
-    backgroundColor: "#E1D8C6",
     borderRadius: radius.pill,
+    borderWidth: 1,
     height: 12,
     overflow: "hidden",
+  },
+  fillWrap: {
+    borderRadius: radius.pill,
+    height: "100%",
+    overflow: "hidden",
+    position: "relative",
   },
 });
