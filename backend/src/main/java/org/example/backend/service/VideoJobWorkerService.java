@@ -898,19 +898,37 @@ public class VideoJobWorkerService {
 
             String stdout = new String(stdoutBytes, StandardCharsets.UTF_8).trim();
             String stderr = new String(stderrBytes, StandardCharsets.UTF_8).trim();
+            String jsonPayload = extractLastJsonObjectLine(stdout);
             if (proc.exitValue() != 0) {
-                if (!stdout.isBlank() && stdout.startsWith("{")) {
-                    Map<String, Object> errMap = objectMapper.readValue(stdout, new TypeReference<>() {});
+                if (!jsonPayload.isBlank()) {
+                    Map<String, Object> errMap = objectMapper.readValue(jsonPayload, new TypeReference<>() {});
                     throw new IllegalStateException(String.valueOf(errMap.getOrDefault("error", stderr)));
                 }
-                throw new IllegalStateException(!stderr.isBlank() ? stderr : "Python bridge exited with " + proc.exitValue());
+                throw new IllegalStateException(!stderr.isBlank() ? stderr : (!stdout.isBlank() ? stdout : "Python bridge exited with " + proc.exitValue()));
             }
-            return objectMapper.readValue(stdout, new TypeReference<>() {});
+            if (jsonPayload.isBlank()) {
+                throw new IllegalStateException("Python bridge returned non-JSON stdout: " + stdout);
+            }
+            return objectMapper.readValue(jsonPayload, new TypeReference<>() {});
         } finally {
             if (jobId != null) {
                 activeSubprocesses.remove(jobId, proc);
             }
         }
+    }
+
+    private String extractLastJsonObjectLine(String rawStdout) {
+        if (rawStdout == null || rawStdout.isBlank()) {
+            return "";
+        }
+        String[] lines = rawStdout.split("\\R");
+        for (int i = lines.length - 1; i >= 0; i--) {
+            String trimmed = lines[i].trim();
+            if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                return trimmed;
+            }
+        }
+        return "";
     }
 
     private Path resolveVideoScript() throws IOException {
