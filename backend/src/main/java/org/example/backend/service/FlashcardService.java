@@ -24,10 +24,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
 public class FlashcardService {
+
+    private static final Pattern TRANSCRIPT_NOISE_PATTERN = Pattern.compile(
+            "(?iu)(?:&gt;&gt;|>>|[♪♫]|\\[(?:music|âm nhạc|nhạc|applause|vỗ tay|laughter|tiếng cười|cheering|sound|inaudible)\\]|\\((?:music|âm nhạc)\\))"
+    );
+    private static final Pattern REDUNDANT_POS_PREFIX = Pattern.compile(
+            "^\\[(?:Từ vựng[^\\]]*)\\]\\s*", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
+    );
 
     private final FlashcardRepository flashcardRepository;
     private final FlashcardCollectionRepository flashcardCollectionRepository;
@@ -45,8 +53,8 @@ public class FlashcardService {
         Flashcard flashcard = new Flashcard();
         flashcard.setOwner(owner);
         flashcard.setEnglishWord(trimToNull(request.getEnglishWord()));
-        flashcard.setMeaningVi(trimToNull(request.getMeaningVi()));
-        flashcard.setExampleSentence(trimToNull(request.getExampleSentence()));
+        flashcard.setMeaningVi(sanitizeMeaningText(request.getMeaningVi()));
+        flashcard.setExampleSentence(sanitizeStudyText(request.getExampleSentence()));
         flashcard.setPronunciation(trimToNull(request.getPronunciation()));
         flashcard.setActive(true);
 
@@ -63,8 +71,8 @@ public class FlashcardService {
         Flashcard flashcard = new Flashcard();
         flashcard.setModule(module);
         flashcard.setEnglishWord(trimToNull(request.getEnglishWord()));
-        flashcard.setMeaningVi(trimToNull(request.getMeaningVi()));
-        flashcard.setExampleSentence(trimToNull(request.getExampleSentence()));
+        flashcard.setMeaningVi(sanitizeMeaningText(request.getMeaningVi()));
+        flashcard.setExampleSentence(sanitizeStudyText(request.getExampleSentence()));
         flashcard.setPronunciation(trimToNull(request.getPronunciation()));
         flashcard.setActive(request.getActive() == null ? true : request.getActive());
 
@@ -94,7 +102,7 @@ public class FlashcardService {
         }
 
         if (request.getMeaningVi() != null) {
-            String meaningVi = trimToNull(request.getMeaningVi());
+            String meaningVi = sanitizeMeaningText(request.getMeaningVi());
             if (meaningVi == null) {
                 throw new AppException(ErrorCode.INVALID_FLASHCARD_DATA);
             }
@@ -102,7 +110,7 @@ public class FlashcardService {
         }
 
         if (request.getExampleSentence() != null) {
-            flashcard.setExampleSentence(trimToNull(request.getExampleSentence()));
+            flashcard.setExampleSentence(sanitizeStudyText(request.getExampleSentence()));
         }
 
         if (request.getPronunciation() != null) {
@@ -210,6 +218,25 @@ public class FlashcardService {
         return normalized;
     }
 
+    private String sanitizeMeaningText(String value) {
+        String cleaned = sanitizeStudyText(value);
+        if (cleaned == null) {
+            return null;
+        }
+        cleaned = REDUNDANT_POS_PREFIX.matcher(cleaned).replaceFirst("").trim();
+        return cleaned.isEmpty() ? null : cleaned;
+    }
+
+    private String sanitizeStudyText(String value) {
+        if (value == null) {
+            return null;
+        }
+        String cleaned = TRANSCRIPT_NOISE_PATTERN.matcher(value).replaceAll(" ");
+        cleaned = cleaned.replaceAll("\\s+", " ").trim();
+        cleaned = cleaned.replaceAll("^[—\\-\\s]+|[—\\-\\s]+$", "").trim();
+        return cleaned.isEmpty() ? null : cleaned;
+    }
+
     private String trimToNull(String value) {
         if (value == null) {
             return null;
@@ -232,8 +259,8 @@ public class FlashcardService {
         }
 
         if (request.getEnglishWord() != null) flashcard.setEnglishWord(trimToNull(request.getEnglishWord()));
-        if (request.getMeaningVi() != null) flashcard.setMeaningVi(trimToNull(request.getMeaningVi()));
-        if (request.getExampleSentence() != null) flashcard.setExampleSentence(trimToNull(request.getExampleSentence()));
+        if (request.getMeaningVi() != null) flashcard.setMeaningVi(sanitizeMeaningText(request.getMeaningVi()));
+        if (request.getExampleSentence() != null) flashcard.setExampleSentence(sanitizeStudyText(request.getExampleSentence()));
         if (request.getPronunciation() != null) flashcard.setPronunciation(trimToNull(request.getPronunciation()));
         if (request.getFlashcardCollectionId() != null) {
             FlashcardCollection collection = flashcardCollectionRepository.findByIdAndOwnerId(request.getFlashcardCollectionId(), owner.getId())

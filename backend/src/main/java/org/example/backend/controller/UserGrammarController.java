@@ -22,7 +22,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/users/grammars")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('USER')")
+@PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
 public class UserGrammarController {
 
     private final UserGrammarService userGrammarService;
