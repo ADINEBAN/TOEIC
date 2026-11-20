@@ -25,6 +25,7 @@ import org.example.backend.repository.UserModuleProgressRepository;
 import org.example.backend.repository.UserRepository;
 import org.example.backend.repository.UserVideoProgressRepository;
 import org.example.backend.repository.VideoLessonRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,6 +54,9 @@ public class UserProgressService {
     private final UserVideoProgressRepository userVideoProgressRepository;
     private final UserModuleProgressRepository userModuleProgressRepository;
 
+    @Autowired(required = false)
+    private DiamondRewardService diamondRewardService;
+
     @Transactional
     public LessonProgressUpdateResponse updateLessonProgress(
             String email,
@@ -76,6 +80,26 @@ public class UserProgressService {
         List<MilestoneModule> orderedModules = getOrderedModules(activePath.getLearningPath().getId());
         UnlockResult unlockResult = unlockNextModuleIfNeeded(user, activePath, orderedModules, module.getId(), moduleProgress);
 
+        int diamondsEarned = 0;
+        if (diamondRewardService != null) {
+            if (videoProgress.getStatus() == ProgressStatus.COMPLETED) {
+                int studyMins = Math.max(1, (lesson.getDurationSeconds() != null ? lesson.getDurationSeconds() : 60) / 60);
+                diamondsEarned += diamondRewardService.grantStudyReward(
+                        user, "LESSON_COMPLETE", "lesson:" + lesson.getId(), 15, 35, studyMins,
+                        "Hoàn thành bài học: " + lesson.getTitle(), true);
+            }
+            if (moduleProgress.getStatus() == ProgressStatus.COMPLETED) {
+                diamondsEarned += diamondRewardService.grantStudyReward(
+                        user, "MODULE_COMPLETE", "module:" + module.getId(), 25, 50, 0,
+                        "Hoàn thành mô-đun: " + module.getTitle(), true);
+            }
+            if (unlockResult.pathCompleted()) {
+                diamondsEarned += diamondRewardService.grantStudyReward(
+                        user, "PATH_COMPLETE", "path:" + activePath.getLearningPath().getId(), 80, 120, 0,
+                        "Hoàn thành toàn bộ lộ trình TOEIC!", true);
+            }
+        }
+
         LessonProgressUpdateResponse response = new LessonProgressUpdateResponse();
         response.setLessonId(lesson.getId());
         response.setModuleId(module.getId());
@@ -88,6 +112,8 @@ public class UserProgressService {
         response.setNextModuleId(unlockResult.nextModuleId());
         response.setNextModuleUnlocked(unlockResult.nextModuleUnlocked());
         response.setPathCompleted(unlockResult.pathCompleted());
+        response.setDiamondsEarned(diamondsEarned);
+        response.setCurrentDiamonds(user.getDiamonds());
         return response;
     }
 
@@ -111,6 +137,20 @@ public class UserProgressService {
         List<MilestoneModule> orderedModules = getOrderedModules(activePath.getLearningPath().getId());
         UnlockResult unlockResult = unlockNextModuleIfNeeded(user, activePath, orderedModules, module.getId(), moduleProgress);
 
+        int diamondsEarned = 0;
+        if (diamondRewardService != null) {
+            if (moduleProgress.getStatus() == ProgressStatus.COMPLETED) {
+                diamondsEarned += diamondRewardService.grantStudyReward(
+                        user, "MODULE_COMPLETE", "module:" + module.getId(), 25, 50, 2,
+                        "Hoàn thành mô-đun: " + module.getTitle(), true);
+            }
+            if (unlockResult.pathCompleted()) {
+                diamondsEarned += diamondRewardService.grantStudyReward(
+                        user, "PATH_COMPLETE", "path:" + activePath.getLearningPath().getId(), 80, 120, 0,
+                        "Hoàn thành toàn bộ lộ trình TOEIC!", true);
+            }
+        }
+
         ModuleUnlockResponse response = new ModuleUnlockResponse();
         response.setModuleId(moduleId);
         response.setModuleStatus(moduleProgress.getStatus().name());
@@ -119,6 +159,8 @@ public class UserProgressService {
         response.setNextModuleId(unlockResult.nextModuleId());
         response.setNextModuleUnlocked(unlockResult.nextModuleUnlocked());
         response.setPathCompleted(unlockResult.pathCompleted());
+        response.setDiamondsEarned(diamondsEarned);
+        response.setCurrentDiamonds(user.getDiamonds());
         return response;
     }
 

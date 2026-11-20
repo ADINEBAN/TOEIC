@@ -3,6 +3,7 @@ package org.example.backend.controller;
 import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.request.CreateLearningPathRequest;
 import org.example.backend.dto.request.UpdateLearningPathRequest;
+import org.example.backend.dto.response.AdminLearningPathOverviewResponse;
 import org.example.backend.dto.response.ApiResponse;
 import org.example.backend.dto.response.LearningPathResponse;
 import org.example.backend.enums.SuccessCode;
@@ -21,6 +22,13 @@ public class AdminLearningPathController {
 
     private final AdminLearningPathService adminLearningPathService;
 
+    @GetMapping("/overview")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<List<AdminLearningPathOverviewResponse>>> getLearningPathOverviewTree() {
+        List<AdminLearningPathOverviewResponse> response = adminLearningPathService.getLearningPathOverviewTree();
+        return ApiResponseUtil.success(response, SuccessCode.LEARNING_PATH_LISTED);
+    }
+
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<LearningPathResponse>> createLearningPath(
@@ -31,14 +39,14 @@ public class AdminLearningPathController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MANAGER', 'USER')")
     public ResponseEntity<ApiResponse<List<LearningPathResponse>>> getAllLearningPaths() {
         List<LearningPathResponse> response = adminLearningPathService.getAllLearningPaths();
         return ApiResponseUtil.success(response, SuccessCode.LEARNING_PATH_LISTED);
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MANAGER', 'USER')")
     public ResponseEntity<ApiResponse<LearningPathResponse>> getLearningPathById(@PathVariable Long id) {
         LearningPathResponse response = adminLearningPathService.getLearningPathById(id);
         return ApiResponseUtil.success(response, SuccessCode.LEARNING_PATH_GET);
