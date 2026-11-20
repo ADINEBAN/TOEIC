@@ -1,4 +1,4 @@
-﻿# TOEIC Trainer — Kanban Issue Plan & Parallel Backlog
+# TOEIC Trainer — Kanban Issue Plan & Parallel Backlog
 
 Repository: https://github.com/ADINEBAN/TOEIC
 Process: Kanban with Shift-Left Testing; 5 team roles working concurrently across all feature slices and milestones.
@@ -29,6 +29,7 @@ Backlog → Ready → In Progress → In Review → Done.
 - **E08 (`#46`)** — `[EPIC E08] Admin Dashboard Portal and AI question explanations`
 - **E09 (`#47`)** — `[EPIC E09] TOEIC mock exam, leaderboard and daily learning streak`
 - **E10 (`#48`)** — `[EPIC E10] API acceptance testing, UAT and project handover`
+- **E11 (`#81`)** — `[EPIC E11] Production Deployment, TOEIC Rich Media, Smart AI, SM-2 & Realtime Arena`
 
 ## Feature-Sliced Backlog & Role Assignment (`#50` – `#71`)
 
@@ -59,6 +60,21 @@ Backlog → Ready → In Progress → In Review → Done.
 | **23** | `#67` | `E09-US03` | `[E09-US03] Implement daily login streak and learner Home dashboard` | `R1 — PM` | `R4 — Frontend` |
 | **24** | `#70` | `E10-T01` | `[E10-T01] Add API acceptance-testing guide and verification matrix` | `R5 — QA & Test` | `R2 — Tech Lead` |
 | **25** | `#71` | `E10-US01` | `[E10-US01] Complete UAT handover, Kanban documentation and repository cleanup` | `R1 — PM` | `R5 — QA & Test` |
+
+## Sprint 6 Backlog — Production Deployment & v1.1 Enhancements (`M6`: `15/11` – `21/11/2026`, `#80` – `#90`)
+
+| Batch | Issue | Code | Exact GitHub Issue Title | Assignee | Schedule | SP |
+| :---: | :---: | :---: | :--- | :---: | :---: | :---: |
+| **26** | `#80` | `CR-04` | `[CR-04] Change Request: Containerize Spring Boot with Docker & Deploy Production (Render + Cloudflare)` | `Vuanh47` | `15/11/2026` (Done) | 5 |
+| **27** | `#82` | `M6-US01` | `[M6-US01] Support Audio, Images, Passage & Group Context for TOEIC Questions (Part 1-7)` | `TLammmm` | `17/11/2026` | 8 |
+| **28** | `#83` | `M6-US02` | `[M6-US02] Implement TOEIC 10-990 Score Scaling, Part 1-7 Analytics, Flag Grid & Draft Auto-Save` | `ADINEBAN` | `17/11`–`18/11` | 5 |
+| **29** | `#84` | `M6-US03` | `[M6-US03] Wire VideoNote Timestamp API & Real Study Notebook Persistence` | `Vuanh47` | `18/11/2026` | 5 |
+| **30** | `#85` | `M6-US04` | `[M6-US04] Cache OpenRouter AI Explanations, Add Practice AI Explain & Wrong Answer Mistake Bank` | `ADINEBAN` | `18/11`–`19/11` | 8 |
+| **31** | `#86` | `M6-US05` | `[M6-US05] Activate SM-2 Spaced Repetition Vocabulary Review & Mini-Quiz Mode` | `TLammmm` | `19/11/2026` | 8 |
+| **32** | `#87` | `M6-US06` | `[M6-US06] Upgrade Account Security: Refresh Token, Change Password & Profile Editing` | `anhht10` | `19/11`–`20/11` | 5 |
+| **33** | `#88` | `M6-US07` | `[M6-US07] Add Admin Bulk Question Import (CSV/JSON) & Admin User/Analytics Portal` | `Vuanh47` | `20/11/2026` | 8 |
+| **34** | `#89` | `M6-US08` | `[M6-US08] Build WebSocket STOMP Realtime Quiz Arena (1v1) & Live Leaderboard Feed` | `anhht10` | `20/11`–`21/11` | 8 |
+| **35** | `#90` | `M6-T01` | `[M6-T01] Sprint 6 Regression Testing, Live CI Workflow Upgrade & Defense Handover Docs` | `ThanhTungmeH` | `21/11/2026` | 5 |
 
 ## Definition of Ready (DoR)
 - Problem and business value are clearly stated.
