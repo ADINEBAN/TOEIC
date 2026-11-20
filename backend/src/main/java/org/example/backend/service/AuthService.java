@@ -21,8 +21,8 @@ import org.example.backend.security.TokenBlacklistService;
 import org.example.backend.security.UserPrincipal;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -86,16 +86,82 @@ public class AuthService {
         }
 
         String email = request.getEmail().trim().toLowerCase();
+        User existing = userRepository.findByEmail(email).orElse(null);
+        if (existing != null && (existing.getPasswordHash() == null || existing.getPasswordHash().isBlank())) {
+            throw new AppException(ErrorCode.LOGIN_FAIL);
+        }
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(email, request.getPassword())
             );
-        } catch (BadCredentialsException ex) {
+        } catch (AuthenticationException ex) {
             throw new AppException(ErrorCode.LOGIN_FAIL);
         }
 
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+
+        userLoginStreakService.recordLogin(user.getEmail());
+        return buildAuthResponse(user);
+    }
+
+    @Transactional
+    public AuthResponse authenticateWithGoogleUser(GoogleOAuthService.GoogleUserInfo googleUser) {
+        if (googleUser == null || googleUser.email() == null || googleUser.email().isBlank()) {
+            throw new AppException(ErrorCode.LOGIN_FAIL);
+        }
+        String email = googleUser.email().trim().toLowerCase();
+        User user = userRepository.findByEmail(email).orElse(null);
+
+        if (user == null) {
+            User created = new User();
+            created.setEmail(email);
+            created.setPasswordHash(null);
+            created.setFullName(trimToNull(googleUser.fullName()));
+            created.setAvatarUrl(trimToNull(googleUser.avatarUrl()));
+            created.setAuthProvider(AuthProvider.GOOGLE);
+            created.setProviderUserId(trimToNull(googleUser.sub()));
+            created.setRole(UserRole.USER);
+            created.setPremium(false);
+            created.setStatus(UserStatus.ACTIVE);
+
+            UserProfile profile = new UserProfile();
+            profile.setUser(created);
+            created.setProfile(profile);
+
+            user = userRepository.save(created);
+            if (user.getUsername() == null || user.getUsername().isBlank()) {
+                user.setUsername(DiamondRewardService.resolveUsername(user));
+                user = userRepository.save(user);
+            }
+        } else {
+            if (user.getStatus() != UserStatus.ACTIVE) {
+                throw new AppException(ErrorCode.ACCOUNT_LOCKED);
+            }
+            boolean dirty = false;
+            if ((user.getProviderUserId() == null || user.getProviderUserId().isBlank())
+                    && googleUser.sub() != null && !googleUser.sub().isBlank()) {
+                user.setProviderUserId(googleUser.sub().trim());
+                dirty = true;
+            }
+            if ((user.getAvatarUrl() == null || user.getAvatarUrl().isBlank())
+                    && googleUser.avatarUrl() != null && !googleUser.avatarUrl().isBlank()) {
+                user.setAvatarUrl(googleUser.avatarUrl().trim());
+                dirty = true;
+            }
+            if ((user.getFullName() == null || user.getFullName().isBlank())
+                    && googleUser.fullName() != null && !googleUser.fullName().isBlank()) {
+                user.setFullName(googleUser.fullName().trim());
+                dirty = true;
+            }
+            if (user.getUsername() == null || user.getUsername().isBlank()) {
+                user.setUsername(DiamondRewardService.resolveUsername(user));
+                dirty = true;
+            }
+            if (dirty) {
+                user = userRepository.save(user);
+            }
+        }
 
         userLoginStreakService.recordLogin(user.getEmail());
         return buildAuthResponse(user);

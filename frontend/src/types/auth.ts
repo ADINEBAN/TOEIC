@@ -62,4 +62,11 @@ export type LoginSuccessData = {
 
 export type LoginResponse = ApiResponse<LoginSuccessData>;
 
+export type GoogleOAuthStatusData = {
+  configured: boolean;
+  redirectConfigured: boolean;
+};
+
+export type GoogleOAuthStatusResponse = ApiResponse<GoogleOAuthStatusData>;
+
 export type RegisterResponse = ApiResponse<AuthUser>;
