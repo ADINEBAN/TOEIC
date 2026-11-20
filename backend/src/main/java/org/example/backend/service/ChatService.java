@@ -21,9 +21,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -91,7 +93,7 @@ public class ChatService {
         }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<ChatMessageResponse> getDirectMessages(String email, Long peerUserId, int limit) {
         User viewer = findUser(email);
         User peer = userRepository.findById(peerUserId)
@@ -99,6 +101,11 @@ public class ChatService {
         if (isBlockedBetween(viewer.getId(), peer.getId())) {
             throw new AppException(ErrorCode.USER_BLOCKED_COMMUNICATION);
         }
+        chatMessageRepository.markDirectMessagesRead(
+                viewer.getId(),
+                peer.getId(),
+                LocalDateTime.now(DiamondRewardService.VN_ZONE)
+        );
         int safeLimit = Math.max(10, Math.min(100, limit));
         List<ChatMessage> recent = chatMessageRepository.findRecentDirectMessages(
                 viewer.getId(), peer.getId(), PageRequest.of(0, safeLimit));
@@ -142,12 +149,14 @@ public class ChatService {
     public ChatFriendsResponse getFriendsOverview(String email) {
         User viewer = findUser(email);
         List<UserFriendship> links = userFriendshipRepository.findAllForUser(viewer.getId());
+        Map<Long, Integer> unreadBySender = collectUnreadBySender(viewer.getId());
 
         ChatFriendsResponse out = new ChatFriendsResponse();
         List<ChatFriendsResponse.FriendPerson> friends = new ArrayList<>();
         List<ChatFriendsResponse.FriendPerson> incoming = new ArrayList<>();
         List<ChatFriendsResponse.FriendPerson> outgoing = new ArrayList<>();
         List<ChatFriendsResponse.FriendPerson> blocked = new ArrayList<>();
+        int totalUnreadDirectMessages = 0;
 
         for (UserFriendship link : links) {
             boolean iAmRequester = link.getRequester().getId().equals(viewer.getId());
@@ -157,21 +166,24 @@ public class ChatService {
             }
             if ("BLOCKED".equals(link.getStatus())) {
                 if (iAmRequester) {
-                    blocked.add(toFriendDto(viewer.getId(), other, link.getId(), "BLOCKED", false));
+                    blocked.add(toFriendDto(viewer.getId(), other, link.getId(), "BLOCKED", false, 0));
                 }
                 continue;
             }
             if ("ACCEPTED".equals(link.getStatus())) {
-                friends.add(toFriendDto(viewer.getId(), other, link.getId(), "ACCEPTED", true));
+                int unread = unreadBySender.getOrDefault(other.getId(), 0);
+                totalUnreadDirectMessages += unread;
+                friends.add(toFriendDto(viewer.getId(), other, link.getId(), "ACCEPTED", true, unread));
             } else if ("PENDING".equals(link.getStatus())) {
                 if (iAmRequester) {
-                    outgoing.add(toFriendDto(viewer.getId(), other, link.getId(), "PENDING_OUTGOING", false));
+                    outgoing.add(toFriendDto(viewer.getId(), other, link.getId(), "PENDING_OUTGOING", false, 0));
                 } else {
-                    incoming.add(toFriendDto(viewer.getId(), other, link.getId(), "PENDING_INCOMING", false));
+                    incoming.add(toFriendDto(viewer.getId(), other, link.getId(), "PENDING_INCOMING", false, 0));
                 }
             }
         }
 
+        out.setTotalUnreadDirectMessages(totalUnreadDirectMessages);
         out.setFriends(friends);
         out.setIncomingRequests(incoming);
         out.setOutgoingRequests(outgoing);
@@ -194,27 +206,54 @@ public class ChatService {
             if (candidate.getId().equals(viewer.getId())) {
                 continue;
             }
-            String relStatus = "NONE";
-            Long friendshipId = null;
-            for (UserFriendship link : myLinks) {
-                boolean matchOther = link.getRequester().getId().equals(candidate.getId())
-                        || link.getAddressee().getId().equals(candidate.getId());
-                if (!matchOther) continue;
-                friendshipId = link.getId();
-                if ("BLOCKED".equals(link.getStatus())) {
-                    relStatus = link.getRequester().getId().equals(viewer.getId()) ? "BLOCKED" : "BLOCKED_BY_OTHER";
-                } else if ("ACCEPTED".equals(link.getStatus())) {
-                    relStatus = "ACCEPTED";
-                } else if ("PENDING".equals(link.getStatus())) {
-                    relStatus = link.getRequester().getId().equals(viewer.getId()) ? "PENDING_OUTGOING" : "PENDING_INCOMING";
-                }
-                break;
-            }
+            UserFriendship matchedLink = findLinkBetween(viewer.getId(), candidate.getId(), myLinks);
+            String relStatus = resolveRelationStatus(viewer.getId(), matchedLink);
+            Long friendshipId = matchedLink != null ? matchedLink.getId() : null;
             if (!"BLOCKED_BY_OTHER".equals(relStatus)) {
-                out.add(toFriendDto(viewer.getId(), candidate, friendshipId, relStatus, false));
+                out.add(toFriendDto(viewer.getId(), candidate, friendshipId, relStatus, false, 0));
             }
         }
         return out;
+    }
+
+    /**
+     * Resolves the viewer-centric relationship state from a collection of links between two users.
+     */
+    public static String resolveRelationStatus(Long viewerId, Long otherUserId, List<UserFriendship> links) {
+        UserFriendship link = findLinkBetween(viewerId, otherUserId, links);
+        return resolveRelationStatus(viewerId, link);
+    }
+
+    private static UserFriendship findLinkBetween(Long viewerId, Long otherUserId, List<UserFriendship> links) {
+        if (viewerId == null || otherUserId == null || links == null) {
+            return null;
+        }
+        for (UserFriendship link : links) {
+            Long reqId = link.getRequester() != null ? link.getRequester().getId() : null;
+            Long addrId = link.getAddressee() != null ? link.getAddressee().getId() : null;
+            if ((viewerId.equals(reqId) && otherUserId.equals(addrId))
+                    || (viewerId.equals(addrId) && otherUserId.equals(reqId))) {
+                return link;
+            }
+        }
+        return null;
+    }
+
+    private static String resolveRelationStatus(Long viewerId, UserFriendship link) {
+        if (viewerId == null || link == null) {
+            return "NONE";
+        }
+        boolean isRequester = link.getRequester() != null && viewerId.equals(link.getRequester().getId());
+        if ("BLOCKED".equals(link.getStatus())) {
+            return isRequester ? "BLOCKED" : "BLOCKED_BY_OTHER";
+        }
+        if ("ACCEPTED".equals(link.getStatus())) {
+            return "ACCEPTED";
+        }
+        if ("PENDING".equals(link.getStatus())) {
+            return isRequester ? "PENDING_OUTGOING" : "PENDING_INCOMING";
+        }
+        return "NONE";
     }
 
     @Transactional
@@ -311,12 +350,27 @@ public class ChatService {
         return getFriendsOverview(email);
     }
 
+    private Map<Long, Integer> collectUnreadBySender(Long viewerId) {
+        Map<Long, Integer> counts = new HashMap<>();
+        List<Object[]> rows = chatMessageRepository.countUnreadDirectBySender(viewerId);
+        if (rows != null) {
+            for (Object[] row : rows) {
+                if (row == null || row.length < 2 || !(row[0] instanceof Number) || !(row[1] instanceof Number)) {
+                    continue;
+                }
+                counts.put(((Number) row[0]).longValue(), ((Number) row[1]).intValue());
+            }
+        }
+        return counts;
+    }
+
     private ChatFriendsResponse.FriendPerson toFriendDto(
             Long viewerId,
             User other,
             Long friendshipId,
             String status,
-            boolean includeLastMessage
+            boolean includeLastMessage,
+            int unreadCount
     ) {
         ChatFriendsResponse.FriendPerson dto = new ChatFriendsResponse.FriendPerson();
         dto.setFriendshipId(friendshipId);
@@ -329,12 +383,16 @@ public class ChatService {
         dto.setLevel(LevelCalculator.fromXp(xp).level());
         dto.setDiamonds(other.getDiamonds() != null ? other.getDiamonds() : 50);
         dto.setRelationStatus(status);
+        dto.setUnreadCount(unreadCount);
 
         if (includeLastMessage) {
             List<ChatMessage> last = chatMessageRepository.findRecentDirectMessages(viewerId, other.getId(), PageRequest.of(0, 1));
             if (!last.isEmpty()) {
-                dto.setLastMessagePreview(last.get(0).getContent());
-                dto.setLastMessageAt(last.get(0).getCreatedAt());
+                ChatMessage latest = last.get(0);
+                dto.setLastMessageId(latest.getId());
+                dto.setLastMessageSenderId(latest.getSender() != null ? latest.getSender().getId() : null);
+                dto.setLastMessagePreview(latest.getContent());
+                dto.setLastMessageAt(latest.getCreatedAt());
             }
         }
         return dto;

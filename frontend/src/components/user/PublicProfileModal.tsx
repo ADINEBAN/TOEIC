@@ -1,23 +1,28 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { LiquidCard } from "@/src/components/ui/LiquidGlass";
 import UserAvatarWithFrame from "@/src/components/user/UserAvatarWithFrame";
 import { useAuth } from "@/src/hooks/use-auth";
 import {
+  acceptFriendRequest,
   blockChatUser,
   getPublicUserProfile,
+  removeFriendship,
   sendFriendRequest,
+  unblockChatUser,
 } from "@/src/services/user.service";
 import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
 import { ProfileInsightsData } from "@/src/types/user-api";
 import { useResponsiveLayout } from "@/src/utils/responsive";
+import { confirmWeb } from "@/src/utils/web-dialog";
 
 type PublicProfileModalProps = {
   userId: number | null;
   visible: boolean;
   onClose: () => void;
+  onFriendshipChanged?: () => void;
   onStartDirectChat?: (user: {
     userId: number;
     fullName: string;
@@ -28,10 +33,24 @@ type PublicProfileModalProps = {
   }) => void;
 };
 
+function confirmAction(title: string, message: string, onConfirm: () => void) {
+  if (Platform.OS === "web") {
+    if (confirmWeb(message)) {
+      onConfirm();
+    }
+    return;
+  }
+  Alert.alert(title, message, [
+    { style: "cancel", text: "Hủy" },
+    { style: "destructive", text: "Xác nhận", onPress: onConfirm },
+  ]);
+}
+
 export default function PublicProfileModal({
   userId,
   visible,
   onClose,
+  onFriendshipChanged,
   onStartDirectChat,
 }: PublicProfileModalProps) {
   const { auth } = useAuth();
@@ -50,6 +69,7 @@ export default function PublicProfileModal({
     let active = true;
     const initTimer = setTimeout(() => {
       if (!active) return;
+      setProfile(null);
       setLoading(true);
       void getPublicUserProfile(token, userId)
         .then((res) => {
@@ -72,16 +92,78 @@ export default function PublicProfileModal({
     };
   }, [auth.accessToken, userId, visible]);
 
-  const isMe = auth.user?.id != null && userId != null && auth.user.id === userId;
+  const isMe =
+    (auth.user?.id != null && userId != null && auth.user.id === userId)
+    || profile?.relationStatus === "SELF";
+
+  const relationStatus = profile?.relationStatus ?? "NONE";
 
   const handleAddFriend = async () => {
     if (!auth.accessToken || !profile || actionLoading) return;
     try {
       setActionLoading(true);
-      await sendFriendRequest(auth.accessToken, { targetUserId: profile.userId });
-      Alert.alert("Bạn bè", `Đã gửi lời mời kết bạn tới @${profile.username}.`);
+      const res = await sendFriendRequest(auth.accessToken, { targetUserId: profile.userId });
+      const becameFriend = res.data?.friends?.some((f) => f.userId === profile.userId);
+      const nextStatus = becameFriend ? "ACCEPTED" : "PENDING_OUTGOING";
+      setProfile((prev) => (prev ? { ...prev, relationStatus: nextStatus } : prev));
+      onFriendshipChanged?.();
+      Alert.alert(
+        "Bạn bè",
+        becameFriend
+          ? `Bạn và @${profile.username} đã trở thành bạn bè.`
+          : `Đã gửi lời mời kết bạn tới @${profile.username}.`,
+      );
     } catch (err) {
       Alert.alert("Bạn bè", err instanceof Error ? err.message : "Không thể gửi lời mời kết bạn.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleAcceptFriend = async () => {
+    if (!auth.accessToken || !profile || actionLoading) return;
+    try {
+      setActionLoading(true);
+      await acceptFriendRequest(auth.accessToken, profile.userId);
+      setProfile((prev) => (prev ? { ...prev, relationStatus: "ACCEPTED" } : prev));
+      onFriendshipChanged?.();
+      Alert.alert("Bạn bè", `Bạn và @${profile.username} đã trở thành bạn bè.`);
+    } catch (err) {
+      Alert.alert("Bạn bè", err instanceof Error ? err.message : "Không thể chấp nhận lời mời.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRemoveFriendship = (promptMessage: string) => {
+    if (!auth.accessToken || !profile || actionLoading) return;
+    const token = auth.accessToken;
+    const targetId = profile.userId;
+    confirmAction("Bạn bè", promptMessage, () => {
+      void (async () => {
+        try {
+          setActionLoading(true);
+          await removeFriendship(token, targetId);
+          setProfile((prev) => (prev ? { ...prev, relationStatus: "NONE" } : prev));
+          onFriendshipChanged?.();
+        } catch (err) {
+          Alert.alert("Bạn bè", err instanceof Error ? err.message : "Thao tác thất bại.");
+        } finally {
+          setActionLoading(false);
+        }
+      })();
+    });
+  };
+
+  const handleUnblock = async () => {
+    if (!auth.accessToken || !profile || actionLoading) return;
+    try {
+      setActionLoading(true);
+      await unblockChatUser(auth.accessToken, profile.userId);
+      setProfile((prev) => (prev ? { ...prev, relationStatus: "NONE" } : prev));
+      onFriendshipChanged?.();
+    } catch (err) {
+      Alert.alert("Lỗi", err instanceof Error ? err.message : "Không thể bỏ chặn.");
     } finally {
       setActionLoading(false);
     }
@@ -92,6 +174,7 @@ export default function PublicProfileModal({
     try {
       setActionLoading(true);
       await blockChatUser(auth.accessToken, profile.userId);
+      onFriendshipChanged?.();
       Alert.alert("Đã chặn", `Bạn đã chặn @${profile.username}.`);
       onClose();
     } catch (err) {
@@ -144,11 +227,41 @@ export default function PublicProfileModal({
 
                 {!isMe ? (
                   <View style={styles.socialBtns}>
-                    <Pressable disabled={actionLoading} onPress={handleAddFriend} style={styles.primaryAction}>
-                      <Ionicons color="#FFFFFF" name="person-add-outline" size={15} />
-                      <Text style={styles.primaryActionText}>Kết bạn</Text>
-                    </Pressable>
-                    {onStartDirectChat ? (
+                    {relationStatus === "ACCEPTED" ? (
+                      <Pressable
+                        disabled={actionLoading}
+                        onPress={() => handleRemoveFriendship(`Hủy kết bạn với @${profile.username}?`)}
+                        style={styles.friendAction}
+                      >
+                        <Ionicons color="#047857" name="checkmark-circle" size={16} />
+                        <Text style={styles.friendActionText}>Bạn bè</Text>
+                      </Pressable>
+                    ) : relationStatus === "PENDING_OUTGOING" ? (
+                      <Pressable
+                        disabled={actionLoading}
+                        onPress={() => handleRemoveFriendship(`Hủy lời mời kết bạn đã gửi tới @${profile.username}?`)}
+                        style={styles.pendingAction}
+                      >
+                        <Ionicons color={colors.textMuted} name="time-outline" size={15} />
+                        <Text style={styles.pendingActionText}>Đã gửi lời mời</Text>
+                      </Pressable>
+                    ) : relationStatus === "PENDING_INCOMING" ? (
+                      <Pressable disabled={actionLoading} onPress={handleAcceptFriend} style={styles.primaryAction}>
+                        <Ionicons color="#FFFFFF" name="checkmark" size={15} />
+                        <Text style={styles.primaryActionText}>Đồng ý kết bạn</Text>
+                      </Pressable>
+                    ) : relationStatus === "BLOCKED" ? (
+                      <Pressable disabled={actionLoading} onPress={handleUnblock} style={styles.pendingAction}>
+                        <Ionicons color={colors.textMuted} name="ban-outline" size={15} />
+                        <Text style={styles.pendingActionText}>Bỏ chặn</Text>
+                      </Pressable>
+                    ) : relationStatus !== "BLOCKED_BY_OTHER" ? (
+                      <Pressable disabled={actionLoading} onPress={handleAddFriend} style={styles.primaryAction}>
+                        <Ionicons color="#FFFFFF" name="person-add-outline" size={15} />
+                        <Text style={styles.primaryActionText}>Kết bạn</Text>
+                      </Pressable>
+                    ) : null}
+                    {onStartDirectChat && relationStatus !== "BLOCKED" && relationStatus !== "BLOCKED_BY_OTHER" ? (
                       <Pressable
                         onPress={() => {
                           onClose();
@@ -167,9 +280,11 @@ export default function PublicProfileModal({
                         <Text style={styles.secondaryActionText}>Nhắn tin</Text>
                       </Pressable>
                     ) : null}
-                    <Pressable disabled={actionLoading} onPress={handleBlock} style={styles.dangerAction}>
-                      <Ionicons color="#EF4444" name="ban-outline" size={15} />
-                    </Pressable>
+                    {relationStatus !== "BLOCKED" ? (
+                      <Pressable disabled={actionLoading} onPress={handleBlock} style={styles.dangerAction}>
+                        <Ionicons color="#EF4444" name="ban-outline" size={15} />
+                      </Pressable>
+                    ) : null}
                   </View>
                 ) : null}
               </View>
@@ -282,6 +397,30 @@ const createStyles = (colors: LiquidThemeColors) =>
       paddingVertical: 8,
     },
     primaryActionText: { color: "#FFFFFF", fontSize: 12.5, fontWeight: "800" },
+    friendAction: {
+      alignItems: "center",
+      backgroundColor: "rgba(16, 185, 129, 0.14)",
+      borderColor: "rgba(16, 185, 129, 0.45)",
+      borderRadius: 99,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: 6,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    friendActionText: { color: "#047857", fontSize: 12.5, fontWeight: "800" },
+    pendingAction: {
+      alignItems: "center",
+      backgroundColor: colors.glassFill,
+      borderColor: colors.glassBorder,
+      borderRadius: 99,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: 6,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    pendingActionText: { color: colors.textMuted, fontSize: 12.5, fontWeight: "800" },
     secondaryAction: {
       alignItems: "center",
       backgroundColor: colors.primarySoft,

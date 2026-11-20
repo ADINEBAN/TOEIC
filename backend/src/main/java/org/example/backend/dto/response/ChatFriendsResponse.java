@@ -7,6 +7,7 @@ import java.util.List;
 
 @Data
 public class ChatFriendsResponse {
+    private int totalUnreadDirectMessages;
     private List<FriendPerson> friends;
     private List<FriendPerson> incomingRequests;
     private List<FriendPerson> outgoingRequests;
@@ -23,7 +24,10 @@ public class ChatFriendsResponse {
         private int level;
         private int diamonds;
         private String relationStatus; // ACCEPTED | PENDING_INCOMING | PENDING_OUTGOING | BLOCKED | NONE
+        private Long lastMessageId;
+        private Long lastMessageSenderId;
         private String lastMessagePreview;
         private LocalDateTime lastMessageAt;
+        private int unreadCount;
     }
 }

@@ -248,11 +248,38 @@ class SocialCosmeticsLeaderboardChatTest {
         assertEquals("DIRECT", dm.getChannelType());
         assertEquals(2L, dm.getRecipientId());
 
+        ChatFriendsResponse overview = chatService.getFriendsOverview("alice@test.local");
+        assertNotNull(overview);
+        assertEquals(0, overview.getTotalUnreadDirectMessages());
+
+        when(chatMessageRepository.countUnreadDirectBySender(1L))
+                .thenReturn(List.<Object[]>of(new Object[]{2L, 3L}));
+        when(userFriendshipRepository.findAllForUser(1L)).thenReturn(List.of(accepted));
+        ChatFriendsResponse unreadOverview = chatService.getFriendsOverview("alice@test.local");
+        assertEquals(3, unreadOverview.getTotalUnreadDirectMessages());
+        assertEquals(1, unreadOverview.getFriends().size());
+        assertEquals(3, unreadOverview.getFriends().get(0).getUnreadCount());
+
+        when(chatMessageRepository.findRecentDirectMessages(eq(1L), eq(2L), any(Pageable.class)))
+                .thenReturn(List.of());
+        chatService.getDirectMessages("alice@test.local", 2L, 30);
+        verify(chatMessageRepository).markDirectMessagesRead(eq(1L), eq(2L), any());
+
+        assertEquals("ACCEPTED", ChatService.resolveRelationStatus(1L, 2L, List.of(accepted)));
+        UserFriendship pending = new UserFriendship();
+        pending.setRequester(bob);
+        pending.setAddressee(alice);
+        pending.setStatus("PENDING");
+        assertEquals("PENDING_INCOMING", ChatService.resolveRelationStatus(1L, 2L, List.of(pending)));
+        assertEquals("PENDING_OUTGOING", ChatService.resolveRelationStatus(2L, 1L, List.of(pending)));
+
         UserFriendship blocked = new UserFriendship();
         blocked.setId(11L);
         blocked.setRequester(alice);
         blocked.setAddressee(bob);
         blocked.setStatus("BLOCKED");
+        assertEquals("BLOCKED", ChatService.resolveRelationStatus(1L, 2L, List.of(blocked)));
+        assertEquals("BLOCKED_BY_OTHER", ChatService.resolveRelationStatus(2L, 1L, List.of(blocked)));
         when(userFriendshipRepository.findBetweenUsers(1L, 2L)).thenReturn(List.of(blocked));
         AppException blockEx = assertThrows(AppException.class,
                 () -> chatService.sendDirectMessage("alice@test.local", 2L, "Hello"));

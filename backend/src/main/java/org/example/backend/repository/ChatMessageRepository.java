@@ -3,9 +3,11 @@ package org.example.backend.repository;
 import org.example.backend.entity.ChatMessage;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> {
@@ -33,6 +35,30 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
             @Param("u1") Long userId1,
             @Param("u2") Long userId2,
             Pageable pageable
+    );
+
+    @Query("""
+            select m.sender.id, count(m) from ChatMessage m
+            where m.channelType = 'DIRECT'
+              and m.recipient.id = :recipientId
+              and m.readAt is null
+              and m.sender is not null
+            group by m.sender.id
+            """)
+    List<Object[]> countUnreadDirectBySender(@Param("recipientId") Long recipientId);
+
+    @Modifying
+    @Query("""
+            update ChatMessage m set m.readAt = :readAt
+            where m.channelType = 'DIRECT'
+              and m.recipient.id = :recipientId
+              and m.sender.id = :senderId
+              and m.readAt is null
+            """)
+    int markDirectMessagesRead(
+            @Param("recipientId") Long recipientId,
+            @Param("senderId") Long senderId,
+            @Param("readAt") LocalDateTime readAt
     );
 
     long countBySenderId(Long senderId);
