@@ -1,20 +1,50 @@
-﻿name: TOEIC Trainer CI
+name: TOEIC Trainer CI
 
 on:
   push:
-    branches: [ main, 'role-*' ]
+    branches: [ main, 'role-*', 'feat/**', 'ci/**', 'test/**', 'docs/**' ]
   pull_request:
     branches: [ main ]
 
 jobs:
-  verify-structure:
+  backend-unit-tests:
+    name: Backend Compile & Unit Tests (JDK 17 + Maven)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify Backend & Frontend configuration
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Verify project config & run Service Unit Tests
+        working-directory: backend
         run: |
-          test -f backend/pom.xml
-          test -f frontend/package.json
-          echo "Project structure verified successfully."
+          test -f pom.xml
+          chmod +x mvnw
+          ./mvnw -B "-Dtest=*ServiceTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
+
+  frontend-quality:
+    name: Frontend TypeScript Check (Node 22)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies & run TypeScript check
+        working-directory: frontend
+        run: |
+          test -f package.json
+          npm ci
+          npx tsc --noEmit
