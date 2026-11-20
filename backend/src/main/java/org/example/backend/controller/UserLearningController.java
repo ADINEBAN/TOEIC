@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.request.CompleteModuleRequest;
 import org.example.backend.dto.response.ApiResponse;
 import org.example.backend.dto.response.ModuleUnlockResponse;
+import org.example.backend.dto.response.UserLearningPathCatalogItemResponse;
 import org.example.backend.dto.response.UserModuleContentResponse;
 import org.example.backend.dto.response.UserRoadmapResponse;
 import org.example.backend.enums.SuccessCode;
@@ -20,6 +21,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/users/learning")
 @RequiredArgsConstructor
@@ -28,15 +31,24 @@ public class UserLearningController {
     private final UserLearningService userLearningService;
     private final UserProgressService userProgressService;
 
+    @GetMapping("/paths")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
+    public ResponseEntity<ApiResponse<List<UserLearningPathCatalogItemResponse>>> getLearningPathCatalog(
+            Authentication authentication
+    ) {
+        List<UserLearningPathCatalogItemResponse> response = userLearningService.getLearningPathCatalog(authentication.getName());
+        return ApiResponseUtil.success(response, SuccessCode.LEARNING_PATH_LISTED);
+    }
+
     @GetMapping("/roadmap")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<UserRoadmapResponse>> getActiveRoadmap(Authentication authentication) {
         UserRoadmapResponse response = userLearningService.getActiveRoadmap(authentication.getName());
         return ApiResponseUtil.success(response, SuccessCode.LEARNING_PATH_GET);
     }
 
     @GetMapping("/modules/{moduleId}/content")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<UserModuleContentResponse>> getModuleContent(
             Authentication authentication,
             @PathVariable Long moduleId
@@ -46,7 +58,7 @@ public class UserLearningController {
     }
 
     @PostMapping("/modules/{moduleId}/complete-or-unlock-next")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<ModuleUnlockResponse>> completeOrUnlockNext(
             Authentication authentication,
             @PathVariable Long moduleId,
