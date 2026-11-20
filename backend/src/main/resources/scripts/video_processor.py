@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
@@ -93,10 +94,37 @@ def classify_ytdlp_error(msg: str) -> str:
     return "EXTRACTION_FAILED"
 
 
-def apply_ytdlp_deploy_env(opts: Dict[str, Any]) -> Dict[str, Any]:
-    cookies_file = (os.environ.get("TOEIC_YTDLP_COOKIES") or "").strip()
-    if cookies_file and os.path.isfile(cookies_file):
-        opts["cookiefile"] = cookies_file
+def resolve_ytdlp_cookies_file() -> Optional[str]:
+    candidates = [
+        (os.environ.get("TOEIC_YTDLP_COOKIES") or "").strip(),
+        (os.environ.get("TOEIC_YTDLP_COOKIES_FILE") or "").strip(),
+        "/app/data/youtube_cookies.txt",
+        "/opt/toeic/data/youtube_cookies.txt",
+        os.path.join("data", "youtube_cookies.txt"),
+        "youtube_cookies.txt",
+    ]
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+            return candidate
+    return None
+
+
+def make_temp_cookies_copy(cookies_src: Optional[str]) -> Optional[str]:
+    if not cookies_src:
+        return None
+    try:
+        fd, tmp_path = tempfile.mkstemp(prefix="yt_cookies_", suffix=".txt")
+        os.close(fd)
+        shutil.copyfile(cookies_src, tmp_path)
+        return tmp_path
+    except Exception:
+        return cookies_src
+
+
+def apply_ytdlp_deploy_env(opts: Dict[str, Any], cookie_path: Optional[str] = None) -> Dict[str, Any]:
+    effective_cookies = cookie_path or resolve_ytdlp_cookies_file()
+    if effective_cookies and os.path.isfile(effective_cookies):
+        opts["cookiefile"] = effective_cookies
     proxy_url = (os.environ.get("TOEIC_YTDLP_PROXY") or "").strip()
     if proxy_url:
         opts["proxy"] = proxy_url
@@ -108,55 +136,95 @@ def extract_ytdlp_info(url: str, allow_playlist: bool = False) -> Dict[str, Any]
 
     canonical = normalize_media_url(url)
     last_err = None
-    client_profiles = [
-        ["android", "web"],
-        ["tv_embedded"],
-        ["ios"],
-        None,
-    ]
-    for profile in client_profiles:
-        opts: Dict[str, Any] = apply_ytdlp_deploy_env({
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": not allow_playlist,
-            "skip_download": True,
-            "socket_timeout": 12,
-        })
-        if profile is not None:
-            opts["extractor_args"] = {"youtube": {"player_client": profile, "skip": ["dash", "hls"]}}
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(canonical, download=False)
-            if info and "entries" in info and info["entries"]:
-                info = info["entries"][0]
-            if info:
-                return info
-        except Exception as exc:
-            last_err = str(exc)
-            code = classify_ytdlp_error(last_err)
-            if code in ("PRIVATE_OR_DRM", "VIDEO_UNAVAILABLE"):
-                raise RuntimeError(f"{code}:{last_err}") from exc
-    raise RuntimeError(f"{classify_ytdlp_error(str(last_err))}:{last_err}")
+    cookies_src = resolve_ytdlp_cookies_file()
+    temp_cookies = make_temp_cookies_copy(cookies_src)
+    client_profiles = (
+        [None, ["web"], ["mweb"], ["tv_embedded"], ["android", "web"]]
+        if temp_cookies
+        else [["android", "web"], ["tv_embedded"], ["ios"], None]
+    )
+    try:
+        for profile in client_profiles:
+            opts: Dict[str, Any] = apply_ytdlp_deploy_env({
+                "quiet": True,
+                "no_warnings": True,
+                "noplaylist": not allow_playlist,
+                "skip_download": True,
+                "socket_timeout": 12,
+            }, temp_cookies)
+            if profile is not None:
+                opts["extractor_args"] = {"youtube": {"player_client": profile, "skip": ["dash", "hls"]}}
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(canonical, download=False)
+                if info and "entries" in info and info["entries"]:
+                    info = info["entries"][0]
+                if info:
+                    return info
+            except Exception as exc:
+                last_err = str(exc)
+                code = classify_ytdlp_error(last_err)
+                if code == "VIDEO_UNAVAILABLE" or (not temp_cookies and code == "PRIVATE_OR_DRM"):
+                    raise RuntimeError(f"{code}:{last_err}") from exc
+        raise RuntimeError(f"{classify_ytdlp_error(str(last_err))}:{last_err}")
+    finally:
+        if temp_cookies and temp_cookies != cookies_src and os.path.isfile(temp_cookies):
+            try:
+                os.remove(temp_cookies)
+            except OSError:
+                pass
+
+
+def _is_muxed_video_audio(fmt: Dict[str, Any]) -> bool:
+    vcodec = str(fmt.get("vcodec") or "").strip().lower()
+    acodec = str(fmt.get("acodec") or "").strip().lower()
+    return bool(fmt.get("url")) and bool(vcodec) and vcodec != "none" and bool(acodec) and acodec != "none"
 
 
 def pick_best_progressive_mp4_url(info: Dict[str, Any]) -> Optional[str]:
+    """Select a muxed (video + audio) stream URL compatible with mobile ExoPlayer/AVPlayer."""
     formats = info.get("formats") or []
-    progressive = [
+    progressive_mp4 = [
         f
         for f in formats
-        if f.get("url")
-        and f.get("ext") == "mp4"
-        and f.get("vcodec") not in (None, "none")
-        and f.get("acodec") not in (None, "none")
+        if _is_muxed_video_audio(f)
+        and str(f.get("ext") or "").lower() == "mp4"
+        and "m3u8" not in str(f.get("protocol") or "").lower()
     ]
-    if progressive:
-        progressive.sort(key=lambda f: (f.get("height") or 0, f.get("tbr") or 0), reverse=True)
-        return progressive[0].get("url")
+    if progressive_mp4:
+        # Prefer <=720p H.264 + AAC progressive MP4 for reliable hardware decoding and instant startup
+        progressive_mp4.sort(
+            key=lambda f: (
+                1 if "avc" in str(f.get("vcodec") or "").lower() or "h264" in str(f.get("vcodec") or "").lower() else 0,
+                1 if (f.get("height") or 0) <= 720 else 0,
+                f.get("height") or 0,
+                f.get("tbr") or 0,
+            ),
+            reverse=True,
+        )
+        return progressive_mp4[0].get("url")
 
-    # Fallback: best combined url if direct mp4 not listed
+    # Fallback 1: any progressive combined (video + audio) non-HLS format
+    progressive_any = [
+        f
+        for f in formats
+        if _is_muxed_video_audio(f)
+        and "m3u8" not in str(f.get("protocol") or "").lower()
+    ]
+    if progressive_any:
+        progressive_any.sort(key=lambda f: (f.get("height") or 0, f.get("tbr") or 0), reverse=True)
+        return progressive_any[0].get("url")
+
+    # Fallback 2: top-level info URL ONLY if it contains both video and audio
     direct_url = info.get("url")
-    if direct_url and not str(direct_url).endswith(".m3u8"):
+    if direct_url and _is_muxed_video_audio(info) and not str(direct_url).endswith(".m3u8"):
         return direct_url
+
+    # Fallback 3: combined muxed HLS stream
+    hls_muxed = [f for f in formats if _is_muxed_video_audio(f)]
+    if hls_muxed:
+        hls_muxed.sort(key=lambda f: (f.get("height") or 0, f.get("tbr") or 0), reverse=True)
+        return hls_muxed[0].get("url")
     return None
 
 
@@ -473,27 +541,41 @@ def cmd_prepare_audio(args: argparse.Namespace) -> Dict[str, Any]:
         else:
             last_err = None
             source_file = ""
-            for profile in (["android", "web"], ["tv_embedded"], ["ios"], None):
-                opts: Dict[str, Any] = apply_ytdlp_deploy_env({
-                    "format": "bestaudio[ext=m4a]/bestaudio/best",
-                    "outtmpl": out_tmpl,
-                    "noplaylist": True,
-                    "quiet": True,
-                    "no_warnings": True,
-                    "concurrent_fragment_downloads": 4,
-                    "socket_timeout": 15,
-                })
-                if profile is not None:
-                    opts["extractor_args"] = {"youtube": {"player_client": profile}}
-                try:
-                    with yt_dlp.YoutubeDL(opts) as ydl:
-                        ydl.download([normalize_media_url(raw_url)])
-                    found = list(workdir.glob("downloaded_audio.*"))
-                    if found:
-                        source_file = str(found[0])
-                        break
-                except Exception as exc:
-                    last_err = str(exc)
+            cookies_src = resolve_ytdlp_cookies_file()
+            temp_cookies = make_temp_cookies_copy(cookies_src)
+            dl_profiles = (
+                (None, ["web"], ["mweb"], ["tv_embedded"], ["android", "web"])
+                if temp_cookies
+                else (["android", "web"], ["tv_embedded"], ["ios"], None)
+            )
+            try:
+                for profile in dl_profiles:
+                    opts: Dict[str, Any] = apply_ytdlp_deploy_env({
+                        "format": "bestaudio[ext=m4a]/bestaudio/best",
+                        "outtmpl": out_tmpl,
+                        "noplaylist": True,
+                        "quiet": True,
+                        "no_warnings": True,
+                        "concurrent_fragment_downloads": 4,
+                        "socket_timeout": 15,
+                    }, temp_cookies)
+                    if profile is not None:
+                        opts["extractor_args"] = {"youtube": {"player_client": profile}}
+                    try:
+                        with yt_dlp.YoutubeDL(opts) as ydl:
+                            ydl.download([normalize_media_url(raw_url)])
+                        found = list(workdir.glob("downloaded_audio.*"))
+                        if found:
+                            source_file = str(found[0])
+                            break
+                    except Exception as exc:
+                        last_err = str(exc)
+            finally:
+                if temp_cookies and temp_cookies != cookies_src and os.path.isfile(temp_cookies):
+                    try:
+                        os.remove(temp_cookies)
+                    except OSError:
+                        pass
             if not source_file:
                 raise RuntimeError(f"AUDIO_DOWNLOAD_FAILED:{last_err}")
 
