@@ -2,5 +2,14 @@ toeic-trainer-api.koreacentral.cloudapp.azure.com {
     request_body {
         max_size 1GB
     }
-    reverse_proxy backend:8080
+
+    handle /api/* {
+        reverse_proxy backend:8080
+    }
+
+    handle {
+        root * /srv/web
+        try_files {path} {path}/index.html {path}.html /index.html
+        file_server
+    }
 }

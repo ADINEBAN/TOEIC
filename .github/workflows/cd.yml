@@ -14,7 +14,26 @@ jobs:
     name: Deploy main to Azure VPS
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy via SSH and Docker Compose
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Export Expo Web static bundle (Admin + Web Portal)
+        working-directory: frontend
+        env:
+          EXPO_PUBLIC_API_BASE_URL: https://toeic-trainer-api.koreacentral.cloudapp.azure.com
+        run: |
+          npm ci
+          npx expo export --platform web
+          tar -C dist -czf /tmp/toeic-web.tar.gz .
+
+      - name: Deploy Backend + Static Web via SSH and Docker Compose
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -24,13 +43,22 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes /tmp/toeic-web.tar.gz "$VPS_USER@$VPS_HOST:/tmp/toeic-web.tar.gz"
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" << 'EOF'
             set -euo pipefail
+            rm -rf /opt/toeic/web_next
+            mkdir -p /opt/toeic/web /opt/toeic/web_next
+            tar -xzf /tmp/toeic-web.tar.gz -C /opt/toeic/web_next
+            find /opt/toeic/web -mindepth 1 -delete
+            cp -a /opt/toeic/web_next/. /opt/toeic/web/
+            rm -rf /opt/toeic/web_next /tmp/toeic-web.tar.gz
+
             cd /opt/toeic/app
             git fetch origin main
             git checkout main
             git reset --hard origin/main
             docker compose --env-file /opt/toeic/.env up -d --build
+            docker compose --env-file /opt/toeic/.env restart caddy
             docker image prune -f
           EOF
-          rm -f ~/.ssh/deploy_key
+          rm -f ~/.ssh/deploy_key /tmp/toeic-web.tar.gz
