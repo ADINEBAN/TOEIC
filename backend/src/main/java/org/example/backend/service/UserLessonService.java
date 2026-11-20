@@ -49,7 +49,12 @@ public class UserLessonService {
         Map<Long, UserVideoProgress> progressByLessonId = userVideoProgressRepository
                 .findByUserIdAndLessonIdIn(user.getId(), lessonIds)
                 .stream()
-                .collect(Collectors.toMap(progress -> progress.getLesson().getId(), Function.identity()));
+                .filter(progress -> progress != null && progress.getLesson() != null && progress.getLesson().getId() != null)
+                .collect(Collectors.toMap(
+                        progress -> progress.getLesson().getId(),
+                        Function.identity(),
+                        (existing, replacement) -> replacement
+                ));
 
         return lessons.stream()
                 .map(lesson -> userLessonMapper.toResponse(lesson, progressByLessonId.get(lesson.getId())))
