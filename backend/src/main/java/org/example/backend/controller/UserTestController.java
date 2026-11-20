@@ -9,7 +9,7 @@ import org.example.backend.dto.response.TestAttemptResponse;
 import org.example.backend.dto.response.UserTestLeaderboardResponse;
 import org.example.backend.dto.response.TestResponse;
 import org.example.backend.enums.SuccessCode;
-import org.example.backend.service.GeminiAIService;
+import org.example.backend.service.OpenAIAnswerExplainService;
 import org.example.backend.service.UserTestService;
 import org.example.backend.util.ApiResponseUtil;
 import org.springframework.http.ResponseEntity;
@@ -21,12 +21,12 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/users/tests")
-@PreAuthorize("hasRole('USER')")
+@PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
 @RequiredArgsConstructor
 public class UserTestController {
 
     private final UserTestService userTestService;
-    private final GeminiAIService geminiAIService;
+    private final OpenAIAnswerExplainService openAIAnswerExplainService;
 
     @GetMapping("/published")
     public ResponseEntity<ApiResponse<List<TestResponse>>> getPublishedTests() {
@@ -35,8 +35,11 @@ public class UserTestController {
     }
 
     @GetMapping("/{testId}")
-    public ResponseEntity<ApiResponse<TestResponse>> getTestById(@PathVariable Long testId) {
-        TestResponse response = userTestService.getTestById(testId);
+    public ResponseEntity<ApiResponse<TestResponse>> getTestById(
+            Authentication authentication,
+            @PathVariable Long testId
+    ) {
+        TestResponse response = userTestService.getTestById(authentication.getName(), testId);
         return ApiResponseUtil.success(response, SuccessCode.TEST_GET);
     }
 
@@ -83,7 +86,7 @@ public class UserTestController {
     @PostMapping("/questions/explain")
     public ResponseEntity<ApiResponse<AIExplainResponse>> askAIExplain(@RequestBody AskAIExplainRequest request) {
         String type = request.getType() != null ? request.getType() : "BOTH";
-        AIExplainResponse response = geminiAIService.explainQuestion(
+        AIExplainResponse response = openAIAnswerExplainService.explainQuestion(
                 request.getTestPartQuestionId(),
                 request.getSelectedAnswer(),
                 type
