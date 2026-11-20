@@ -418,7 +418,76 @@ def merge_caption_cues_to_sentences(raw_cues: List[Tuple[float, float, str]]) ->
     return merged
 
 
-def fetch_raw_youtube_captions(vid: Optional[str]) -> Tuple[List[Dict[str, Any]], str]:
+def _parse_json3_subtitles(raw_json3: str) -> List[Tuple[float, float, str]]:
+    try:
+        payload = json.loads(raw_json3)
+    except Exception:
+        return []
+    events = payload.get("events") if isinstance(payload, dict) else None
+    if not isinstance(events, list):
+        return []
+    cues: List[Tuple[float, float, str]] = []
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        segs = ev.get("segs")
+        if not isinstance(segs, list):
+            continue
+        txt = "".join(str(s.get("utf8") or "") for s in segs if isinstance(s, dict)).strip()
+        if not txt or txt == "\n":
+            continue
+        start_ms = float(ev.get("tStartMs") or 0)
+        dur_ms = float(ev.get("dDurationMs") or 2000)
+        cues.append((start_ms / 1000.0, max(0.3, dur_ms / 1000.0), txt))
+    return cues
+
+
+def fetch_captions_from_ytdlp_info(info: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], str]:
+    subtitles = info.get("subtitles") or {}
+    auto_caps = info.get("automatic_captions") or {}
+    track_list = None
+    engine = "YTDLP_SUBTITLES"
+    for bucket, eng_name in ((subtitles, "YTDLP_SUBTITLES"), (auto_caps, "YTDLP_AUTO_CAPTIONS")):
+        if not isinstance(bucket, dict):
+            continue
+        for key in ("en", "en-US", "en-GB", "en-orig"):
+            if key in bucket and isinstance(bucket[key], list):
+                track_list = bucket[key]
+                engine = eng_name
+                break
+        if track_list is None:
+            for k, v in bucket.items():
+                if str(k).lower().startswith("en") and isinstance(v, list):
+                    track_list = v
+                    engine = eng_name
+                    break
+        if track_list is not None:
+            break
+
+    if not track_list:
+        return [], "NO_CAPTIONS"
+
+    json3_url = None
+    for fmt in track_list:
+        if isinstance(fmt, dict) and str(fmt.get("ext") or "").lower() == "json3" and fmt.get("url"):
+            json3_url = str(fmt["url"])
+            break
+    if not json3_url:
+        return [], "NO_JSON3_CAPTIONS"
+
+    try:
+        req = urllib.request.Request(json3_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            raw = resp.read().decode("utf-8", errors="ignore")
+        cues = _parse_json3_subtitles(raw)
+        if not cues:
+            return [], "EMPTY_CAPTIONS"
+        return merge_caption_cues_to_sentences(cues), engine
+    except Exception:
+        return [], "CAPTION_DOWNLOAD_FAILED"
+
+
+def fetch_raw_youtube_captions(vid: Optional[str], canonical_url: Optional[str] = None) -> Tuple[List[Dict[str, Any]], str]:
     if not vid:
         return [], "NOT_YOUTUBE"
 
@@ -448,8 +517,22 @@ def fetch_raw_youtube_captions(vid: Optional[str]) -> Tuple[List[Dict[str, Any]]
     except Exception:
         raw_cues = []
 
-    segments = merge_caption_cues_to_sentences(raw_cues)
-    return segments, source_engine
+    if raw_cues:
+        segments = merge_caption_cues_to_sentences(raw_cues)
+        if segments:
+            return segments, source_engine
+
+    # Fallback via authenticated yt-dlp subtitles when cloud IP blocks youtube_transcript_api
+    if canonical_url:
+        try:
+            info = extract_ytdlp_info(canonical_url, allow_playlist=False)
+            segs, eng = fetch_captions_from_ytdlp_info(info)
+            if segs:
+                return segs, eng
+        except Exception:
+            pass
+
+    return [], "NO_CAPTIONS"
 
 
 def cmd_fetch_captions(args: argparse.Namespace) -> Dict[str, Any]:
@@ -458,7 +541,7 @@ def cmd_fetch_captions(args: argparse.Namespace) -> Dict[str, Any]:
     if not vid:
         return {"available": False, "complete": False, "segments": [], "reason": "NOT_YOUTUBE"}
 
-    segments, source_engine = fetch_raw_youtube_captions(vid)
+    segments, source_engine = fetch_raw_youtube_captions(vid, args.url)
     if not segments:
         return {"available": False, "complete": False, "segments": [], "reason": "NO_CAPTIONS"}
 
@@ -482,13 +565,20 @@ def cmd_metadata_and_captions(args: argparse.Namespace) -> Dict[str, Any]:
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         meta_future = pool.submit(cmd_metadata, args)
-        cap_future = pool.submit(fetch_raw_youtube_captions, vid) if (vid and not skip_captions) else None
+        cap_future = pool.submit(fetch_raw_youtube_captions, vid, None) if (vid and not skip_captions) else None
 
         meta = meta_future.result()
         segments: List[Dict[str, Any]] = []
         source_engine = "NO_CAPTIONS"
         if cap_future is not None:
             segments, source_engine = cap_future.result()
+
+    if not segments and vid and not skip_captions:
+        try:
+            info = extract_ytdlp_info(raw_url, allow_playlist=getattr(args, "allow_playlist", False))
+            segments, source_engine = fetch_captions_from_ytdlp_info(info)
+        except Exception:
+            pass
 
     expected_duration = max(0, int(meta.get("durationSeconds") or 0))
     if segments:
@@ -728,7 +818,9 @@ def cmd_transcribe_chunk(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def main() -> None:
-    sys.stdout.reconfigure(encoding="utf-8")
+    real_stdout = sys.stdout
+    real_stdout.reconfigure(encoding="utf-8")
+    sys.stdout = sys.stderr
     parser = argparse.ArgumentParser(description="TOEIC Video & Audio Processing Bridge")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -773,9 +865,11 @@ def main() -> None:
             res = cmd_transcribe_chunk(args)
         else:
             raise ValueError(f"Unknown command: {args.cmd}")
-        print(json.dumps(res, ensure_ascii=False))
+        real_stdout.write(json.dumps(res, ensure_ascii=False) + "\n")
+        real_stdout.flush()
     except Exception as exc:
-        print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+        real_stdout.write(json.dumps({"error": str(exc)}, ensure_ascii=False) + "\n")
+        real_stdout.flush()
         sys.exit(1)
 
 

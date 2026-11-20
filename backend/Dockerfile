@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
     && /opt/venv/bin/pip install --no-cache-dir \
-        "yt-dlp[default]" youtube-transcript-api pillow rapidocr-onnxruntime imageio-ffmpeg \
+        "yt-dlp[default]" youtube-transcript-api pillow rapidocr-onnxruntime imageio-ffmpeg faster-whisper \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/opt/venv/bin:${PATH}"
