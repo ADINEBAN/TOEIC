@@ -15,12 +15,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
     && /opt/venv/bin/pip install --no-cache-dir \
-        yt-dlp youtube-transcript-api pillow rapidocr-onnxruntime \
+        yt-dlp youtube-transcript-api pillow rapidocr-onnxruntime imageio-ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/opt/venv/bin:${PATH}"
 
 COPY --from=build /app/target/*.jar app.jar
+COPY scripts ./scripts
 RUN mkdir -p /app/data/uploads/videos /app/data/uploads/avatars
 
 EXPOSE 8080

@@ -87,6 +87,5 @@ Thumbs.db
 
 /.agents/
 /backend/data/
-/backend/scripts/
 **/__pycache__/
 *.pyc
