@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
@@ -93,40 +94,85 @@ def classify_ytdlp_error(msg: str) -> str:
     return "EXTRACTION_FAILED"
 
 
+def resolve_ytdlp_cookies_file() -> Optional[str]:
+    candidates = [
+        (os.environ.get("TOEIC_YTDLP_COOKIES") or "").strip(),
+        (os.environ.get("TOEIC_YTDLP_COOKIES_FILE") or "").strip(),
+        "/app/data/youtube_cookies.txt",
+        "/opt/toeic/data/youtube_cookies.txt",
+        os.path.join("data", "youtube_cookies.txt"),
+        "youtube_cookies.txt",
+    ]
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+            return candidate
+    return None
+
+
+def make_temp_cookies_copy(cookies_src: Optional[str]) -> Optional[str]:
+    if not cookies_src:
+        return None
+    try:
+        fd, tmp_path = tempfile.mkstemp(prefix="yt_cookies_", suffix=".txt")
+        os.close(fd)
+        shutil.copyfile(cookies_src, tmp_path)
+        return tmp_path
+    except Exception:
+        return cookies_src
+
+
+def apply_ytdlp_deploy_env(opts: Dict[str, Any], cookie_path: Optional[str] = None) -> Dict[str, Any]:
+    effective_cookies = cookie_path or resolve_ytdlp_cookies_file()
+    if effective_cookies and os.path.isfile(effective_cookies):
+        opts["cookiefile"] = effective_cookies
+    proxy_url = (os.environ.get("TOEIC_YTDLP_PROXY") or "").strip()
+    if proxy_url:
+        opts["proxy"] = proxy_url
+    return opts
+
+
 def extract_ytdlp_info(url: str, allow_playlist: bool = False) -> Dict[str, Any]:
     import yt_dlp
 
     canonical = normalize_media_url(url)
     last_err = None
-    client_profiles = [
-        ["android", "web"],
-        ["tv_embedded"],
-        ["ios"],
-        None,
-    ]
-    for profile in client_profiles:
-        opts: Dict[str, Any] = {
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": not allow_playlist,
-            "skip_download": True,
-            "socket_timeout": 12,
-        }
-        if profile is not None:
-            opts["extractor_args"] = {"youtube": {"player_client": profile, "skip": ["dash", "hls"]}}
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(canonical, download=False)
-            if info and "entries" in info and info["entries"]:
-                info = info["entries"][0]
-            if info:
-                return info
-        except Exception as exc:
-            last_err = str(exc)
-            code = classify_ytdlp_error(last_err)
-            if code in ("PRIVATE_OR_DRM", "VIDEO_UNAVAILABLE"):
-                raise RuntimeError(f"{code}:{last_err}") from exc
-    raise RuntimeError(f"{classify_ytdlp_error(str(last_err))}:{last_err}")
+    cookies_src = resolve_ytdlp_cookies_file()
+    temp_cookies = make_temp_cookies_copy(cookies_src)
+    client_profiles = (
+        [None, ["web"], ["mweb"], ["tv_embedded"], ["android", "web"]]
+        if temp_cookies
+        else [["android", "web"], ["tv_embedded"], ["ios"], None]
+    )
+    try:
+        for profile in client_profiles:
+            opts: Dict[str, Any] = apply_ytdlp_deploy_env({
+                "quiet": True,
+                "no_warnings": True,
+                "noplaylist": not allow_playlist,
+                "skip_download": True,
+                "socket_timeout": 12,
+            }, temp_cookies)
+            if profile is not None:
+                opts["extractor_args"] = {"youtube": {"player_client": profile, "skip": ["dash", "hls"]}}
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(canonical, download=False)
+                if info and "entries" in info and info["entries"]:
+                    info = info["entries"][0]
+                if info:
+                    return info
+            except Exception as exc:
+                last_err = str(exc)
+                code = classify_ytdlp_error(last_err)
+                if code == "VIDEO_UNAVAILABLE" or (not temp_cookies and code == "PRIVATE_OR_DRM"):
+                    raise RuntimeError(f"{code}:{last_err}") from exc
+        raise RuntimeError(f"{classify_ytdlp_error(str(last_err))}:{last_err}")
+    finally:
+        if temp_cookies and temp_cookies != cookies_src and os.path.isfile(temp_cookies):
+            try:
+                os.remove(temp_cookies)
+            except OSError:
+                pass
 
 
 def _is_muxed_video_audio(fmt: Dict[str, Any]) -> bool:
@@ -495,27 +541,41 @@ def cmd_prepare_audio(args: argparse.Namespace) -> Dict[str, Any]:
         else:
             last_err = None
             source_file = ""
-            for profile in (["android", "web"], ["tv_embedded"], ["ios"], None):
-                opts: Dict[str, Any] = {
-                    "format": "bestaudio[ext=m4a]/bestaudio/best",
-                    "outtmpl": out_tmpl,
-                    "noplaylist": True,
-                    "quiet": True,
-                    "no_warnings": True,
-                    "concurrent_fragment_downloads": 4,
-                    "socket_timeout": 15,
-                }
-                if profile is not None:
-                    opts["extractor_args"] = {"youtube": {"player_client": profile}}
-                try:
-                    with yt_dlp.YoutubeDL(opts) as ydl:
-                        ydl.download([normalize_media_url(raw_url)])
-                    found = list(workdir.glob("downloaded_audio.*"))
-                    if found:
-                        source_file = str(found[0])
-                        break
-                except Exception as exc:
-                    last_err = str(exc)
+            cookies_src = resolve_ytdlp_cookies_file()
+            temp_cookies = make_temp_cookies_copy(cookies_src)
+            dl_profiles = (
+                (None, ["web"], ["mweb"], ["tv_embedded"], ["android", "web"])
+                if temp_cookies
+                else (["android", "web"], ["tv_embedded"], ["ios"], None)
+            )
+            try:
+                for profile in dl_profiles:
+                    opts: Dict[str, Any] = apply_ytdlp_deploy_env({
+                        "format": "bestaudio[ext=m4a]/bestaudio/best",
+                        "outtmpl": out_tmpl,
+                        "noplaylist": True,
+                        "quiet": True,
+                        "no_warnings": True,
+                        "concurrent_fragment_downloads": 4,
+                        "socket_timeout": 15,
+                    }, temp_cookies)
+                    if profile is not None:
+                        opts["extractor_args"] = {"youtube": {"player_client": profile}}
+                    try:
+                        with yt_dlp.YoutubeDL(opts) as ydl:
+                            ydl.download([normalize_media_url(raw_url)])
+                        found = list(workdir.glob("downloaded_audio.*"))
+                        if found:
+                            source_file = str(found[0])
+                            break
+                    except Exception as exc:
+                        last_err = str(exc)
+            finally:
+                if temp_cookies and temp_cookies != cookies_src and os.path.isfile(temp_cookies):
+                    try:
+                        os.remove(temp_cookies)
+                    except OSError:
+                        pass
             if not source_file:
                 raise RuntimeError(f"AUDIO_DOWNLOAD_FAILED:{last_err}")
 
