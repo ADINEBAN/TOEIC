@@ -27,7 +27,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install Python media dependencies
-        run: pip install --no-cache-dir imageio-ffmpeg yt-dlp youtube-transcript-api pillow
+        run: pip install --no-cache-dir imageio-ffmpeg yt-dlp youtube-transcript-api pillow rapidocr-onnxruntime
 
       - name: Verify project config & run Service Unit Tests
         working-directory: backend
