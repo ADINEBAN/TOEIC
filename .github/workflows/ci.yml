@@ -8,7 +8,7 @@ on:
 
 jobs:
   backend-unit-tests:
-    name: Backend Compile & Unit Tests (JDK 17 + Maven)
+    name: Backend Unit Tests (JUnit + Mockito)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -26,10 +26,10 @@ jobs:
         run: |
           test -f pom.xml
           chmod +x mvnw
-          ./mvnw -B "-Dtest=*ServiceTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
+          ./mvnw -B "-Dtest=*ServiceTest,*PipelineTest,*FlowTest,*ChatTest,Sprint6CoreServicesTest,VideoLearningEngineTest" test
 
   frontend-quality:
-    name: Frontend TypeScript Check (Node 22)
+    name: Frontend TypeScript & ESLint Check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -42,9 +42,10 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install frontend dependencies & run TypeScript check
+      - name: Install frontend dependencies & run typecheck
         working-directory: frontend
         run: |
           test -f package.json
           npm ci
           npx tsc --noEmit
+          npx eslint src/components/user/QuestionMediaBlock.tsx src/pages/user/MistakeBankScreen.tsx src/pages/user/ArenaScreen.tsx src/pages/user/NotebookScreen.tsx src/pages/user/LessonScreen.tsx src/pages/user/ExamScreen.tsx src/pages/user/AttemptReviewScreen.tsx src/pages/user/PracticeAttemptReviewScreen.tsx src/pages/user/TestHubScreen.tsx src/pages/user/CardsScreen.tsx src/pages/user/ProfileScreen.tsx
