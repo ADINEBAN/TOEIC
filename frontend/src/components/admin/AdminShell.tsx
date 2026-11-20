@@ -6,8 +6,6 @@ import { colors } from '@/src/assets/styles/theme';
 export default function AdminShell({ children }: { children: ReactNode }) {
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.backgroundBand} />
-      <View style={styles.backgroundPanel} />
       <View style={styles.backgroundGlow} />
       <View style={styles.backgroundGlowSecondary} />
       <View style={styles.accentLine} />
@@ -19,57 +17,39 @@ export default function AdminShell({ children }: { children: ReactNode }) {
 const styles = StyleSheet.create({
   page: {
     flex: 1,
-    paddingHorizontal: 28,
-    paddingTop: 18,
-    paddingBottom: 28,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 24,
   },
   safeArea: {
     backgroundColor: colors.background,
     flex: 1,
   },
   accentLine: {
-    backgroundColor: '#22C7A9',
+    backgroundColor: colors.primary,
     height: 3,
-    left: 28,
-    opacity: 0.9,
-    position: 'absolute',
-    right: 28,
-    top: 0,
-  },
-  backgroundBand: {
-    backgroundColor: '#0C1A2F',
-    height: 250,
     left: 0,
+    opacity: 0.9,
     position: 'absolute',
     right: 0,
     top: 0,
   },
   backgroundGlow: {
-    backgroundColor: 'rgba(89,166,255,0.12)',
-    borderRadius: 240,
-    height: 260,
-    left: -100,
+    backgroundColor: 'rgba(37, 99, 235, 0.06)',
+    borderRadius: 360,
+    height: 360,
+    left: -120,
     position: 'absolute',
-    top: 70,
-    width: 260,
+    top: -90,
+    width: 360,
   },
   backgroundGlowSecondary: {
-    backgroundColor: 'rgba(34,199,169,0.1)',
-    borderRadius: 240,
-    height: 240,
+    backgroundColor: 'rgba(5, 150, 105, 0.05)',
+    borderRadius: 320,
+    bottom: -100,
+    height: 320,
     position: 'absolute',
-    right: -80,
-    top: 180,
-    width: 240,
-  },
-  backgroundPanel: {
-    backgroundColor: 'rgba(8,17,31,0.76)',
-    borderBottomColor: '#1B2C45',
-    borderBottomWidth: 1,
-    height: 160,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 250,
+    right: -100,
+    width: 320,
   },
 });

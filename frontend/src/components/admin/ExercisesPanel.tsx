@@ -23,11 +23,11 @@ export default function ExercisesPanel({
 }: ExercisesPanelProps) {
   return (
     <View>
-      <Text style={styles.title}>Manage Lesson Exercises</Text>
+      <Text style={styles.title}>Quản lý bài tập thực hành</Text>
       <Text style={styles.subTitle}>
         {loading
-          ? 'Dang tai du lieu exercises...'
-          : `${exercises.length} practice set(s) trong module nay`}
+          ? 'Đang tải danh sách bài tập...'
+          : `${exercises.length} bộ bài tập trong mô-đun này`}
       </Text>
 
       <Pressable
@@ -35,18 +35,18 @@ export default function ExercisesPanel({
         onPress={onCreate}
         style={styles.primaryAction}
       >
-        <Ionicons color={colors.surface} name="add" size={22} />
+        <Ionicons color={colors.onPrimary} name="add" size={20} />
         <Text style={styles.primaryActionText}>
-          {working ? 'Dang xu ly...' : 'Add New Exercise'}
+          {working ? 'Đang xử lý...' : 'Thêm bài tập mới'}
         </Text>
       </Pressable>
 
       <View style={styles.table}>
         <View style={styles.tableHeader}>
-          <Text style={[styles.headerCell, styles.typeCell]}>Type</Text>
-          <Text style={[styles.headerCell, styles.titleCell]}>Title</Text>
-          <Text style={[styles.headerCell, styles.qsCell]}>Qs</Text>
-          <Text style={[styles.headerCell, styles.actionsCell]}>Actions</Text>
+          <Text style={[styles.headerCell, styles.typeCell]}>Loại</Text>
+          <Text style={[styles.headerCell, styles.titleCell]}>Tiêu đề</Text>
+          <Text style={[styles.headerCell, styles.qsCell]}>Part</Text>
+          <Text style={[styles.headerCell, styles.actionsCell]}>Thao tác</Text>
         </View>
 
         {exercises.map((exercise) => (
@@ -61,17 +61,17 @@ export default function ExercisesPanel({
                 disabled={working}
                 hitSlop={8}
                 onPress={() => onEdit(exercise)}
-                style={styles.iconButton}
+                style={styles.editBtn}
               >
-                <Ionicons color={colors.textMuted} name="create-outline" size={18} />
+                <Ionicons color={colors.primary} name="create-outline" size={16} />
               </Pressable>
               <Pressable
                 disabled={working}
                 hitSlop={8}
                 onPress={() => onDelete(exercise)}
-                style={styles.iconButton}
+                style={styles.deleteBtn}
               >
-                <Ionicons color={colors.textMuted} name="trash-outline" size={18} />
+                <Ionicons color={colors.danger} name="trash-outline" size={16} />
               </Pressable>
             </View>
           </View>
@@ -79,7 +79,7 @@ export default function ExercisesPanel({
 
         {!loading && exercises.length === 0 ? (
           <View style={styles.tableRow}>
-            <Text style={styles.emptyText}>Chua co practice set trong module nay.</Text>
+            <Text style={styles.emptyText}>Chưa có bài tập nào trong mô-đun này.</Text>
           </View>
         ) : null}
       </View>
@@ -91,79 +91,95 @@ const styles = StyleSheet.create({
   actionRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
   },
   actionsCell: {
     flex: 0.8,
     justifyContent: 'flex-end',
   },
   cell: {
-    color: colors.text,
-    fontSize: 14,
+    color: colors.textSecondary,
+    fontSize: 13.5,
+  },
+  deleteBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.dangerSoft,
+    borderColor: '#FECACA',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  editBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderColor: '#BFDBFE',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
   },
   emptyText: {
     color: colors.textMuted,
-    fontSize: 14,
+    fontSize: 13.5,
   },
   headerCell: {
-    color: colors.text,
-    fontSize: 14,
+    color: colors.textMuted,
+    fontSize: 11.5,
     fontWeight: '800',
-  },
-  iconButton: {
-    padding: 2,
+    textTransform: 'uppercase',
   },
   primaryAction: {
     alignItems: 'center',
-    backgroundColor: colors.primaryDark,
+    backgroundColor: colors.primary,
     borderRadius: 10,
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.xs,
     justifyContent: 'center',
     marginBottom: spacing.md,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    paddingVertical: 14,
+    paddingVertical: 12,
   },
   primaryActionText: {
-    color: colors.surface,
-    fontSize: 16,
-    fontWeight: '500',
+    color: colors.onPrimary,
+    fontSize: 14.5,
+    fontWeight: '700',
   },
   qsCell: {
     flex: 0.8,
-  },
-  table: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
-  tableHeader: {
-    backgroundColor: '#F5F7FA',
-    flexDirection: 'row',
-    paddingHorizontal: spacing.md,
-    paddingVertical: 14,
-  },
-  tableRow: {
-    alignItems: 'center',
-    borderTopColor: '#E7ECF2',
-    borderTopWidth: 1,
-    flexDirection: 'row',
-    paddingHorizontal: spacing.md,
-    paddingVertical: 14,
-  },
-  title: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: '600',
-    marginBottom: 4,
   },
   subTitle: {
     color: colors.textMuted,
     fontSize: 13,
     marginBottom: 12,
+  },
+  table: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  tableHeader: {
+    backgroundColor: colors.surfaceAlt,
+    flexDirection: 'row',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
+  tableRow: {
+    alignItems: 'center',
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
+  title: {
+    color: colors.text,
+    fontSize: 19,
+    fontWeight: '800',
+    marginBottom: 4,
   },
   titleCell: {
     flex: 1.6,

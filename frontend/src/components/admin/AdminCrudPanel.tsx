@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -54,23 +54,62 @@ type AdminCrudPanelProps<T> = {
   working?: boolean;
 };
 
-const ACTION_COLUMN_WIDTH = 120;
+const ACTION_COLUMN_WIDTH = 118;
 
 function resolveColumnWidth(label: string, explicitWidth?: number) {
   if (explicitWidth) return explicitWidth;
 
   const normalized = label.toLowerCase();
 
-  if (normalized === "id") return 88;
-  if (["part", "sort", "order", "active", "free"].includes(normalized)) return 112;
-  if (normalized.includes("id")) return 116;
-  if (normalized.includes("question")) return 420;
-  if (normalized.includes("description") || normalized.includes("content")) return 360;
-  if (normalized.includes("title") || normalized.includes("name")) return 260;
-  if (normalized.includes("source") || normalized.includes("type") || normalized.includes("status")) return 160;
-  if (normalized.includes("url")) return 320;
+  if (normalized === "id") return 76;
+  if (["no.", "part", "sort", "order", "active", "free", "published", "target", "duration"].includes(normalized)) {
+    return 108;
+  }
+  if (normalized.includes("id")) return 108;
+  if (normalized.includes("question")) return 380;
+  if (normalized.includes("description") || normalized.includes("content")) return 320;
+  if (normalized.includes("title") || normalized.includes("name")) return 240;
+  if (normalized.includes("source") || normalized.includes("type") || normalized.includes("status")) return 150;
+  if (normalized.includes("url")) return 280;
 
-  return 180;
+  return 165;
+}
+
+function getStatusBadgeTone(rawValue: string) {
+  const normalized = rawValue.trim().toUpperCase();
+  if (["YES", "PUBLISHED", "ACTIVE", "TRUE", "REQUIRED"].includes(normalized)) {
+    return {
+      bg: colors.successSoft,
+      border: "#BBF7D0",
+      text: "#15803D",
+      label: normalized === "YES" ? "Đang bật" : rawValue,
+    };
+  }
+  if (["NO", "DRAFT", "INACTIVE", "FALSE", "OPTIONAL"].includes(normalized)) {
+    return {
+      bg: "#F1F5F9",
+      border: "#CBD5E1",
+      text: "#475569",
+      label: normalized === "NO" ? "Tạm tắt" : rawValue,
+    };
+  }
+  if (["BLOCKED", "FAILED", "DISABLED"].includes(normalized)) {
+    return {
+      bg: colors.dangerSoft,
+      border: "#FECACA",
+      text: colors.danger,
+      label: rawValue,
+    };
+  }
+  if (["ADMIN"].includes(normalized)) {
+    return {
+      bg: colors.primarySoft,
+      border: "#BFDBFE",
+      text: colors.primaryDark,
+      label: rawValue,
+    };
+  }
+  return null;
 }
 
 export default function AdminCrudPanel<T>({
@@ -84,7 +123,7 @@ export default function AdminCrudPanel<T>({
   onDelete,
   onRefresh,
   onUpdate,
-  pageSize = 6,
+  pageSize = 8,
   records,
   subtitle,
   title,
@@ -92,12 +131,24 @@ export default function AdminCrudPanel<T>({
 }: AdminCrudPanelProps<T>) {
   const [editingItem, setEditingItem] = useState<T | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [openSelectName, setOpenSelectName] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
   const [values, setValues] = useState<FormValues>(() => getInitialValues());
-  const totalPages = Math.max(1, Math.ceil(records.length / pageSize));
+
+  const filteredRecords = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return records;
+    return records.filter((item) =>
+      columns.some((col) => col.render(item).toLowerCase().includes(q)),
+    );
+  }, [columns, records, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const startIndex = (currentPage - 1) * pageSize;
-  const paginatedRecords = records.slice(startIndex, startIndex + pageSize);
+  const paginatedRecords = filteredRecords.slice(startIndex, startIndex + pageSize);
+
   const columnWidths = columns.map((column) =>
     resolveColumnWidth(column.label, column.width),
   );
@@ -106,20 +157,16 @@ export default function AdminCrudPanel<T>({
     ACTION_COLUMN_WIDTH,
   );
 
-  useEffect(() => {
-    if (page > totalPages) {
-      setPage(totalPages);
-    }
-  }, [page, totalPages]);
-
   const openCreate = () => {
     setEditingItem(null);
+    setOpenSelectName(null);
     setValues(getInitialValues());
     setFormOpen(true);
   };
 
   const openEdit = (item: T) => {
     setEditingItem(item);
+    setOpenSelectName(null);
     setValues(getInitialValues(item));
     setFormOpen(true);
   };
@@ -130,6 +177,7 @@ export default function AdminCrudPanel<T>({
 
   const closeForm = () => {
     setEditingItem(null);
+    setOpenSelectName(null);
     setFormOpen(false);
   };
 
@@ -149,31 +197,49 @@ export default function AdminCrudPanel<T>({
   return (
     <View style={styles.panel}>
       <View style={styles.header}>
-        <View>
+        <View style={styles.titleBlock}>
           <Text style={styles.title}>{title}</Text>
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
         <View style={styles.headerActions}>
+          <View style={styles.searchBox}>
+            <Ionicons color={colors.textMuted} name="search-outline" size={16} />
+            <TextInput
+              onChangeText={(val) => {
+                setSearchQuery(val);
+                setPage(1);
+              }}
+              placeholder="Tìm nhanh..."
+              placeholderTextColor="#94A3B8"
+              style={styles.searchInput}
+              value={searchQuery}
+            />
+            {searchQuery.length > 0 ? (
+              <Pressable hitSlop={6} onPress={() => setSearchQuery("")}>
+                <Ionicons color={colors.textMuted} name="close-circle" size={16} />
+              </Pressable>
+            ) : null}
+          </View>
           {onRefresh ? (
             <Pressable
               disabled={working}
               onPress={onRefresh}
-              style={styles.iconButton}
+              style={({ pressed }) => [styles.iconButton, pressed ? styles.iconButtonPressed : null]}
             >
-              <Ionicons
-                color={colors.textMuted}
-                name="refresh-outline"
-                size={18}
-              />
+              <Ionicons color={colors.textSecondary} name="refresh-outline" size={18} />
             </Pressable>
           ) : null}
           {onCreate ? (
             <Pressable
               disabled={working}
               onPress={openCreate}
-              style={[styles.actionButton, styles.primaryButton]}
+              style={({ pressed }) => [
+                styles.actionButton,
+                styles.primaryButton,
+                pressed ? styles.primaryButtonPressed : null,
+              ]}
             >
-              <Ionicons color={colors.surface} name="add" size={18} />
+              <Ionicons color={colors.onPrimary} name="add" size={18} />
               <Text style={styles.primaryButtonText}>Thêm mới</Text>
             </Pressable>
           ) : null}
@@ -191,95 +257,119 @@ export default function AdminCrudPanel<T>({
             <View style={styles.formHeader}>
               <View>
                 <Text style={styles.formTitle}>
-                  {editingItem ? "Cập nhật bản ghi" : "Tạo bản ghi mới"}
+                  {editingItem ? "Cập nhật thông tin" : "Thêm bản ghi mới"}
                 </Text>
                 <Text style={styles.formSubtitle}>
-                  Nhập đúng payload request backend đang yêu cầu.
+                  Điền các trường thông tin bên dưới rồi bấm Lưu để áp dụng.
                 </Text>
               </View>
               <Pressable onPress={closeForm} style={styles.iconButton}>
-                <Ionicons color={colors.textMuted} name="close" size={18} />
+                <Ionicons color={colors.textSecondary} name="close" size={18} />
               </Pressable>
             </View>
             <ScrollView style={styles.modalBody}>
               <View style={styles.formGrid}>
-                {fields.map((field) => (
-                  <View
-                    key={field.name}
-                    style={[
-                      styles.field,
-                      field.type === "textarea" ? styles.fieldWide : null,
-                    ]}
-                  >
-                    <Text style={styles.label}>
-                      {field.label}
-                      {field.required ? (
-                        <Text style={styles.required}> *</Text>
-                      ) : null}
-                    </Text>
-                    {field.type === "switch" ? (
-                      <View style={styles.switchRow}>
-                        <Switch
-                          onValueChange={(value) =>
-                            updateValue(field.name, value)
-                          }
-                          value={Boolean(values[field.name])}
-                        />
-                        <Text style={styles.switchText}>
-                          {Boolean(values[field.name]) ? "Bật" : "Tắt"}
-                        </Text>
-                      </View>
-                    ) : null}
-                    {field.type === "select" ? (
-                      <View style={styles.selectDropdownWrapper}>
-                        <View style={styles.selectField}>
-                          <Text
-                            style={styles.selectTextValue}
-                            numberOfLines={1}
-                          >
-                            {field.options?.find(
-                              (option) =>
-                                String(values[field.name]) === option.value,
-                            )?.label ?? "Chọn..."}
+                {fields.map((field) => {
+                  const isSelectOpen = openSelectName === field.name;
+                  return (
+                    <View
+                      key={field.name}
+                      style={[
+                        styles.field,
+                        field.type === "textarea" ? styles.fieldWide : null,
+                      ]}
+                    >
+                      <Text style={styles.label}>
+                        {field.label}
+                        {field.required ? (
+                          <Text style={styles.required}> *</Text>
+                        ) : null}
+                      </Text>
+                      {field.type === "switch" ? (
+                        <View style={styles.switchRow}>
+                          <Switch
+                            onValueChange={(value) => updateValue(field.name, value)}
+                            thumbColor={colors.surface}
+                            trackColor={{ false: "#CBD5E1", true: colors.primary }}
+                            value={Boolean(values[field.name])}
+                          />
+                          <Text style={styles.switchText}>
+                            {Boolean(values[field.name]) ? "Đang bật" : "Đang tắt"}
                           </Text>
                         </View>
-                        <View style={styles.selectDropdownAlwaysVisible}>
-                          <ScrollView showsVerticalScrollIndicator={false}>
-                            {(field.options ?? []).map((option) => (
-                              <Pressable
-                                key={option.value}
-                                onPress={() =>
-                                  updateValue(field.name, option.value)
-                                }
-                                style={styles.selectDropdownOption}
-                              >
-                                <Text style={styles.selectText}>
-                                  {option.label}
-                                </Text>
-                              </Pressable>
-                            ))}
-                          </ScrollView>
+                      ) : null}
+                      {field.type === "select" ? (
+                        <View style={styles.selectDropdownWrapper}>
+                          <Pressable
+                            onPress={() =>
+                              setOpenSelectName((cur) => (cur === field.name ? null : field.name))
+                            }
+                            style={styles.selectField}
+                          >
+                            <Text style={styles.selectTextValue} numberOfLines={1}>
+                              {field.options?.find(
+                                (option) => String(values[field.name]) === option.value,
+                              )?.label ?? "Chọn giá trị..."}
+                            </Text>
+                            <Ionicons
+                              color={colors.textMuted}
+                              name={isSelectOpen ? "chevron-up" : "chevron-down"}
+                              size={16}
+                            />
+                          </Pressable>
+                          {isSelectOpen ? (
+                            <View style={styles.selectDropdownMenu}>
+                              <ScrollView nestedScrollEnabled style={styles.selectScroll}>
+                                {(field.options ?? []).map((option) => {
+                                  const selected = String(values[field.name]) === option.value;
+                                  return (
+                                    <Pressable
+                                      key={option.value}
+                                      onPress={() => {
+                                        updateValue(field.name, option.value);
+                                        setOpenSelectName(null);
+                                      }}
+                                      style={[
+                                        styles.selectDropdownOption,
+                                        selected ? styles.selectDropdownOptionActive : null,
+                                      ]}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.selectText,
+                                          selected ? styles.selectTextActive : null,
+                                        ]}
+                                      >
+                                        {option.label}
+                                      </Text>
+                                      {selected ? (
+                                        <Ionicons color={colors.primary} name="checkmark" size={16} />
+                                      ) : null}
+                                    </Pressable>
+                                  );
+                                })}
+                              </ScrollView>
+                            </View>
+                          ) : null}
                         </View>
-                      </View>
-                    ) : null}
-                    {field.type !== "switch" && field.type !== "select" ? (
-                      <TextInput
-                        keyboardType={
-                          field.type === "number" ? "numeric" : "default"
-                        }
-                        multiline={field.type === "textarea"}
-                        onChangeText={(value) => updateValue(field.name, value)}
-                        placeholder={field.placeholder}
-                        placeholderTextColor={colors.textMuted}
-                        style={[
-                          styles.input,
-                          field.type === "textarea" ? styles.textarea : null,
-                        ]}
-                        value={String(values[field.name] ?? "")}
-                      />
-                    ) : null}
-                  </View>
-                ))}
+                      ) : null}
+                      {field.type !== "switch" && field.type !== "select" ? (
+                        <TextInput
+                          keyboardType={field.type === "number" ? "numeric" : "default"}
+                          multiline={field.type === "textarea"}
+                          onChangeText={(value) => updateValue(field.name, value)}
+                          placeholder={field.placeholder}
+                          placeholderTextColor="#94A3B8"
+                          style={[
+                            styles.input,
+                            field.type === "textarea" ? styles.textarea : null,
+                          ]}
+                          value={String(values[field.name] ?? "")}
+                        />
+                      ) : null}
+                    </View>
+                  );
+                })}
               </View>
             </ScrollView>
             <View style={styles.formActions}>
@@ -288,20 +378,16 @@ export default function AdminCrudPanel<T>({
                 onPress={closeForm}
                 style={styles.secondaryButton}
               >
-                <Text style={styles.secondaryButtonText}>Hủy</Text>
+                <Text style={styles.secondaryButtonText}>Hủy bỏ</Text>
               </Pressable>
               <Pressable
                 disabled={working}
                 onPress={submitForm}
                 style={[styles.actionButton, styles.primaryButton]}
               >
-                <Ionicons
-                  color={colors.surface}
-                  name="save-outline"
-                  size={18}
-                />
+                <Ionicons color={colors.onPrimary} name="save-outline" size={17} />
                 <Text style={styles.primaryButtonText}>
-                  {working ? "Đang lưu..." : "Lưu"}
+                  {working ? "Đang lưu..." : "Lưu thay đổi"}
                 </Text>
               </Pressable>
             </View>
@@ -333,63 +419,102 @@ export default function AdminCrudPanel<T>({
             ))}
             <Text style={[styles.headerCell, styles.actionCell]}>Thao tác</Text>
           </View>
-          {paginatedRecords.map((item) => (
-            <View key={getItemId(item)} style={styles.tableRow}>
-              {columns.map((column, index) => (
-                <Text
-                  key={column.label}
-                  numberOfLines={2}
-                  style={[
-                    styles.cell,
-                    {
-                      flexBasis: columnWidths[index],
-                      flexGrow: 1,
-                      minWidth: columnWidths[index],
-                    },
-                  ]}
-                >
-                  {column.render(item)}
-                </Text>
-              ))}
+
+          {paginatedRecords.map((item, rowIndex) => (
+            <View
+              key={getItemId(item)}
+              style={[
+                styles.tableRow,
+                rowIndex % 2 === 1 ? styles.tableRowAlt : null,
+              ]}
+            >
+              {columns.map((column, index) => {
+                const rawVal = column.render(item);
+                const isBadgeColumn = ["active", "published", "free", "status", "role"].includes(
+                  column.label.toLowerCase(),
+                );
+                const badge = isBadgeColumn ? getStatusBadgeTone(rawVal) : null;
+
+                return (
+                  <View
+                    key={column.label}
+                    style={[
+                      styles.cellWrap,
+                      {
+                        flexBasis: columnWidths[index],
+                        flexGrow: 1,
+                        minWidth: columnWidths[index],
+                      },
+                    ]}
+                  >
+                    {badge ? (
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          { backgroundColor: badge.bg, borderColor: badge.border },
+                        ]}
+                      >
+                        <Text style={[styles.statusBadgeText, { color: badge.text }]}>
+                          {badge.label}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text numberOfLines={2} style={styles.cell}>
+                        {rawVal}
+                      </Text>
+                    )}
+                  </View>
+                );
+              })}
               <View style={[styles.rowActions, styles.actionCell]}>
                 {onUpdate ? (
-                  <Pressable disabled={working} onPress={() => openEdit(item)}>
-                    <Ionicons
-                      color={colors.textMuted}
-                      name="create-outline"
-                      size={18}
-                    />
+                  <Pressable
+                    disabled={working}
+                    onPress={() => openEdit(item)}
+                    style={({ pressed }) => [
+                      styles.rowEditBtn,
+                      pressed ? styles.rowBtnPressed : null,
+                    ]}
+                  >
+                    <Ionicons color={colors.primary} name="create-outline" size={16} />
                   </Pressable>
                 ) : null}
                 {onDelete ? (
-                  <Pressable disabled={working} onPress={() => onDelete(item)}>
-                    <Ionicons
-                      color={colors.danger}
-                      name="trash-outline"
-                      size={18}
-                    />
+                  <Pressable
+                    disabled={working}
+                    onPress={() => onDelete(item)}
+                    style={({ pressed }) => [
+                      styles.rowDeleteBtn,
+                      pressed ? styles.rowBtnPressed : null,
+                    ]}
+                  >
+                    <Ionicons color={colors.danger} name="trash-outline" size={16} />
                   </Pressable>
                 ) : null}
               </View>
             </View>
           ))}
-          {!loading && records.length === 0 ? (
-            <View style={styles.tableRow}>
-              <Text style={styles.emptyText}>{emptyText}</Text>
+
+          {!loading && filteredRecords.length === 0 ? (
+            <View style={styles.emptyRow}>
+              <Ionicons color={colors.textMuted} name="folder-open-outline" size={20} />
+              <Text style={styles.emptyText}>
+                {searchQuery ? `Không tìm thấy kết quả cho "${searchQuery}"` : emptyText}
+              </Text>
             </View>
           ) : null}
           {loading ? (
-            <View style={styles.tableRow}>
+            <View style={styles.emptyRow}>
               <Text style={styles.emptyText}>Đang tải dữ liệu...</Text>
             </View>
           ) : null}
         </View>
       </ScrollView>
 
-      {records.length > 0 ? (
+      {filteredRecords.length > 0 ? (
         <View style={styles.paginationBar}>
           <Text style={styles.paginationSummary}>
-            {`${startIndex + 1}-${Math.min(startIndex + pageSize, records.length)} / ${records.length}`}
+            {`Hiển thị ${startIndex + 1}–${Math.min(startIndex + pageSize, filteredRecords.length)} trong tổng ${filteredRecords.length} bản ghi`}
           </Text>
           <View style={styles.paginationControls}>
             <Pressable
@@ -405,7 +530,7 @@ export default function AdminCrudPanel<T>({
 
             <View style={styles.paginationPagePill}>
               <Text style={styles.paginationPageText}>
-                {`Trang ${currentPage}/${totalPages}`}
+                {`Trang ${currentPage} / ${totalPages}`}
               </Text>
             </View>
 
@@ -431,36 +556,52 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderRadius: 10,
     flexDirection: "row",
-    gap: 8,
-    minHeight: 40,
-    paddingHorizontal: spacing.md,
+    gap: 6,
+    minHeight: 38,
+    paddingHorizontal: 14,
   },
   actionCell: {
     width: ACTION_COLUMN_WIDTH,
   },
   cell: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 19,
+    color: colors.textSecondary,
+    fontSize: 13.5,
+    fontWeight: "500",
+    lineHeight: 20,
+  },
+  cellWrap: {
+    alignItems: "flex-start",
+    justifyContent: "center",
     paddingRight: spacing.md,
+  },
+  emptyRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 28,
   },
   emptyText: {
     color: colors.textMuted,
-    fontSize: 13,
+    fontSize: 13.5,
+    fontWeight: "600",
   },
   field: {
     flex: 1,
-    minWidth: 220,
+    minWidth: 230,
   },
   fieldWide: {
     flexBasis: "100%",
   },
   formActions: {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
     justifyContent: "flex-end",
     marginTop: spacing.md,
+    paddingTop: spacing.md,
   },
   formGrid: {
     flexDirection: "row",
@@ -469,89 +610,62 @@ const styles = StyleSheet.create({
   },
   formHeader: {
     alignItems: "center",
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: spacing.md,
-  },
-  formTitle: {
-    color: colors.text,
-    fontSize: 17,
-    fontWeight: "900",
+    paddingBottom: spacing.sm,
   },
   formSubtitle: {
     color: colors.textMuted,
-    fontSize: 12,
-    marginTop: 3,
+    fontSize: 12.5,
+    marginTop: 2,
   },
-  formWrap: {
-    backgroundColor: "rgba(15,27,49,0.92)",
-    borderColor: "#2D496B",
-    borderRadius: 20,
-    borderWidth: 1,
-    marginBottom: spacing.md,
-    padding: 18,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 1,
-    shadowRadius: 30,
-  },
-  modalBackdrop: {
-    alignItems: "center",
-    backgroundColor: "rgba(3,7,18,0.72)",
-    flex: 1,
-    justifyContent: "center",
-    padding: spacing.xl,
-  },
-  modalCard: {
-    backgroundColor: "#0E1B31",
-    borderColor: "#34557D",
-    borderRadius: 24,
-    borderWidth: 1,
-    maxHeight: "88%",
-    maxWidth: 1120,
-    padding: 22,
-    shadowColor: "rgba(0,0,0,0.62)",
-    shadowOffset: { width: 0, height: 28 },
-    shadowOpacity: 1,
-    shadowRadius: 50,
-    width: "92%",
-  },
-  modalBody: {
-    maxHeight: 560,
+  formTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800",
   },
   header: {
-    alignItems: "flex-start",
+    alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
     justifyContent: "space-between",
     marginBottom: spacing.md,
-    gap: spacing.md,
   },
   headerActions: {
+    alignItems: "center",
     flexDirection: "row",
-    gap: spacing.sm,
+    flexWrap: "wrap",
+    gap: 8,
   },
   headerCell: {
     color: colors.textMuted,
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: "800",
-    letterSpacing: 0,
+    letterSpacing: 0.4,
     paddingRight: spacing.md,
     textTransform: "uppercase",
   },
   iconButton: {
     alignItems: "center",
-    backgroundColor: "#152742",
-    borderColor: "#41658F",
-    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderColor: colors.borderStrong,
+    borderRadius: 10,
     borderWidth: 1,
-    height: 40,
+    height: 38,
     justifyContent: "center",
-    width: 40,
+    width: 38,
+  },
+  iconButtonPressed: {
+    backgroundColor: colors.surfaceAlt,
   },
   input: {
-    backgroundColor: "#091321",
-    borderColor: "#3D5B80",
-    borderRadius: 14,
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.borderStrong,
+    borderRadius: 10,
     borderWidth: 1,
     color: colors.text,
     fontSize: 14,
@@ -560,70 +674,99 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   label: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: "800",
+    color: colors.text,
+    fontSize: 12.5,
+    fontWeight: "700",
     marginBottom: 6,
   },
-  panel: {
+  modalBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.48)",
     flex: 1,
+    justifyContent: "center",
+    padding: spacing.lg,
+  },
+  modalBody: {
+    maxHeight: 520,
+  },
+  modalCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 20,
+    borderWidth: 1,
+    maxHeight: "90%",
+    maxWidth: 880,
+    padding: 22,
+    shadowColor: "rgba(15, 23, 42, 0.22)",
+    shadowOffset: { width: 0, height: 24 },
+    shadowOpacity: 1,
+    shadowRadius: 48,
+    width: "94%",
   },
   paginationBar: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
     justifyContent: "space-between",
     marginTop: spacing.md,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: 4,
   },
   paginationButton: {
     alignItems: "center",
-    backgroundColor: "#152742",
-    borderColor: "#41658F",
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderColor: colors.borderStrong,
+    borderRadius: 10,
     borderWidth: 1,
-    height: 36,
+    height: 34,
     justifyContent: "center",
-    width: 36,
+    width: 34,
   },
   paginationButtonDisabled: {
-    opacity: 0.45,
+    opacity: 0.4,
   },
   paginationControls: {
     alignItems: "center",
     flexDirection: "row",
-    gap: spacing.sm,
+    gap: 8,
   },
   paginationPagePill: {
-    backgroundColor: "#132037",
-    borderColor: "#2A3B57",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: 999,
     borderWidth: 1,
-    minWidth: 110,
+    minWidth: 102,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   paginationPageText: {
     color: colors.text,
     fontSize: 12,
-    fontWeight: "800",
+    fontWeight: "700",
     textAlign: "center",
   },
   paginationSummary: {
     color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 12.5,
+    fontWeight: "600",
+  },
+  panel: {
+    flex: 1,
   },
   primaryButton: {
-    backgroundColor: "#2E7CD4",
-    shadowColor: "#2E7CD4",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.34,
-    shadowRadius: 22,
+    backgroundColor: colors.primary,
+    shadowColor: "rgba(37, 99, 235, 0.24)",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+  },
+  primaryButtonPressed: {
+    backgroundColor: colors.primaryDark,
   },
   primaryButtonText: {
-    color: colors.surface,
-    fontSize: 14,
-    fontWeight: "800",
+    color: colors.onPrimary,
+    fontSize: 13.5,
+    fontWeight: "700",
   },
   required: {
     color: colors.danger,
@@ -631,117 +774,149 @@ const styles = StyleSheet.create({
   rowActions: {
     alignItems: "center",
     flexDirection: "row",
-    gap: spacing.md,
+    gap: 8,
     justifyContent: "flex-start",
+  },
+  rowBtnPressed: {
+    opacity: 0.75,
+    transform: [{ scale: 0.96 }],
+  },
+  rowDeleteBtn: {
+    alignItems: "center",
+    backgroundColor: colors.dangerSoft,
+    borderColor: "#FECACA",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  },
+  rowEditBtn: {
+    alignItems: "center",
+    backgroundColor: colors.primarySoft,
+    borderColor: "#BFDBFE",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  },
+  searchBox: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.borderStrong,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    height: 38,
+    minWidth: 210,
+    paddingHorizontal: 10,
+  },
+  searchInput: {
+    color: colors.text,
+    flex: 1,
+    fontSize: 13,
+    paddingVertical: 4,
   },
   secondaryButton: {
     alignItems: "center",
-    backgroundColor: "#152742",
-    borderColor: colors.border,
-    borderRadius: 14,
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.borderStrong,
+    borderRadius: 10,
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 40,
-    paddingHorizontal: spacing.md,
+    minHeight: 38,
+    paddingHorizontal: 16,
   },
   secondaryButtonText: {
-    color: colors.text,
-    fontSize: 14,
+    color: colors.textSecondary,
+    fontSize: 13.5,
     fontWeight: "700",
+  },
+  selectDropdownMenu: {
+    backgroundColor: colors.surface,
+    borderColor: colors.borderStrong,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 4,
+    maxHeight: 190,
+    overflow: "hidden",
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 1,
+    shadowRadius: 16,
+  },
+  selectDropdownOption: {
+    alignItems: "center",
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  selectDropdownOptionActive: {
+    backgroundColor: colors.primarySoft,
   },
   selectDropdownWrapper: {
     width: "100%",
-    position: "relative",
-    zIndex: 100,
   },
   selectField: {
     alignItems: "center",
-    backgroundColor: "#091321",
-    borderColor: "#3D5B80",
-    borderRadius: 14,
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.borderStrong,
+    borderRadius: 10,
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
     minHeight: 42,
     paddingHorizontal: 12,
   },
-  selectTextValue: {
-    color: colors.text,
-    fontSize: 14,
-    flex: 1,
-    marginRight: 8,
-  },
-  selectDropdown: {
-    position: "absolute",
-    top: 48,
-    left: 0,
-    right: 0,
-    backgroundColor: "#0B1728",
-    borderColor: "#3D5B80",
-    borderRadius: 14,
-    borderWidth: 1,
-    maxHeight: 220,
-    overflow: "hidden",
-  },
-  selectDropdownAlwaysVisible: {
-    backgroundColor: "#0A1228",
-    borderColor: "#344765",
-    borderRadius: 10,
-    borderWidth: 1,
-    marginTop: 8,
-    maxHeight: 220,
-    overflow: "hidden",
-  },
-  selectDropdownOption: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomColor: "#344765",
-    borderBottomWidth: 1,
-  },
-  selectActive: {
-    backgroundColor: "#244D7F",
-    borderColor: colors.accent,
-    shadowColor: colors.accent,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-  },
-  selectGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  selectOption: {
-    backgroundColor: "#0A1220",
-    borderColor: "#344765",
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+  selectScroll: {
+    maxHeight: 190,
   },
   selectText: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "700",
+    color: colors.textSecondary,
+    fontSize: 13.5,
+    fontWeight: "600",
   },
   selectTextActive: {
+    color: colors.primaryDark,
+    fontWeight: "800",
+  },
+  selectTextValue: {
     color: colors.text,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    marginRight: 8,
+  },
+  statusBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  statusBadgeText: {
+    fontSize: 11.5,
+    fontWeight: "700",
   },
   subtitle: {
     color: colors.textMuted,
     fontSize: 13,
-    marginTop: 4,
+    marginTop: 2,
   },
   switchRow: {
     alignItems: "center",
     flexDirection: "row",
     gap: spacing.sm,
-    minHeight: 40,
+    minHeight: 42,
   },
   switchText: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "700",
+    color: colors.textSecondary,
+    fontSize: 13.5,
+    fontWeight: "600",
   },
   table: {
     alignSelf: "stretch",
@@ -749,7 +924,7 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   tableHeader: {
-    backgroundColor: "#162946",
+    backgroundColor: colors.surfaceAlt,
     borderBottomColor: colors.border,
     borderBottomWidth: 1,
     flexDirection: "row",
@@ -758,34 +933,38 @@ const styles = StyleSheet.create({
   },
   tableRow: {
     alignItems: "center",
+    backgroundColor: colors.surface,
     borderBottomColor: colors.border,
     borderBottomWidth: 1,
     flexDirection: "row",
-    minHeight: 52,
+    minHeight: 54,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
   },
+  tableRowAlt: {
+    backgroundColor: "#FAFCFF",
+  },
   tableScroller: {
-    backgroundColor: "rgba(15,27,49,0.92)",
-    borderColor: "#2D496B",
-    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 14,
     borderWidth: 1,
     overflow: "hidden",
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 1,
-    shadowRadius: 22,
   },
   tableScrollerContent: {
     flexGrow: 1,
   },
   textarea: {
-    minHeight: 74,
+    minHeight: 84,
     textAlignVertical: "top",
   },
   title: {
     color: colors.text,
-    fontSize: 21,
-    fontWeight: "900",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  titleBlock: {
+    flex: 1,
+    minWidth: 200,
   },
 });

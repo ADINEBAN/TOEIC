@@ -1,5 +1,6 @@
 import { BaseAdminService } from '@/src/services/admin/base-admin.service';
 import {
+  AdminLearningPathOverviewListResponse,
   ApiVoidResponse,
   CreateLearningPathRequest,
   LearningPathListResponse,
@@ -10,6 +11,12 @@ import {
 export class AdminLearningPathService extends BaseAdminService {
   getAll() {
     return this.request<LearningPathListResponse>('/api/admin/learning-paths', {
+      method: 'GET',
+    });
+  }
+
+  getOverview() {
+    return this.request<AdminLearningPathOverviewListResponse>('/api/admin/learning-paths/overview', {
       method: 'GET',
     });
   }

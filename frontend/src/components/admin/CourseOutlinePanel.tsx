@@ -17,14 +17,14 @@ export default function CourseOutlinePanel({
 }: CourseOutlinePanelProps) {
   return (
     <View style={styles.panel}>
-      <Text style={styles.breadcrumb}>Home {'>'} Courses {'>'} {course.title}</Text>
-      <Text style={styles.heading}>Courses & Lesson Manager</Text>
+      <Text style={styles.breadcrumb}>Trang chủ {'>'} Khóa học {'>'} {course.title}</Text>
+      <Text style={styles.heading}>Quản lý Khóa học & Bài giảng</Text>
 
       <View style={styles.card}>
         <View style={styles.courseRow}>
-          <Ionicons color={colors.textMuted} name="apps" size={18} />
+          <Ionicons color={colors.primary} name="apps" size={18} />
           <Text style={styles.courseTitle}>
-            {course.title}, {course.level}
+            {course.title} ({course.level})
           </Text>
         </View>
       </View>
@@ -33,7 +33,7 @@ export default function CourseOutlinePanel({
         <View key={module.id} style={styles.card}>
           <View style={styles.moduleRow}>
             <Ionicons color={colors.textMuted} name="chevron-down" size={18} />
-            <Ionicons color={colors.textMuted} name="folder-outline" size={18} />
+            <Ionicons color={colors.primary} name="folder-outline" size={18} />
             <Text style={styles.moduleTitle}>{module.title}</Text>
           </View>
 
@@ -47,9 +47,9 @@ export default function CourseOutlinePanel({
                   onPress={() => onSelectLesson(lesson)}
                   style={[styles.lessonItem, active ? styles.lessonItemActive : null]}>
                   <Ionicons
-                    color={active ? colors.textMuted : '#8E99AB'}
+                    color={active ? colors.primaryDark : colors.textMuted}
                     name={active ? 'apps' : 'chevron-forward'}
-                    size={18}
+                    size={16}
                   />
                   <Text style={[styles.lessonText, active ? styles.lessonTextActive : null]}>
                     {lesson.title}
@@ -67,20 +67,20 @@ export default function CourseOutlinePanel({
 const styles = StyleSheet.create({
   breadcrumb: {
     color: colors.textMuted,
-    fontSize: 14,
-    marginBottom: spacing.sm,
+    fontSize: 13,
+    marginBottom: spacing.xs,
   },
   card: {
     backgroundColor: colors.surface,
-    borderColor: '#E3E8EF',
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 16,
     marginBottom: spacing.md,
-    padding: 20,
+    padding: 18,
     shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 1,
+    shadowRadius: 14,
   },
   courseRow: {
     alignItems: 'center',
@@ -89,37 +89,37 @@ const styles = StyleSheet.create({
   },
   courseTitle: {
     color: colors.text,
-    fontSize: 18,
-    fontWeight: '500',
+    fontSize: 16,
+    fontWeight: '700',
   },
   heading: {
     color: colors.text,
-    fontSize: 34,
-    fontWeight: '700',
-    marginBottom: 22,
+    fontSize: 26,
+    fontWeight: '800',
+    marginBottom: 18,
   },
   lessonItem: {
     alignItems: 'center',
     borderRadius: 10,
     flexDirection: 'row',
     gap: spacing.sm,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   lessonItemActive: {
-    backgroundColor: '#EAF3FF',
+    backgroundColor: colors.primarySoft,
   },
   lessonList: {
-    gap: 8,
-    marginTop: 16,
+    gap: 6,
+    marginTop: 14,
   },
   lessonText: {
-    color: colors.text,
-    fontSize: 15,
+    color: colors.textSecondary,
+    fontSize: 14,
   },
   lessonTextActive: {
     color: colors.primaryDark,
-    fontWeight: '500',
+    fontWeight: '700',
   },
   moduleRow: {
     alignItems: 'center',
@@ -128,8 +128,8 @@ const styles = StyleSheet.create({
   },
   moduleTitle: {
     color: colors.text,
-    fontSize: 18,
-    fontWeight: '500',
+    fontSize: 16,
+    fontWeight: '700',
   },
   panel: {
     flex: 1.1,

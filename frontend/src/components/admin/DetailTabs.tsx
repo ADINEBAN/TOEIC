@@ -9,9 +9,9 @@ type DetailTabsProps = {
 };
 
 const tabs: { key: AdminTabKey; label: string }[] = [
-  { key: 'video', label: 'Video' },
-  { key: 'vocabulary', label: 'Vocabulary' },
-  { key: 'exercises', label: 'Exercises' },
+  { key: 'video', label: 'Video bài giảng' },
+  { key: 'vocabulary', label: 'Từ vựng' },
+  { key: 'exercises', label: 'Bài tập thực hành' },
 ];
 
 export default function DetailTabs({ activeTab, onChange }: DetailTabsProps) {
@@ -39,34 +39,33 @@ const styles = StyleSheet.create({
   label: {
     color: colors.textMuted,
     fontSize: 14,
-    fontWeight: '500',
-  },
-  labelActive: {
-    color: colors.primary,
     fontWeight: '600',
   },
+  labelActive: {
+    color: colors.primaryDark,
+    fontWeight: '800',
+  },
   row: {
-    borderBottomColor: '#E7ECF2',
-    borderBottomWidth: 1,
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.xs,
     marginBottom: spacing.lg,
-    paddingBottom: 0,
+    padding: 4,
   },
   tab: {
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: 10,
     flex: 1,
-    marginBottom: -1,
-    paddingVertical: 14,
+    paddingVertical: 11,
   },
   tabActive: {
     backgroundColor: colors.surface,
-    borderBottomColor: '#1C78D0',
-    borderBottomWidth: 3,
     shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.14,
-    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
   },
 });

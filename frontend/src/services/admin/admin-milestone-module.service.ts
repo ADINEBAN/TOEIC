@@ -2,6 +2,7 @@ import { BaseAdminService } from '@/src/services/admin/base-admin.service';
 import {
   ApiVoidResponse,
   CreateMilestoneModuleRequest,
+  CreateMilestoneQuickModuleRequest,
   MilestoneModuleListResponse,
   MilestoneModuleResponse,
   UpdateMilestoneModuleRequest,
@@ -18,6 +19,16 @@ export class AdminMilestoneModuleService extends BaseAdminService {
   create(milestoneId: number, request: CreateMilestoneModuleRequest) {
     return this.request<MilestoneModuleResponse>(
       `/api/admin/milestones/${milestoneId}/modules`,
+      {
+        body: JSON.stringify(request),
+        method: 'POST',
+      }
+    );
+  }
+
+  createQuick(milestoneId: number, request: CreateMilestoneQuickModuleRequest) {
+    return this.request<MilestoneModuleResponse>(
+      `/api/admin/milestones/${milestoneId}/modules/quick`,
       {
         body: JSON.stringify(request),
         method: 'POST',
