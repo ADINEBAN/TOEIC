@@ -1,9 +1,10 @@
 import { FontAwesome5, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 
-import { colors } from "@/src/assets/styles/user-theme";
+import { useAppTheme } from "@/src/store/theme-store";
+import { useResponsiveLayout } from "@/src/utils/responsive";
 
 type TabIconProps = {
   focused: boolean;
@@ -12,18 +13,31 @@ type TabIconProps = {
 };
 
 function TabIcon({ focused, label, icon }: TabIconProps) {
+  const { theme } = useAppTheme();
+  const { isNarrow } = useResponsiveLayout();
+  const c = theme.colors;
+
   return (
-    <View style={[styles.tabItem, focused ? styles.tabItemActive : null]}>
-      {focused ? <View style={styles.activeHalo} /> : null}
+    <View style={styles.tabItem}>
       <View
         style={[
-          styles.iconWrap,
-          focused ? styles.iconWrapActive : null,
+          styles.iconPill,
+          focused ? { backgroundColor: c.primarySoft } : null,
         ]}
       >
         {icon}
       </View>
-      <Text style={[styles.tabLabel, focused ? styles.tabLabelActive : null]}>
+
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.tabLabel,
+          {
+            color: focused ? c.primary : c.textMuted,
+            fontSize: isNarrow ? 10 : 10.5,
+          },
+        ]}
+      >
         {label}
       </Text>
     </View>
@@ -31,16 +45,44 @@ function TabIcon({ focused, label, icon }: TabIconProps) {
 }
 
 export default function UserTabsLayout() {
+  const { theme } = useAppTheme();
+  const { dockHeight, dockBottom, screenPadding, isTablet } = useResponsiveLayout();
+  const c = theme.colors;
+  const iconSize = 19;
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        sceneStyle: { backgroundColor: colors.background },
+        sceneStyle: { backgroundColor: c.background },
+        tabBarBackground: () => (
+          <View
+            style={[
+              styles.dockBg,
+              {
+                backgroundColor: c.tabBarBg,
+                borderColor: c.glassBorder,
+                elevation: Platform.OS === "android" ? 8 : 0,
+                shadowColor: c.shadow,
+              },
+            ]}
+          />
+        ),
         tabBarHideOnKeyboard: true,
         tabBarIconStyle: styles.tabBarIconSlot,
-        tabBarItemStyle: styles.tabBarItem,
+        tabBarItemStyle: [styles.tabBarItem, { height: dockHeight - 6 }],
         tabBarShowLabel: false,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            bottom: dockBottom,
+            height: dockHeight,
+            left: isTablet ? "50%" : screenPadding,
+            marginLeft: isTablet ? -260 : 0,
+            right: isTablet ? undefined : screenPadding,
+            width: isTablet ? 520 : undefined,
+          },
+        ],
       }}
     >
       <Tabs.Screen
@@ -51,12 +93,12 @@ export default function UserTabsLayout() {
               focused={focused}
               icon={
                 <Ionicons
-                  color={focused ? colors.surface : colors.textMuted}
+                  color={focused ? c.primary : c.textMuted}
                   name={focused ? "home" : "home-outline"}
-                  size={20}
+                  size={iconSize}
                 />
               }
-              label="HOME"
+              label="Trang chủ"
             />
           ),
         }}
@@ -69,12 +111,12 @@ export default function UserTabsLayout() {
               focused={focused}
               icon={
                 <Ionicons
-                  color={focused ? colors.surface : colors.textMuted}
-                  name={focused ? "sparkles" : "sparkles-outline"}
-                  size={20}
+                  color={focused ? c.primary : c.textMuted}
+                  name={focused ? "school" : "school-outline"}
+                  size={iconSize}
                 />
               }
-              label="PRACTICE"
+              label="Lộ trình"
             />
           ),
         }}
@@ -87,12 +129,12 @@ export default function UserTabsLayout() {
               focused={focused}
               icon={
                 <MaterialCommunityIcons
-                  color={focused ? colors.surface : colors.textMuted}
+                  color={focused ? c.primary : c.textMuted}
                   name={focused ? "cards" : "cards-outline"}
-                  size={20}
+                  size={iconSize}
                 />
               }
-              label="CARDS"
+              label="Từ vựng"
             />
           ),
         }}
@@ -105,12 +147,12 @@ export default function UserTabsLayout() {
               focused={focused}
               icon={
                 <Ionicons
-                  color={focused ? colors.surface : colors.textMuted}
-                  name={focused ? "document-text" : "document-text-outline"}
-                  size={20}
+                  color={focused ? c.primary : c.textMuted}
+                  name={focused ? "trophy" : "trophy-outline"}
+                  size={iconSize}
                 />
               }
-              label="TEST"
+              label="Thi thử"
             />
           ),
         }}
@@ -123,12 +165,13 @@ export default function UserTabsLayout() {
               focused={focused}
               icon={
                 <FontAwesome5
-                  color={focused ? colors.surface : colors.textMuted}
-                  name="user-circle"
-                  size={18}
+                  color={focused ? c.primary : c.textMuted}
+                  name="user"
+                  size={16}
+                  solid={focused}
                 />
               }
-              label="PROFILE"
+              label="Hồ sơ"
             />
           ),
         }}
@@ -138,80 +181,56 @@ export default function UserTabsLayout() {
 }
 
 const styles = StyleSheet.create({
-  activeHalo: {
-    backgroundColor: "rgba(89,166,255,0.16)",
-    borderRadius: 34,
-    height: 68,
+  dockBg: {
+    borderRadius: 26,
+    borderWidth: 1,
+    bottom: 0,
+    left: 0,
     position: "absolute",
-    top: 24,
-    width: 58,
-  },
-  iconWrap: {
-    alignItems: "center",
-    backgroundColor: "rgba(12,55,76,0.06)",
-    borderColor: "rgba(12,55,76,0.04)",
-    borderRadius: 18,
-    borderWidth: 1,
-    height: 50,
-    justifyContent: "center",
-    width: 50,
-  },
-  iconWrapActive: {
-    backgroundColor: colors.primary,
-    borderColor: "rgba(255,255,255,0.9)",
-    borderWidth: 1,
-    shadowColor: colors.primaryDark,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.24,
-    shadowRadius: 22,
+    right: 0,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    top: 0,
   },
   tabBar: {
-    backgroundColor: "rgba(255,255,255,0.97)",
+    backgroundColor: "transparent",
     borderTopWidth: 0,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    bottom: 0,
-    elevation: 12,
-    height: 108,
+    elevation: 0,
     overflow: "visible",
-    paddingBottom: 16,
-    paddingTop: 8,
+    paddingBottom: 4,
+    paddingHorizontal: 6,
+    paddingTop: 4,
     position: "absolute",
-    shadowColor: "rgba(12,28,43,0.16)",
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
   },
   tabBarIconSlot: {
-    height: 84,
-    marginTop: 0,
-    width: 74,
+    flex: 1,
+    width: "100%",
   },
   tabBarItem: {
-    height: 94,
+    flex: 1,
     justifyContent: "center",
+    minWidth: 0,
     padding: 0,
   },
   tabItem: {
     alignItems: "center",
-    gap: 6,
-    height: 84,
+    flex: 1,
+    gap: 2,
     justifyContent: "center",
-    minWidth: 72,
-    position: "relative",
-    width: 72,
+    minWidth: 0,
+    width: "100%",
   },
-  tabItemActive: {
-    transform: [{ translateY: -10 }],
+  iconPill: {
+    alignItems: "center",
+    borderRadius: 999,
+    height: 32,
+    justifyContent: "center",
+    width: 48,
   },
   tabLabel: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 0.6,
-  },
-  tabLabelActive: {
-    color: colors.primaryDark,
-    transform: [{ translateY: -1 }],
+    fontWeight: "800",
+    letterSpacing: 0.1,
+    textAlign: "center",
   },
 });

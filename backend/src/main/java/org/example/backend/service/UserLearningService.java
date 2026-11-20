@@ -3,9 +3,11 @@ package org.example.backend.service;
 import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.response.FlashcardResponse;
 import org.example.backend.dto.response.PracticeSetResponse;
+import org.example.backend.dto.response.UserLearningPathCatalogItemResponse;
 import org.example.backend.dto.response.UserModuleContentResponse;
 import org.example.backend.dto.response.UserRoadmapResponse;
 import org.example.backend.entity.LearningModule;
+import org.example.backend.entity.LearningPath;
 import org.example.backend.entity.LearningPathMilestone;
 import org.example.backend.entity.MilestoneModule;
 import org.example.backend.entity.User;
@@ -20,6 +22,7 @@ import org.example.backend.mapper.PracticeSetMapper;
 import org.example.backend.repository.FlashcardRepository;
 import org.example.backend.repository.LearningModuleRepository;
 import org.example.backend.repository.LearningPathMilestoneRepository;
+import org.example.backend.repository.LearningPathRepository;
 import org.example.backend.repository.MilestoneModuleRepository;
 import org.example.backend.repository.PracticeSetRepository;
 import org.example.backend.repository.UserLearningPathRepository;
@@ -31,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,6 +47,7 @@ public class UserLearningService {
 
     private final UserRepository userRepository;
     private final UserLearningPathRepository userLearningPathRepository;
+    private final LearningPathRepository learningPathRepository;
     private final LearningPathMilestoneRepository learningPathMilestoneRepository;
     private final MilestoneModuleRepository milestoneModuleRepository;
     private final UserModuleProgressRepository userModuleProgressRepository;
@@ -51,8 +56,80 @@ public class UserLearningService {
     private final FlashcardRepository flashcardRepository;
     private final PracticeSetRepository practiceSetRepository;
     private final UserLessonService userLessonService;
+    private final PlacementOnboardingService placementOnboardingService;
     private final FlashcardMapper flashcardMapper;
     private final PracticeSetMapper practiceSetMapper;
+
+    @Transactional(readOnly = true)
+    public List<UserLearningPathCatalogItemResponse> getLearningPathCatalog(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+
+        List<LearningPath> activePaths = learningPathRepository.findAllByActiveTrueOrderByTargetScoreAsc();
+        Long recommendedPathId = placementOnboardingService
+                .findBestMatchingPathForScore(user.getTargetScore())
+                .map(LearningPath::getId)
+                .orElse(null);
+
+        Long enrolledPathId = userLearningPathRepository
+                .findTopByUserIdAndStatusOrderByAssignedAtDesc(user.getId(), PathStatus.ACTIVE)
+                .or(() -> userLearningPathRepository.findTopByUserIdAndStatusOrderByAssignedAtDesc(user.getId(), PathStatus.COMPLETED))
+                .map(UserLearningPath::getLearningPath)
+                .map(LearningPath::getId)
+                .orElse(null);
+
+        Map<Long, Long> videoCounts = new HashMap<>();
+        Map<Long, Long> flashcardCounts = new HashMap<>();
+        Map<Long, Long> practiceCounts = new HashMap<>();
+
+        return activePaths.stream().map(path -> {
+            List<LearningPathMilestone> milestones = learningPathMilestoneRepository
+                    .findByLearningPathIdOrderBySortOrderAsc(path.getId());
+
+            Set<Long> uniqueModuleIds = new LinkedHashSet<>();
+            int totalMinutes = 0;
+            int totalModuleEntries = 0;
+            for (LearningPathMilestone m : milestones) {
+                List<MilestoneModule> links = milestoneModuleRepository.findByMilestoneIdOrderBySortOrderAsc(m.getId());
+                for (MilestoneModule link : links) {
+                    LearningModule mod = link.getModule();
+                    if (mod != null && mod.getId() != null && Boolean.TRUE.equals(mod.getActive())) {
+                        totalModuleEntries++;
+                        if (uniqueModuleIds.add(mod.getId())) {
+                            totalMinutes += mod.getEstimatedMinutes() != null ? mod.getEstimatedMinutes() : 0;
+                        }
+                    }
+                }
+            }
+
+            long videos = 0L;
+            long cards = 0L;
+            long practices = 0L;
+            for (Long moduleId : uniqueModuleIds) {
+                videos += videoCounts.computeIfAbsent(moduleId, videoLessonRepository::countByModuleIdAndPublishedTrue);
+                cards += flashcardCounts.computeIfAbsent(moduleId, flashcardRepository::countByModuleIdAndActiveTrue);
+                practices += practiceCounts.computeIfAbsent(moduleId, practiceSetRepository::countByModuleIdAndPublishedTrue);
+            }
+
+            UserLearningPathCatalogItemResponse dto = new UserLearningPathCatalogItemResponse();
+            dto.setId(path.getId());
+            dto.setCode(path.getCode());
+            dto.setTitle(path.getTitle());
+            dto.setDescription(path.getDescription());
+            dto.setTargetScore(path.getTargetScore());
+            dto.setActive(path.getActive());
+            dto.setMilestoneCount(milestones.size());
+            dto.setModuleCount(totalModuleEntries);
+            dto.setVideoLessonCount(videos);
+            dto.setFlashcardCount(cards);
+            dto.setPracticeSetCount(practices);
+            dto.setEstimatedTotalMinutes(totalMinutes);
+            dto.setMilestoneTitles(milestones.stream().map(LearningPathMilestone::getTitle).limit(4).toList());
+            dto.setRecommended(recommendedPathId != null && recommendedPathId.equals(path.getId()));
+            dto.setEnrolled(enrolledPathId != null && enrolledPathId.equals(path.getId()));
+            return dto;
+        }).toList();
+    }
 
     @Transactional(readOnly = true)
     public UserRoadmapResponse getActiveRoadmap(String email) {
@@ -71,6 +148,7 @@ public class UserLearningService {
                 .toList();
 
         List<Long> moduleIds = allMilestoneModules.stream()
+                .filter(entry -> entry != null && entry.getModule() != null && entry.getModule().getId() != null)
                 .map(entry -> entry.getModule().getId())
                 .distinct()
                 .toList();
@@ -79,7 +157,12 @@ public class UserLearningService {
                 ? Collections.emptyMap()
                 : userModuleProgressRepository.findByUserIdAndModuleIdIn(user.getId(), moduleIds)
                 .stream()
-                .collect(Collectors.toMap(progress -> progress.getModule().getId(), Function.identity()));
+                .filter(progress -> progress != null && progress.getModule() != null && progress.getModule().getId() != null)
+                .collect(Collectors.toMap(
+                        progress -> progress.getModule().getId(),
+                        Function.identity(),
+                        (existing, replacement) -> replacement
+                ));
 
         Map<Long, Long> videoCountMap = new HashMap<>();
         Map<Long, Long> flashcardCountMap = new HashMap<>();
