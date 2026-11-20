@@ -37,9 +37,21 @@ public class ArenaRoomResponse {
     private int audioHintUnlockAtSeconds;
     private String audioHintWord;
     private String feedbackMessage;
+    private ArenaEmoteEvent latestEmote;
     private LocalDateTime createdAt;
     private List<ArenaPlayerState> players;
     private List<ArenaQuestionItem> questions;
+
+    @Data
+    public static class ArenaEmoteEvent {
+        private Long id;
+        private String senderEmail;
+        private String senderName;
+        private String emoteCode;
+        private String emoji;
+        private String label;
+        private long sentAtEpochMs;
+    }
 
     @Data
     public static class ArenaPlayerState {
@@ -62,6 +74,7 @@ public class ArenaRoomResponse {
         private int eloRating;
         private int wins;
         private int losses;
+        private ArenaEmoteEvent activeEmote;
     }
 
     @Data

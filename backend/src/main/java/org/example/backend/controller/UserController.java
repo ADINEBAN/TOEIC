@@ -111,7 +111,14 @@ public class UserController {
 
     @GetMapping("/{userId}/public-profile")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<ApiResponse<ProfileInsightsResponse>> getPublicProfile(@PathVariable Long userId) {
-        return ApiResponseUtil.success(achievementService.getPublicProfile(userId), SuccessCode.ACHIEVEMENTS_RETRIEVED);
+    public ResponseEntity<ApiResponse<ProfileInsightsResponse>> getPublicProfile(
+            Authentication authentication,
+            @PathVariable Long userId
+    ) {
+        String viewerEmail = authentication != null ? authentication.getName() : null;
+        return ApiResponseUtil.success(
+                achievementService.getPublicProfile(viewerEmail, userId),
+                SuccessCode.ACHIEVEMENTS_RETRIEVED
+        );
     }
 }

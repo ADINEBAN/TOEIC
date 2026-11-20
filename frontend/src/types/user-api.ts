@@ -529,6 +529,16 @@ export type Sm2Rating = "AGAIN" | "HARD" | "GOOD" | "EASY";
 
 export type ArenaMode = "VOCAB" | "PART5";
 
+export type ArenaEmoteEvent = {
+  id: number;
+  senderEmail: string;
+  senderName: string;
+  emoteCode: string;
+  emoji: string;
+  label: string;
+  sentAtEpochMs: number;
+};
+
 export type ArenaPlayerState = {
   userId: number;
   email: string;
@@ -549,6 +559,7 @@ export type ArenaPlayerState = {
   eloRating: number;
   wins: number;
   losses: number;
+  activeEmote?: ArenaEmoteEvent | null;
 };
 
 export type ArenaQuestionItem = {
@@ -601,6 +612,7 @@ export type ArenaRoomItem = {
   audioHintUnlockAtSeconds?: number;
   audioHintWord?: string | null;
   feedbackMessage?: string | null;
+  latestEmote?: ArenaEmoteEvent | null;
   createdAt: string;
   players: ArenaPlayerState[];
   questions: ArenaQuestionItem[];
@@ -1185,6 +1197,16 @@ export type ProfileInsightsData = {
   longestStreak: number;
   totalStudyMinutes: number;
   lastActiveAt?: string | null;
+  relationStatus?:
+    | "SELF"
+    | "ACCEPTED"
+    | "PENDING_INCOMING"
+    | "PENDING_OUTGOING"
+    | "BLOCKED"
+    | "BLOCKED_BY_OTHER"
+    | "NONE"
+    | string
+    | null;
   stats: ProfileStudyStats;
   achievements: ProfileAchievementItem[];
   recentDiamonds: DiamondHistoryItem[];
@@ -1216,11 +1238,15 @@ export type FriendPerson = {
   level: number;
   diamonds: number;
   relationStatus: "ACCEPTED" | "PENDING_INCOMING" | "PENDING_OUTGOING" | "BLOCKED" | "NONE" | string;
+  lastMessageId?: number | null;
+  lastMessageSenderId?: number | null;
   lastMessagePreview?: string | null;
   lastMessageAt?: string | null;
+  unreadCount?: number;
 };
 
 export type ChatFriendsData = {
+  totalUnreadDirectMessages?: number;
   friends: FriendPerson[];
   incomingRequests: FriendPerson[];
   outgoingRequests: FriendPerson[];

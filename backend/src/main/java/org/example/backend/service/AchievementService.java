@@ -5,6 +5,7 @@ import org.example.backend.dto.response.ProfileInsightsResponse;
 import org.example.backend.entity.DiamondTransaction;
 import org.example.backend.entity.User;
 import org.example.backend.entity.UserAchievement;
+import org.example.backend.entity.UserFriendship;
 import org.example.backend.entity.UserTestAttempt;
 import org.example.backend.enums.AttemptStatus;
 import org.example.backend.enums.ErrorCode;
@@ -13,6 +14,7 @@ import org.example.backend.enums.VocabularyStatus;
 import org.example.backend.exception.AppException;
 import org.example.backend.repository.DiamondTransactionRepository;
 import org.example.backend.repository.UserAchievementRepository;
+import org.example.backend.repository.UserFriendshipRepository;
 import org.example.backend.repository.UserModuleProgressRepository;
 import org.example.backend.repository.UserPracticeAttemptRepository;
 import org.example.backend.repository.UserRepository;
@@ -51,18 +53,39 @@ public class AchievementService {
     @Autowired(required = false)
     private ChatService chatService;
 
+    @Autowired(required = false)
+    private UserFriendshipRepository userFriendshipRepository;
+
     @Transactional
     public ProfileInsightsResponse getMyInsights(String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
-        return buildInsights(user, true);
+        ProfileInsightsResponse out = buildInsights(user, true);
+        out.setRelationStatus("SELF");
+        return out;
     }
 
     @Transactional(readOnly = true)
     public ProfileInsightsResponse getPublicProfile(Long userId) {
+        return getPublicProfile(null, userId);
+    }
+
+    @Transactional(readOnly = true)
+    public ProfileInsightsResponse getPublicProfile(String viewerEmail, Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
-        return buildInsights(user, false);
+        ProfileInsightsResponse out = buildInsights(user, false);
+        if (viewerEmail != null && !viewerEmail.isBlank() && userFriendshipRepository != null) {
+            userRepository.findByEmail(viewerEmail).ifPresent(viewer -> {
+                if (viewer.getId().equals(user.getId())) {
+                    out.setRelationStatus("SELF");
+                } else {
+                    List<UserFriendship> links = userFriendshipRepository.findBetweenUsers(viewer.getId(), user.getId());
+                    out.setRelationStatus(ChatService.resolveRelationStatus(viewer.getId(), user.getId(), links));
+                }
+            });
+        }
+        return out;
     }
 
     @Transactional

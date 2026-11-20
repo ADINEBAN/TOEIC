@@ -45,6 +45,10 @@ import {
 } from "@/src/services/user.service";
 import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
 import { ChatFriendsData, ChatMessageItem, FriendPerson } from "@/src/types/user-api";
+import {
+  playMessengerNotificationSound,
+  registerMessengerAudioUnlock,
+} from "@/src/utils/notification-sound";
 import { useResponsiveLayout } from "@/src/utils/responsive";
 
 type PeerStub = {
@@ -147,6 +151,33 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
 
   const communityListRef = useRef<FlatList<ChatMessageItem>>(null);
   const directListRef = useRef<FlatList<ChatMessageItem>>(null);
+  const friendsBootstrappedRef = useRef(false);
+  const knownIncomingIdsRef = useRef<Set<number>>(new Set());
+  const knownLatestDirectMsgIdRef = useRef<Map<number, number>>(new Map());
+  const activeDmPeerIdRef = useRef<number | null>(null);
+  const knownActiveDmLastMsgIdRef = useRef<number | null>(null);
+  const openRef = useRef(open);
+  const tabRef = useRef(tab);
+  const activePeerRef = useRef(activePeer);
+  useEffect(() => {
+    openRef.current = open;
+    tabRef.current = tab;
+    activePeerRef.current = activePeer;
+  }, [activePeer, open, tab]);
+
+  useEffect(() => {
+    registerMessengerAudioUnlock();
+  }, []);
+
+  const currentUserId = auth.user?.id ?? null;
+
+  useEffect(() => {
+    friendsBootstrappedRef.current = false;
+    knownIncomingIdsRef.current = new Set();
+    knownLatestDirectMsgIdRef.current = new Map();
+    activeDmPeerIdRef.current = null;
+    knownActiveDmLastMsgIdRef.current = null;
+  }, [auth.accessToken, currentUserId]);
 
   const initialBounds = {
     minX: 8,
@@ -224,36 +255,152 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
     if (!auth.accessToken) return;
     try {
       const res = await getChatFriends(auth.accessToken);
-      setFriendsData(res.data ?? null);
+      const nextData = res.data ?? null;
+      if (nextData) {
+        const nextIncoming = nextData.incomingRequests ?? [];
+        const nextFriends = nextData.friends ?? [];
+
+        if (!friendsBootstrappedRef.current) {
+          knownIncomingIdsRef.current = new Set(nextIncoming.map((item) => item.userId));
+          const initialMsgMap = new Map<number, number>();
+          for (const friend of nextFriends) {
+            if (friend.lastMessageId != null) {
+              initialMsgMap.set(friend.userId, friend.lastMessageId);
+            }
+          }
+          knownLatestDirectMsgIdRef.current = initialMsgMap;
+          friendsBootstrappedRef.current = true;
+        } else {
+          let hasNewIncomingEvent = false;
+          for (const reqItem of nextIncoming) {
+            if (!knownIncomingIdsRef.current.has(reqItem.userId)) {
+              hasNewIncomingEvent = true;
+              break;
+            }
+          }
+
+          const viewingPeerId =
+            openRef.current && tabRef.current === "FRIENDS" ? activePeerRef.current?.userId ?? null : null;
+
+          if (!hasNewIncomingEvent) {
+            for (const friend of nextFriends) {
+              const lastId = friend.lastMessageId ?? 0;
+              const prevKnownId = knownLatestDirectMsgIdRef.current.get(friend.userId) ?? 0;
+              const fromOther = friend.lastMessageSenderId != null && friend.lastMessageSenderId !== currentUserId;
+              if (
+                (friend.unreadCount ?? 0) > 0
+                && lastId > prevKnownId
+                && fromOther
+                && viewingPeerId !== friend.userId
+              ) {
+                hasNewIncomingEvent = true;
+                break;
+              }
+            }
+          }
+
+          knownIncomingIdsRef.current = new Set(nextIncoming.map((item) => item.userId));
+          const updatedMsgMap = new Map(knownLatestDirectMsgIdRef.current);
+          for (const friend of nextFriends) {
+            if (friend.lastMessageId != null) {
+              const prev = updatedMsgMap.get(friend.userId) ?? 0;
+              if (friend.lastMessageId > prev) {
+                updatedMsgMap.set(friend.userId, friend.lastMessageId);
+              }
+            }
+          }
+          knownLatestDirectMsgIdRef.current = updatedMsgMap;
+
+          if (hasNewIncomingEvent) {
+            playMessengerNotificationSound();
+          }
+        }
+      }
+      setFriendsData(nextData);
     } catch {
       // ignore transient error
     }
-  }, [auth.accessToken]);
+  }, [auth.accessToken, currentUserId]);
 
   const loadDirect = useCallback(
     async (peerId: number) => {
       if (!auth.accessToken) return;
       try {
         const res = await getDirectChatMessages(auth.accessToken, peerId, 60);
-        setDirectMsgs(res.data ?? []);
+        const msgs = res.data ?? [];
+        const latestMsgId = msgs.reduce((maxId, msg) => (msg.id > maxId ? msg.id : maxId), 0);
+
+        if (activeDmPeerIdRef.current === peerId && knownActiveDmLastMsgIdRef.current !== null) {
+          const prevKnown = knownActiveDmLastMsgIdRef.current;
+          const hasNewOtherMsg = msgs.some(
+            (m) => m.id > prevKnown && !m.mine && m.senderId !== currentUserId,
+          );
+          if (hasNewOtherMsg) {
+            playMessengerNotificationSound();
+          }
+        }
+        activeDmPeerIdRef.current = peerId;
+        knownActiveDmLastMsgIdRef.current = latestMsgId;
+        if (latestMsgId > (knownLatestDirectMsgIdRef.current.get(peerId) ?? 0)) {
+          knownLatestDirectMsgIdRef.current.set(peerId, latestMsgId);
+        }
+
+        setDirectMsgs(msgs);
+        setFriendsData((prev) => {
+          if (!prev) return prev;
+          let changed = false;
+          const nextFriends = prev.friends.map((friend) => {
+            if (friend.userId === peerId && (friend.unreadCount ?? 0) > 0) {
+              changed = true;
+              return { ...friend, unreadCount: 0 };
+            }
+            return friend;
+          });
+          if (!changed) return prev;
+          const nextTotal = nextFriends.reduce((sum, friend) => sum + (friend.unreadCount ?? 0), 0);
+          return { ...prev, friends: nextFriends, totalUnreadDirectMessages: nextTotal };
+        });
       } catch (err) {
         Alert.alert("Tin nhắn", err instanceof Error ? err.message : "Không thể tải đoạn chat.");
         setActivePeer(null);
       }
     },
-    [auth.accessToken],
+    [auth.accessToken, currentUserId],
   );
 
+  // Always poll friends & unread direct messages gently while logged in so FAB badge and chime stay live
   useEffect(() => {
-    if (!open || !auth.accessToken) return;
+    if (!auth.accessToken) return;
+    const initTimer = setTimeout(() => {
+      void loadFriends();
+    }, 0);
+    const bgTimer = setInterval(() => {
+      void loadFriends();
+    }, 4000);
+    return () => {
+      clearTimeout(initTimer);
+      clearInterval(bgTimer);
+    };
+  }, [auth.accessToken, loadFriends]);
+
+  useEffect(() => {
+    if (!open || !auth.accessToken) {
+      activeDmPeerIdRef.current = null;
+      knownActiveDmLastMsgIdRef.current = null;
+      return;
+    }
     const initTimer = setTimeout(() => {
       setLoadingMsgs(true);
       const initialLoad = async () => {
         if (tab === "COMMUNITY") {
+          activeDmPeerIdRef.current = null;
+          knownActiveDmLastMsgIdRef.current = null;
           await loadCommunity();
         } else if (activePeer) {
           await loadDirect(activePeer.userId);
         } else {
+          activeDmPeerIdRef.current = null;
+          knownActiveDmLastMsgIdRef.current = null;
           await loadFriends();
         }
         setLoadingMsgs(false);
@@ -376,6 +523,22 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
       Alert.alert("Bạn bè", err instanceof Error ? err.message : "Thao tác thất bại.");
     }
   };
+
+  const incomingRequestsCount = friendsData?.incomingRequests?.length ?? 0;
+  const unreadDirectCount =
+    friendsData?.totalUnreadDirectMessages
+    ?? (friendsData?.friends ?? []).reduce((sum, f) => sum + (f.unreadCount ?? 0), 0);
+  const totalNotificationCount = incomingRequestsCount + unreadDirectCount;
+
+  const openFab = useCallback(() => {
+    if (totalNotificationCount > 0) {
+      setTab("FRIENDS");
+      setActivePeer(null);
+      setOpen(true);
+    } else {
+      openCommunityChat();
+    }
+  }, [openCommunityChat, totalNotificationCount]);
 
   const showFab = Boolean(auth.accessToken) && fabVisible && HUB_ROUTES_WITH_FAB.has(pathname);
 
@@ -528,7 +691,7 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
           </Pressable>
           <Pressable
             accessibilityLabel="Mở Chat Cộng đồng (kéo để di chuyển)"
-            onPress={openCommunityChat}
+            onPress={openFab}
             style={({ pressed }) => [
               styles.fabButton,
               pressed ? { transform: [{ scale: 0.94 }] } : null,
@@ -542,6 +705,13 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
             />
             <Ionicons color="#FFFFFF" name="chatbubble-ellipses" size={22} />
           </Pressable>
+          {totalNotificationCount > 0 ? (
+            <View pointerEvents="none" style={styles.fabNotifBadge}>
+              <Text style={styles.fabNotifBadgeText}>
+                {totalNotificationCount > 9 ? "9+" : String(totalNotificationCount)}
+              </Text>
+            </View>
+          ) : null}
         </Animated.View>
       ) : null}
 
@@ -570,14 +740,18 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
                     setTab("FRIENDS");
                     setActivePeer(null);
                   }}
-                  style={[styles.segBtn, tab === "FRIENDS" ? styles.segBtnActive : null]}
+                  style={[styles.segBtn, tab === "FRIENDS" ? styles.segBtnActive : null, styles.segBtnRow]}
                 >
                   <Text style={[styles.segText, tab === "FRIENDS" ? styles.segTextActive : null]}>
                     BẠN BÈ
-                    {friendsData?.incomingRequests?.length
-                      ? ` (${friendsData.incomingRequests.length})`
-                      : ""}
                   </Text>
+                  {totalNotificationCount > 0 ? (
+                    <View style={styles.tabBadge}>
+                      <Text style={styles.tabBadgeText}>
+                        {totalNotificationCount > 9 ? "9+" : String(totalNotificationCount)}
+                      </Text>
+                    </View>
+                  ) : null}
                 </Pressable>
               </View>
 
@@ -840,10 +1014,20 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
                           <Text numberOfLines={1} style={styles.friendName}>
                             {f.fullName} <Text style={styles.friendHandle}>@{f.username}</Text>
                           </Text>
-                          <Text numberOfLines={1} style={styles.emptySmall}>
+                          <Text
+                            numberOfLines={1}
+                            style={[styles.emptySmall, (f.unreadCount ?? 0) > 0 ? styles.unreadPreview : null]}
+                          >
                             {f.lastMessagePreview || "Nhấn để trò chuyện 1-1"}
                           </Text>
                         </View>
+                        {(f.unreadCount ?? 0) > 0 ? (
+                          <View style={styles.friendUnreadBadge}>
+                            <Text style={styles.friendUnreadBadgeText}>
+                              {(f.unreadCount ?? 0) > 9 ? "9+" : String(f.unreadCount)}
+                            </Text>
+                          </View>
+                        ) : null}
                         <Ionicons color={colors.primary} name="chatbubble-outline" size={18} />
                       </Pressable>
                     ))
@@ -900,6 +1084,7 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
 
       <PublicProfileModal
         onClose={() => setInspectUserId(null)}
+        onFriendshipChanged={() => void loadFriends()}
         onStartDirectChat={(peer) => openDirectChat(peer)}
         userId={inspectUserId}
         visible={inspectUserId !== null}
@@ -946,6 +1131,28 @@ const createStyles = (colors: LiquidThemeColors) =>
       shadowRadius: 10,
       width: FAB_SIZE,
     },
+    fabNotifBadge: {
+      alignItems: "center",
+      backgroundColor: "#EF4444",
+      borderColor: "#FFFFFF",
+      borderRadius: 99,
+      borderWidth: 2,
+      elevation: 9,
+      height: 20,
+      justifyContent: "center",
+      minWidth: 20,
+      paddingHorizontal: 5,
+      position: "absolute",
+      right: -4,
+      top: -4,
+      zIndex: 3,
+    },
+    fabNotifBadgeText: {
+      color: "#FFFFFF",
+      fontSize: 10.5,
+      fontWeight: "900",
+      lineHeight: 12,
+    },
     modalBackdrop: {
       alignItems: "center",
       backgroundColor: "rgba(15, 23, 42, 0.56)",
@@ -975,9 +1182,20 @@ const createStyles = (colors: LiquidThemeColors) =>
       padding: 3,
     },
     segBtn: { borderRadius: 99, paddingHorizontal: 12, paddingVertical: 6 },
+    segBtnRow: { alignItems: "center", flexDirection: "row", gap: 5 },
     segBtnActive: { backgroundColor: colors.backgroundStrong, elevation: 2 },
     segText: { color: colors.textMuted, fontSize: 11.5, fontWeight: "800" },
     segTextActive: { color: colors.text, fontWeight: "900" },
+    tabBadge: {
+      alignItems: "center",
+      backgroundColor: "#EF4444",
+      borderRadius: 99,
+      height: 16,
+      justifyContent: "center",
+      minWidth: 16,
+      paddingHorizontal: 4,
+    },
+    tabBadgeText: { color: "#FFFFFF", fontSize: 9.5, fontWeight: "900" },
     headerIcons: { alignItems: "center", flexDirection: "row", gap: 6 },
     iconBtn: { padding: 5 },
     chatPane: { flex: 1, position: "relative" },
@@ -1040,6 +1258,17 @@ const createStyles = (colors: LiquidThemeColors) =>
     systemText: { color: colors.textMuted, fontSize: 12, fontStyle: "italic", lineHeight: 17, textAlign: "center" },
     emptyText: { color: colors.textMuted, fontSize: 13, paddingVertical: 32, textAlign: "center" },
     emptySmall: { color: colors.textMuted, fontSize: 12 },
+    unreadPreview: { color: colors.text, fontWeight: "800" },
+    friendUnreadBadge: {
+      alignItems: "center",
+      backgroundColor: "#EF4444",
+      borderRadius: 99,
+      height: 19,
+      justifyContent: "center",
+      minWidth: 19,
+      paddingHorizontal: 5,
+    },
+    friendUnreadBadgeText: { color: "#FFFFFF", fontSize: 10.5, fontWeight: "900" },
     jumpDownBtn: {
       alignItems: "center",
       alignSelf: "center",

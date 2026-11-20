@@ -1,7 +1,9 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import * as Linking from "expo-linking";
 import { router } from "expo-router";
-import { useState } from "react";
-import { Alert, Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import * as WebBrowser from "expo-web-browser";
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Alert, Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
 import PrimaryButton from "@/src/components/common/PrimaryButton";
@@ -10,12 +12,20 @@ import { API_BASE_URL } from "@/src/config/env";
 import { useAuth } from "@/src/hooks/use-auth";
 import AuthLayout from "@/src/layouts/AuthLayout";
 import { ApiError } from "@/src/services/api.client";
-import { login } from "@/src/services/auth.service";
+import {
+  buildGoogleAuthorizeUrl,
+  exchangeGoogleAuthCode,
+  getGoogleAuthStatus,
+  login,
+} from "@/src/services/auth.service";
 import { getUserRoadmap } from "@/src/services/user.service";
 import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
+import { LoginSuccessData } from "@/src/types/auth";
 import { isNoActiveLearningPathError } from "@/src/utils/api-errors";
 import { formatExpiry } from "@/src/utils/format";
 import { useResponsiveLayout } from "@/src/utils/responsive";
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const { auth, signIn } = useAuth();
@@ -27,7 +37,17 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(() => {
+    if (Platform.OS !== "web" || typeof window === "undefined") {
+      return null;
+    }
+    const err = new URLSearchParams(window.location.search).get("googleAuthError");
+    if (!err) return null;
+    return err === "access_denied"
+      ? "Bạn đã hủy đăng nhập Google."
+      : `Đăng nhập Google thất bại (${err}).`;
+  });
 
   const emailError =
     email.length > 0 && !email.includes("@") ? "Email không hợp lệ." : null;
@@ -35,6 +55,55 @@ export default function LoginScreen() {
     password.length > 0 && password.trim().length === 0
       ? "Mật khẩu không được để trống."
       : null;
+
+  const completeAuthSession = useCallback(
+    async (data: LoginSuccessData) => {
+      signIn(data);
+      try {
+        await getUserRoadmap(data.accessToken);
+        router.replace("/user/home");
+      } catch (roadmapError) {
+        if (isNoActiveLearningPathError(roadmapError)) {
+          router.replace("/user/onboarding");
+          return;
+        }
+        router.replace("/user/home");
+      }
+    },
+    [signIn],
+  );
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof window === "undefined") {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const googleCode = params.get("googleAuthCode");
+    const googleError = params.get("googleAuthError");
+    if (!googleCode && !googleError) {
+      return;
+    }
+
+    const cleanUrl = window.location.pathname + (window.location.hash || "");
+    window.history.replaceState({}, "", cleanUrl);
+
+    if (googleCode) {
+      void (async () => {
+        try {
+          setGoogleLoading(true);
+          setErrorMessage(null);
+          const payload = await exchangeGoogleAuthCode(googleCode);
+          await completeAuthSession(payload.data);
+        } catch (err) {
+          setErrorMessage(
+            err instanceof Error ? err.message : "Không thể hoàn tất đăng nhập Google.",
+          );
+        } finally {
+          setGoogleLoading(false);
+        }
+      })();
+    }
+  }, [completeAuthSession]);
 
   const handleLogin = async () => {
     if (email.trim().length === 0 || password.trim().length === 0) {
@@ -56,18 +125,7 @@ export default function LoginScreen() {
       });
 
       const payload = await login({ email: email.trim(), password });
-      signIn(payload.data);
-
-      try {
-        await getUserRoadmap(payload.data.accessToken);
-        router.replace("/user/home");
-      } catch (roadmapError) {
-        if (isNoActiveLearningPathError(roadmapError)) {
-          router.replace("/user/onboarding");
-          return;
-        }
-        router.replace("/user/home");
-      }
+      await completeAuthSession(payload.data);
     } catch (error) {
       if (error instanceof ApiError) {
         const raw = error.message.trim().toLowerCase();
@@ -87,6 +145,59 @@ export default function LoginScreen() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      setGoogleLoading(true);
+      setErrorMessage(null);
+
+      const statusRes = await getGoogleAuthStatus();
+      if (!statusRes.data?.redirectConfigured) {
+        setErrorMessage(
+          "Backend chưa cấu hình GOOGLE_CLIENT_ID và GOOGLE_CLIENT_SECRET. Hãy thêm biến môi trường rồi khởi động lại backend.",
+        );
+        return;
+      }
+
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        const redirectUri = `${window.location.origin}${window.location.pathname}`;
+        window.location.href = buildGoogleAuthorizeUrl(redirectUri);
+        return;
+      }
+
+      const appRedirectUri = Linking.createURL("/");
+      const authorizeUrl = buildGoogleAuthorizeUrl(appRedirectUri);
+      const result = await WebBrowser.openAuthSessionAsync(authorizeUrl, appRedirectUri);
+      if (result.type !== "success" || !result.url) {
+        return;
+      }
+
+      const parsed = Linking.parse(result.url);
+      const errParam = parsed.queryParams?.googleAuthError;
+      const codeParam = parsed.queryParams?.googleAuthCode;
+      if (typeof errParam === "string" && errParam.trim().length > 0) {
+        setErrorMessage(
+          errParam === "access_denied"
+            ? "Bạn đã hủy đăng nhập Google."
+            : `Đăng nhập Google thất bại (${errParam}).`,
+        );
+        return;
+      }
+      if (typeof codeParam !== "string" || codeParam.trim().length === 0) {
+        setErrorMessage("Không nhận được mã xác thực từ Google.");
+        return;
+      }
+
+      const payload = await exchangeGoogleAuthCode(codeParam);
+      await completeAuthSession(payload.data);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Không thể đăng nhập bằng Google.",
+      );
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -177,6 +288,31 @@ export default function LoginScreen() {
 
         <PrimaryButton label="ĐĂNG NHẬP" loading={loading} onPress={handleLogin} />
 
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>hoặc</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <Pressable
+          disabled={loading || googleLoading}
+          onPress={handleGoogleLogin}
+          style={({ pressed }) => [
+            styles.googleButton,
+            (loading || googleLoading) && styles.googleButtonDisabled,
+            pressed && styles.googleButtonPressed,
+          ]}
+        >
+          {googleLoading ? (
+            <ActivityIndicator color="#0F172A" size="small" />
+          ) : (
+            <Ionicons color="#EA4335" name="logo-google" size={18} />
+          )}
+          <Text style={styles.googleButtonText}>
+            {googleLoading ? "Đang kết nối Google..." : "Tiếp tục với Google"}
+          </Text>
+        </Pressable>
+
         <Pressable
           hitSlop={8}
           onPress={() => router.push("/register")}
@@ -266,6 +402,47 @@ const createStyles = (colors: LiquidThemeColors) =>
     },
     registerHighlight: {
       color: colors.primary,
+      fontWeight: "800",
+    },
+    dividerRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 10,
+      marginVertical: 14,
+    },
+    dividerLine: {
+      backgroundColor: colors.glassBorder,
+      flex: 1,
+      height: 1,
+    },
+    dividerText: {
+      color: colors.textMuted,
+      fontSize: 12,
+      fontWeight: "700",
+      textTransform: "uppercase",
+    },
+    googleButton: {
+      alignItems: "center",
+      backgroundColor: "#FFFFFF",
+      borderColor: colors.glassBorder,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: 10,
+      justifyContent: "center",
+      minHeight: 48,
+      paddingHorizontal: 16,
+    },
+    googleButtonDisabled: {
+      opacity: 0.65,
+    },
+    googleButtonPressed: {
+      opacity: 0.85,
+      transform: [{ scale: 0.99 }],
+    },
+    googleButtonText: {
+      color: "#0F172A",
+      fontSize: 15,
       fontWeight: "800",
     },
     successCard: {

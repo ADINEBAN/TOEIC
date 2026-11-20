@@ -31,6 +31,7 @@ jwt:
 server:
   port: ${PORT:${SERVER_PORT:8082}}
   address: 0.0.0.0
+  forward-headers-strategy: framework
   servlet:
     context-path: /api
   # If you still hit limits from the container (embedded Tomcat/Jetty/Undertow),
@@ -69,3 +70,9 @@ toeic:
   ffmpeg-bin: ${TOEIC_FFMPEG_BIN:}
   whisper-model: ${TOEIC_WHISPER_MODEL:tiny.en}
   video-chunk-seconds: ${TOEIC_VIDEO_CHUNK_SECONDS:480}
+
+google:
+  oauth:
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
+    redirect-uri: ${GOOGLE_REDIRECT_URI:}

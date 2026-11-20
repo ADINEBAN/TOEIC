@@ -29,6 +29,7 @@ public class ProfileInsightsResponse {
     private int longestStreak;
     private int totalStudyMinutes;
     private LocalDateTime lastActiveAt;
+    private String relationStatus;
 
     private StudyStats stats;
     private List<AchievementItem> achievements;

@@ -734,6 +734,18 @@ class Sprint6CoreServicesTest {
             assertEquals("satisfaction", lateHintRoom.getAudioHintWord());
             assertEquals("/ˌsæt.ɪsˈfæk.ʃən/", lateHintRoom.getQuestions().get(0).getPronunciation());
 
+            // Players can fire fun 1v1 taunt emotes live during match
+            ArenaRoomResponse emotedByAlice = arenaService.sendEmote("alice@toeic.test", privRoom.getRoomCode(), "SMIRK");
+            var aliceStateAfterEmote = emotedByAlice.getPlayers().stream()
+                    .filter(p -> "alice@toeic.test".equals(p.getEmail()))
+                    .findFirst()
+                    .orElseThrow();
+            assertNotNull(aliceStateAfterEmote.getActiveEmote());
+            assertEquals("SMIRK", aliceStateAfterEmote.getActiveEmote().getEmoteCode());
+            assertEquals("😏", aliceStateAfterEmote.getActiveEmote().getEmoji());
+            assertThrows(AppException.class,
+                    () -> arenaService.sendEmote("alice@toeic.test", privRoom.getRoomCode(), "INVALID_CODE"));
+
             // Bob solves Round 1 -> enters REVEAL & earns diamonds
             ArenaAnswerRequest ansReq = new ArenaAnswerRequest();
             ansReq.setQuestionId(901L);

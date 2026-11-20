@@ -1,6 +1,8 @@
+import { API_BASE_URL } from '@/src/config/env';
 import { apiRequest, ApiError } from '@/src/services/api.client';
 import {
   ApiResponse,
+  GoogleOAuthStatusResponse,
   LoginRequest,
   LoginResponse,
   RegisterRequest,
@@ -83,4 +85,36 @@ export async function changePassword(
     },
     method: 'POST',
   });
+}
+
+export async function getGoogleAuthStatus(): Promise<GoogleOAuthStatusResponse> {
+  return apiRequest<GoogleOAuthStatusResponse>('/api/auth/google/status', {
+    method: 'GET',
+  });
+}
+
+export function buildGoogleAuthorizeUrl(clientRedirectUri: string): string {
+  const base = API_BASE_URL.endsWith('/api') ? API_BASE_URL : `${API_BASE_URL}/api`;
+  return `${base}/auth/google/authorize?redirect_uri=${encodeURIComponent(clientRedirectUri)}`;
+}
+
+export async function exchangeGoogleAuthCode(code: string): Promise<LoginResponse> {
+  const payload = await apiRequest<LoginResponse>('/api/auth/google/exchange', {
+    body: JSON.stringify({ code }),
+    method: 'POST',
+  });
+
+  return validateLoginResponse(payload);
+}
+
+export async function loginWithGoogleTokens(payload: {
+  idToken?: string;
+  accessToken?: string;
+}): Promise<LoginResponse> {
+  const response = await apiRequest<LoginResponse>('/api/auth/google', {
+    body: JSON.stringify(payload),
+    method: 'POST',
+  });
+
+  return validateLoginResponse(response);
 }
