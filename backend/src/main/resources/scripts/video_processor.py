@@ -153,7 +153,7 @@ def extract_ytdlp_info(url: str, allow_playlist: bool = False) -> Dict[str, Any]
                 "socket_timeout": 12,
             }, temp_cookies)
             if profile is not None:
-                opts["extractor_args"] = {"youtube": {"player_client": profile, "skip": ["dash", "hls"]}}
+                opts["extractor_args"] = {"youtube": {"player_client": profile}}
             try:
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(canonical, download=False)
