@@ -34,7 +34,7 @@ public class UserFlashcardController {
     private final FlashcardService flashcardService;
 
     @PostMapping
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<FlashcardResponse>> createMyFlashcard(
             Authentication authentication,
             @RequestBody CreatePersonalFlashcardRequest request
@@ -44,14 +44,14 @@ public class UserFlashcardController {
     }
 
     @GetMapping("/mine")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<List<FlashcardResponse>>> getMyFlashcards(Authentication authentication) {
         List<FlashcardResponse> response = flashcardService.getMyFlashcards(authentication.getName());
         return ApiResponseUtil.success(response, SuccessCode.FLASHCARD_LISTED);
     }
 
     @PutMapping("/{flashcardId}")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<FlashcardResponse>> updateMyFlashcard(
             Authentication authentication,
             @PathVariable Long flashcardId,
@@ -62,7 +62,7 @@ public class UserFlashcardController {
     }
 
     @DeleteMapping("/{flashcardId}")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<Void>> deleteMyFlashcard(
             Authentication authentication,
             @PathVariable Long flashcardId
@@ -73,7 +73,7 @@ public class UserFlashcardController {
 
     // Collection management endpoints
     @PostMapping("/collections")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<FlashcardCollectionResponse>> createCollection(
             Authentication authentication,
             @RequestBody CreateFlashcardCollectionRequest request
@@ -83,14 +83,14 @@ public class UserFlashcardController {
     }
 
     @GetMapping("/collections")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<List<FlashcardCollectionResponse>>> getMyCollections(Authentication authentication) {
         List<FlashcardCollectionResponse> response = flashcardService.getMyCollections(authentication.getName());
         return ApiResponseUtil.success(response, SuccessCode.FLASHCARD_COLLECTION_LISTED);
     }
 
     @GetMapping("/collections/{collectionId}")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<FlashcardCollectionResponse>> getCollectionDetail(
             Authentication authentication,
             @PathVariable Long collectionId
@@ -100,7 +100,7 @@ public class UserFlashcardController {
     }
 
     @PutMapping("/collections/{collectionId}")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<FlashcardCollectionResponse>> updateCollection(
             Authentication authentication,
             @PathVariable Long collectionId,
@@ -111,7 +111,7 @@ public class UserFlashcardController {
     }
 
     @DeleteMapping("/collections/{collectionId}")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<Void>> deleteCollection(
             Authentication authentication,
             @PathVariable Long collectionId

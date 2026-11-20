@@ -1,40 +1,46 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
-import { useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
   Easing,
-  Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 
-import { colors, radius, spacing } from "@/src/assets/styles/user-theme";
+import { radius } from "@/src/assets/styles/user-theme";
+import { LiquidButton } from "@/src/components/ui/LiquidGlass";
 import SurfaceCard from "@/src/components/user/SurfaceCard";
 import UserScreen from "@/src/components/user/UserScreen";
 import { useAuth } from "@/src/hooks/use-auth";
 import { getUserRoadmap } from "@/src/services/user.service";
+import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
 import { UserRoadmap } from "@/src/types/user-api";
 import { isNoActiveLearningPathError } from "@/src/utils/api-errors";
 import { pushRoute } from "@/src/utils/navigation";
+import { useResponsiveLayout } from "@/src/utils/responsive";
 
 const CONFETTI_COLORS = ["#F5B942", "#47C4B4", "#5B8CFF", "#FF8B6A", "#8DDC6F", "#C99CFF"];
-const CONFETTI_X = [-110, -70, -25, 25, 70, 110];
+const CONFETTI_X = [-100, -64, -22, 22, 64, 100];
 const CONFETTI_DELAY = [0, 180, 320, 480, 620, 760];
 
 export default function PathCompleteScreen() {
   const { auth, isHydrated } = useAuth();
+  const { theme } = useAppTheme();
+  const { gridItemWidth, rf } = useResponsiveLayout();
+  const colors = theme.colors;
+  const styles = useThemedStyles(createStyles);
+
   const params = useLocalSearchParams<{ completed?: string; moduleId?: string; pathTitle?: string }>();
   const [loading, setLoading] = useState(false);
   const [roadmap, setRoadmap] = useState<UserRoadmap | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const trophyScale = useRef(new Animated.Value(0.92)).current;
-  const trophyGlow = useRef(new Animated.Value(0.55)).current;
-  const confettiValues = useRef(CONFETTI_COLORS.map(() => new Animated.Value(0))).current;
+  const [trophyScale] = useState(() => new Animated.Value(0.92));
+  const [trophyGlow] = useState(() => new Animated.Value(0.55));
+  const [confettiValues] = useState(() => CONFETTI_COLORS.map(() => new Animated.Value(0)));
   const isCompletedFallback = params.completed === "true";
   const fallbackPathTitle = params.pathTitle ? decodeURIComponent(params.pathTitle) : "Chúc mừng bạn đã về đích";
 
@@ -63,7 +69,7 @@ export default function PathCompleteScreen() {
   }, [auth.accessToken, isCompletedFallback]);
 
   useEffect(() => {
-    Animated.loop(
+    const trophyLoop = Animated.loop(
       Animated.sequence([
         Animated.parallel([
           Animated.timing(trophyScale, {
@@ -94,7 +100,8 @@ export default function PathCompleteScreen() {
           }),
         ]),
       ]),
-    ).start();
+    );
+    trophyLoop.start();
 
     const confettiLoops = confettiValues.map((value, index) =>
       Animated.loop(
@@ -116,33 +123,43 @@ export default function PathCompleteScreen() {
     );
 
     confettiLoops.forEach((loop) => loop.start());
+    return () => {
+      trophyLoop.stop();
+      confettiLoops.forEach((loop) => loop.stop());
+    };
   }, [confettiValues, trophyGlow, trophyScale]);
 
   useFocusEffect(
     useCallback(() => {
       if (!isHydrated || !auth.accessToken) return;
-      loadRoadmap();
+      void loadRoadmap();
     }, [auth.accessToken, isHydrated, loadRoadmap]),
   );
 
-  const moduleCount = roadmap?.milestones.reduce((sum, item) => sum + item.modules.length, 0) ?? 0;
+  const moduleCount = (roadmap?.milestones ?? []).reduce(
+    (sum, item) => sum + (item?.modules?.length ?? 0),
+    0,
+  );
+  const completedAt = roadmap?.completedAt;
   const completedAtLabel = useMemo(() => {
-    if (!roadmap?.completedAt) return "Ngày hôm nay";
-    const date = new Date(roadmap.completedAt);
+    if (!completedAt) return "Ngày hôm nay";
+    const date = new Date(completedAt);
     if (Number.isNaN(date.getTime())) return "Ngày hôm nay";
     return date.toLocaleDateString("vi-VN");
-  }, [roadmap?.completedAt]);
+  }, [completedAt]);
   const displayTitle = roadmap?.learningPathTitle ?? fallbackPathTitle;
   const displayStatus = roadmap?.status ?? (isCompletedFallback ? "COMPLETED" : null);
 
+  const badgeW = gridItemWidth(3, 8, true);
+
   return (
-    <UserScreen contentStyle={styles.content}>
+    <UserScreen contentStyle={styles.content} hasTabDock={false}>
       <SurfaceCard style={styles.heroCard}>
         <View pointerEvents="none" style={styles.confettiLayer}>
           {confettiValues.map((value, index) => {
             const translateY = value.interpolate({
               inputRange: [0, 1],
-              outputRange: [-40, 320],
+              outputRange: [-40, 300],
             });
             const rotate = value.interpolate({
               inputRange: [0, 1],
@@ -179,44 +196,36 @@ export default function PathCompleteScreen() {
           ]}
         />
         <Animated.View style={[styles.iconWrap, { transform: [{ scale: trophyScale }] }]}>
-          <Ionicons color={colors.surface} name="trophy" size={40} />
+          <Ionicons color={colors.onPrimary} name="trophy" size={36} />
         </Animated.View>
 
         <Text style={styles.eyebrow}>KHÓA HỌC ĐÃ HOÀN THÀNH</Text>
-        <Text style={styles.title}>
-          {displayTitle}
-        </Text>
+        <Text style={[styles.title, { fontSize: rf(24) }]}>{displayTitle}</Text>
         <Text style={styles.subtitle}>
           {displayStatus === "COMPLETED"
-            ? "Bạn đã hoàn thành toàn bộ module trong lộ trình này. Hãy thưởng cho mình một khoảnh khắc ăn mừng nhỏ."
-            : "Lộ trình đã được khóa sổ thành tích. Bạn có thể xem lại roadmap hoàn tất và bắt đầu mục tiêu mới."}
+            ? "Bạn đã hoàn thành toàn bộ module trong lộ trình này!"
+            : "Lộ trình đã được hoàn tất. Bạn có thể chọn mục tiêu mới để tiếp tục nâng điểm."}
         </Text>
 
         {loading ? (
           <View style={styles.feedbackRow}>
-            <ActivityIndicator color={colors.primaryDark} />
+            <ActivityIndicator color={colors.primary} />
             <Text style={styles.feedbackText}>Đang đồng bộ thành tích...</Text>
           </View>
         ) : null}
 
         {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
-        {!loading && errorMessage?.includes("chua co roadmap") ? (
-          <Pressable onPress={() => pushRoute("/user/onboarding")} style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>Bắt đầu onboarding</Text>
-          </Pressable>
-        ) : null}
-
         <View style={styles.badgeRow}>
-          <View style={styles.badge}>
+          <View style={[styles.badge, { width: badgeW }]}>
             <Text style={styles.badgeValue}>100%</Text>
             <Text style={styles.badgeLabel}>Tiến độ</Text>
           </View>
-          <View style={styles.badge}>
+          <View style={[styles.badge, { width: badgeW }]}>
             <Text style={styles.badgeValue}>{moduleCount}</Text>
-            <Text style={styles.badgeLabel}>Module xong</Text>
+            <Text style={styles.badgeLabel}>Module</Text>
           </View>
-          <View style={styles.badge}>
+          <View style={[styles.badge, { width: badgeW }]}>
             <Text style={styles.badgeValue}>{roadmap?.targetScore ?? "--"}+</Text>
             <Text style={styles.badgeLabel}>Mục tiêu</Text>
           </View>
@@ -231,186 +240,162 @@ export default function PathCompleteScreen() {
         </View>
 
         <View style={styles.actionCol}>
-          <Pressable onPress={() => pushRoute("/user/practice")} style={styles.primaryButton}>
-            <Text style={styles.primaryButtonText}>Xem roadmap đã hoàn thành</Text>
-          </Pressable>
-          <Pressable onPress={() => pushRoute("/user/home")} style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>Chọn lộ trình mới</Text>
-          </Pressable>
+          <LiquidButton
+            label="Xem roadmap đã hoàn thành"
+            onPress={() => pushRoute("/user/practice")}
+            variant="primary"
+          />
+          <LiquidButton
+            label="Chọn lộ trình mới"
+            onPress={() => pushRoute("/user/home")}
+            variant="glass"
+          />
         </View>
       </SurfaceCard>
     </UserScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  actionCol: {
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-    width: "100%",
-  },
-  badge: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    flex: 1,
-    minWidth: 0,
-    padding: spacing.md,
-  },
-  badgeLabel: {
-    color: colors.textMuted,
-    fontSize: 12,
-    marginTop: 4,
-  },
-  badgeRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-    width: "100%",
-  },
-  badgeValue: {
-    color: colors.primaryDark,
-    fontSize: 20,
-    fontWeight: "900",
-  },
-  confettiLayer: {
-    alignItems: "center",
-    height: 340,
-    left: "50%",
-    marginLeft: -12,
-    pointerEvents: "none",
-    position: "absolute",
-    top: 0,
-    width: 24,
-  },
-  confettiPiece: {
-    borderRadius: 6,
-    height: 14,
-    position: "absolute",
-    top: 16,
-    width: 10,
-  },
-  content: {
-    justifyContent: "center",
-    paddingBottom: spacing.xl,
-  },
-  eyebrow: {
-    color: "#C47716",
-    fontSize: 12,
-    fontWeight: "900",
-    letterSpacing: 1.3,
-    marginBottom: spacing.sm,
-    marginTop: spacing.md,
-  },
-  errorText: {
-    backgroundColor: "rgba(249,112,102,0.1)",
-    borderColor: "rgba(249,112,102,0.24)",
-    borderRadius: radius.md,
-    borderWidth: 1,
-    color: colors.danger,
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    width: "100%",
-  },
-  feedbackRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  feedbackText: {
-    color: colors.textMuted,
-    fontSize: 14,
-  },
-  glowRing: {
-    backgroundColor: "rgba(245,185,66,0.22)",
-    borderRadius: 999,
-    height: 132,
-    position: "absolute",
-    top: 36,
-    width: 132,
-  },
-  heroCard: {
-    alignItems: "center",
-    backgroundColor: "#FFF9EE",
-    borderColor: "#F5D69A",
-    overflow: "hidden",
-  },
-  iconWrap: {
-    alignItems: "center",
-    backgroundColor: "#F0A33A",
-    borderRadius: radius.pill,
-    height: 88,
-    justifyContent: "center",
-    marginBottom: spacing.sm,
-    marginTop: spacing.lg,
-    width: 88,
-  },
-  primaryButton: {
-    alignItems: "center",
-    backgroundColor: colors.primaryDark,
-    borderRadius: radius.pill,
-    paddingVertical: 15,
-  },
-  primaryButtonText: {
-    color: colors.surface,
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  quoteCard: {
-    backgroundColor: "rgba(255,255,255,0.72)",
-    borderColor: "#F0DBB0",
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    marginTop: spacing.lg,
-    padding: spacing.md,
-    width: "100%",
-  },
-  quoteEyebrow: {
-    color: "#A66A00",
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 1,
-    marginBottom: spacing.xs,
-    textTransform: "uppercase",
-  },
-  quoteMeta: {
-    color: colors.textMuted,
-    fontSize: 12,
-    marginTop: spacing.sm,
-  },
-  quoteText: {
-    color: colors.primaryDark,
-    fontSize: 15,
-    fontWeight: "700",
-    lineHeight: 24,
-  },
-  secondaryButton: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    paddingVertical: 15,
-  },
-  secondaryButtonText: {
-    color: colors.primaryDark,
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  subtitle: {
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 24,
-    textAlign: "center",
-  },
-  title: {
-    color: colors.primaryDark,
-    fontSize: 30,
-    fontWeight: "900",
-    lineHeight: 36,
-    marginBottom: spacing.sm,
-    textAlign: "center",
-  },
-});
+const createStyles = (colors: LiquidThemeColors) =>
+  StyleSheet.create({
+    content: {
+      justifyContent: "center",
+    },
+    heroCard: {
+      alignItems: "center",
+      backgroundColor: colors.accentSoft,
+      borderColor: colors.accent,
+      overflow: "hidden",
+    },
+    confettiLayer: {
+      alignItems: "center",
+      height: 300,
+      left: "50%",
+      marginLeft: -12,
+      position: "absolute",
+      top: 0,
+      width: 24,
+    },
+    confettiPiece: {
+      borderRadius: 6,
+      height: 12,
+      position: "absolute",
+      top: 14,
+      width: 9,
+    },
+    glowRing: {
+      backgroundColor: colors.orbAccent,
+      borderRadius: 999,
+      height: 112,
+      position: "absolute",
+      top: 26,
+      width: 112,
+    },
+    iconWrap: {
+      alignItems: "center",
+      backgroundColor: colors.accent,
+      borderRadius: radius.pill,
+      height: 76,
+      justifyContent: "center",
+      marginBottom: 10,
+      marginTop: 18,
+      width: 76,
+    },
+    eyebrow: {
+      color: colors.accent,
+      fontSize: 11.5,
+      fontWeight: "900",
+      letterSpacing: 1.2,
+      marginBottom: 6,
+    },
+    title: {
+      color: colors.primaryDark,
+      fontWeight: "900",
+      lineHeight: 30,
+      marginBottom: 6,
+      textAlign: "center",
+    },
+    subtitle: {
+      color: colors.text,
+      fontSize: 14,
+      lineHeight: 21,
+      textAlign: "center",
+    },
+    feedbackRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 8,
+      marginTop: 10,
+    },
+    feedbackText: {
+      color: colors.textMuted,
+      fontSize: 13,
+    },
+    errorText: {
+      backgroundColor: colors.isDark ? "rgba(239,68,68,0.16)" : "rgba(249,112,102,0.1)",
+      borderColor: colors.isDark ? "rgba(248,113,113,0.34)" : "rgba(249,112,102,0.24)",
+      borderRadius: 12,
+      borderWidth: 1,
+      color: colors.danger,
+      marginTop: 10,
+      padding: 10,
+      width: "100%",
+    },
+    badgeRow: {
+      flexDirection: "row",
+      gap: 8,
+      marginTop: 16,
+      width: "100%",
+    },
+    badge: {
+      alignItems: "center",
+      backgroundColor: colors.glassFillStrong,
+      borderColor: colors.glassBorder,
+      borderRadius: 14,
+      borderWidth: 1,
+      paddingVertical: 10,
+    },
+    badgeValue: {
+      color: colors.primaryDark,
+      fontSize: 18,
+      fontWeight: "900",
+    },
+    badgeLabel: {
+      color: colors.textMuted,
+      fontSize: 11,
+      marginTop: 2,
+    },
+    quoteCard: {
+      backgroundColor: colors.glassFill,
+      borderColor: colors.glassBorder,
+      borderRadius: 16,
+      borderWidth: 1,
+      marginTop: 14,
+      padding: 14,
+      width: "100%",
+    },
+    quoteEyebrow: {
+      color: colors.accent,
+      fontSize: 11,
+      fontWeight: "900",
+      letterSpacing: 1,
+      marginBottom: 4,
+      textTransform: "uppercase",
+    },
+    quoteText: {
+      color: colors.primaryDark,
+      fontSize: 14,
+      fontWeight: "700",
+      lineHeight: 20,
+    },
+    quoteMeta: {
+      color: colors.textMuted,
+      fontSize: 12,
+      marginTop: 6,
+    },
+    actionCol: {
+      gap: 10,
+      marginTop: 16,
+      width: "100%",
+    },
+  });

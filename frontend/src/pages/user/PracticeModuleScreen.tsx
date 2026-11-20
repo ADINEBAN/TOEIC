@@ -1,10 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { colors, radius, spacing } from "@/src/assets/styles/user-theme";
+import { radius } from "@/src/assets/styles/user-theme";
+import { LiquidButton } from "@/src/components/ui/LiquidGlass";
 import AppHeader, { AvatarBadge } from "@/src/components/user/AppHeader";
+import SectionTitle from "@/src/components/user/SectionTitle";
 import SurfaceCard from "@/src/components/user/SurfaceCard";
 import UserScreen from "@/src/components/user/UserScreen";
 import { useAuth } from "@/src/hooks/use-auth";
@@ -13,16 +15,22 @@ import {
   getPracticeSetDetail,
   getPracticeSetsByModule,
 } from "@/src/services/user-practice.service";
+import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
 import {
   PracticeSetApiItem,
   UserPracticeAttemptResponse,
   UserPracticeSetDetailResponseData,
 } from "@/src/types/user-api";
-import { pushRoute } from "@/src/utils/navigation";
+import { pushRoute, safeBack } from "@/src/utils/navigation";
+import { useResponsiveLayout } from "@/src/utils/responsive";
 
 export default function PracticeModuleScreen() {
   const params = useLocalSearchParams<{ moduleId?: string }>();
   const { auth } = useAuth();
+  const { theme } = useAppTheme();
+  const { gridItemWidth, rf } = useResponsiveLayout();
+  const colors = theme.colors;
+  const styles = useThemedStyles(createStyles);
 
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -89,7 +97,10 @@ export default function PracticeModuleScreen() {
   }, [auth.accessToken, moduleId]);
 
   useEffect(() => {
-    void loadData();
+    const timer = setTimeout(() => {
+      void loadData();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [loadData]);
 
   const handleSelectSet = async (practiceSetId: number) => {
@@ -112,7 +123,7 @@ export default function PracticeModuleScreen() {
 
   if (loading) {
     return (
-      <UserScreen scrollable={false}>
+      <UserScreen hasTabDock={false} scrollable={false}>
         <View style={styles.loadingWrap}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
@@ -120,88 +131,95 @@ export default function PracticeModuleScreen() {
     );
   }
 
+  const statW = gridItemWidth(3, 8, true);
+
   return (
-    <UserScreen>
+    <UserScreen hasTabDock={false}>
       <AppHeader
-        title="Bộ practice"
-        subtitle="Bài tập theo module"
         leftIcon="chevron-back-outline"
-        onLeftPress={() => router.back()}
+        onLeftPress={() => safeBack(moduleId ? `/user/roadmap?moduleId=${moduleId}` : "/user/practice")}
         rightSlot={<AvatarBadge label={auth.user?.fullName?.[0] || "U"} />}
+        subtitle="Bài tập theo module"
+        title="Bộ Practice"
       />
 
       {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
-      <SurfaceCard style={styles.headerCard}>
-        <Text style={styles.headerTitle}>Luyện đề theo module</Text>
-        <Text style={styles.headerText}>
-          Đây là các bộ bài tập admin đã giao cho module này. Chọn một bộ để xem chi tiết và bắt đầu.
-        </Text>
-      </SurfaceCard>
-
-      <SurfaceCard style={styles.listCard}>
-        <Text style={styles.blockTitle}>Danh sách practice sets</Text>
-        {practiceSets.map((set) => {
-          const active = selectedSet?.id === set.id;
-          return (
-            <Pressable
-              key={set.id}
-              onPress={() => void handleSelectSet(set.id)}
-              style={[styles.setRow, active ? styles.setRowActive : null]}
-            >
-              <View style={styles.setIcon}>
-                <Ionicons color={active ? "#fff" : colors.primaryDark} name="document-text-outline" size={18} />
-              </View>
-              <View style={styles.setBody}>
-                <Text style={styles.setTitle}>{set.title}</Text>
-                <Text style={styles.setMeta}>
-                  {set.durationMinutes ?? "--"} phút • Part {set.partNo ?? "--"}
-                </Text>
-              </View>
-              <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
-            </Pressable>
-          );
-        })}
+      <SectionTitle title="Danh sách practice sets" />
+      <SurfaceCard padding="sm" style={styles.listCard}>
         {practiceSets.length === 0 ? (
-          <Text style={styles.emptyText}>Module này chưa có practice set được publish.</Text>
-        ) : null}
+          <Text style={styles.emptyText}>Module này chưa có practice set nào.</Text>
+        ) : (
+          <View style={styles.setList}>
+            {practiceSets.map((set) => {
+              const active = selectedSet?.id === set.id;
+              return (
+                <Pressable
+                  key={set.id}
+                  onPress={() => void handleSelectSet(set.id)}
+                  style={[styles.setRow, active ? styles.setRowActive : null]}
+                >
+                  <View style={[styles.setIcon, active ? styles.setIconActive : null]}>
+                    <Ionicons
+                      color={active ? colors.onPrimary : colors.primaryDark}
+                      name="document-text-outline"
+                      size={17}
+                    />
+                  </View>
+                  <View style={styles.setBody}>
+                    <Text numberOfLines={1} style={[styles.setTitle, { fontSize: rf(14) }]}>
+                      {set.title}
+                    </Text>
+                    <Text style={styles.setMeta}>
+                      {set.durationMinutes ?? "--"} phút • Part {set.partNo ?? "--"}
+                    </Text>
+                  </View>
+                  <Ionicons color={colors.textMuted} name="chevron-forward" size={17} />
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
       </SurfaceCard>
 
+      <SectionTitle title="Chi tiết bộ bài tập" />
       <SurfaceCard style={styles.detailCard}>
-        <Text style={styles.blockTitle}>Chi tiết bộ bài tập</Text>
         {detailLoading ? (
           <View style={styles.inlineLoading}>
-            <ActivityIndicator color={colors.primaryDark} />
+            <ActivityIndicator color={colors.primary} />
             <Text style={styles.inlineLoadingText}>Đang tải chi tiết practice set...</Text>
           </View>
         ) : selectedSet ? (
           <>
-            <Text style={styles.detailTitle}>{selectedSet.title}</Text>
+            <Text style={[styles.detailTitle, { fontSize: rf(19) }]}>{selectedSet.title}</Text>
             <Text style={styles.detailText}>
-              {selectedSet.description || "Bộ bài tập này sẽ giúp bạn củng cố kiến thức vừa học trong module."}
+              {selectedSet.description || "Củng cố kiến thức vừa học trong module này."}
             </Text>
 
             <View style={styles.statsRow}>
-              <View style={styles.statBadge}>
+              <View style={[styles.statBadge, { width: statW }]}>
                 <Text style={styles.statValue}>{selectedSet.durationMinutes ?? "--"}</Text>
                 <Text style={styles.statLabel}>Phút</Text>
               </View>
-              <View style={styles.statBadge}>
-                <Text style={styles.statValue}>{selectedSet.questions?.length ?? selectedSet.questionCount ?? "--"}</Text>
+              <View style={[styles.statBadge, { width: statW }]}>
+                <Text style={styles.statValue}>
+                  {selectedSet.questions?.length ?? selectedSet.questionCount ?? "--"}
+                </Text>
                 <Text style={styles.statLabel}>Câu hỏi</Text>
               </View>
-              <View style={styles.statBadge}>
+              <View style={[styles.statBadge, { width: statW }]}>
                 <Text style={styles.statValue}>{selectedSet.targetScore ?? "--"}</Text>
                 <Text style={styles.statLabel}>Mục tiêu</Text>
               </View>
             </View>
 
-            <Pressable
+            <LiquidButton
+              label="Bắt đầu bài tập"
+              leftIcon={<Ionicons color={colors.onPrimary} name="play" size={16} />}
               onPress={() => pushRoute(`/user/practice-session?practiceSetId=${selectedSet.id}&moduleId=${moduleId}`)}
-              style={styles.primaryAction}
-            >
-              <Text style={styles.primaryActionText}>Bắt đầu bài tập</Text>
-            </Pressable>
+              style={{ marginTop: 14 }}
+              variant="primary"
+            />
 
             {currentAttempts.length > 0 ? (
               <View style={styles.attemptList}>
@@ -216,7 +234,7 @@ export default function PracticeModuleScreen() {
                       <Text style={styles.attemptMain}>
                         {new Date(attempt.startedAt).toLocaleDateString()} • {attempt.correctCount ?? 0}/{attempt.totalQuestions}
                       </Text>
-                      <Text style={styles.attemptSub}>Chạm để xem kết quả chi tiết</Text>
+                      <Text style={styles.attemptSub}>Chạm để xem kết quả & AI giải thích</Text>
                     </View>
                     <View style={styles.scorePill}>
                       <Text style={styles.scorePillText}>{Math.round(attempt.score ?? 0)}%</Text>
@@ -227,185 +245,170 @@ export default function PracticeModuleScreen() {
             ) : null}
           </>
         ) : (
-          <Text style={styles.emptyText}>Chọn một practice set để xem chi tiết.</Text>
+          <Text style={styles.emptyText}>Chọn một practice set phía trên để xem chi tiết.</Text>
         )}
       </SurfaceCard>
     </UserScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  attemptList: {
-    marginTop: spacing.lg,
-  },
-  attemptMain: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  attemptRow: {
-    alignItems: "center",
-    backgroundColor: "#F5F8FF",
-    borderRadius: radius.md,
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-    padding: spacing.md,
-  },
-  attemptSub: {
-    color: colors.textMuted,
-    fontSize: 12,
-    marginTop: 4,
-  },
-  attemptTitle: {
-    color: colors.primaryDark,
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  blockTitle: {
-    color: colors.primaryDark,
-    fontSize: 18,
-    fontWeight: "900",
-    marginBottom: spacing.md,
-  },
-  detailCard: {
-    marginBottom: spacing.lg,
-  },
-  detailText: {
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 23,
-    marginTop: spacing.sm,
-  },
-  detailTitle: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: "900",
-  },
-  emptyText: {
-    color: colors.textMuted,
-    fontSize: 14,
-  },
-  errorText: {
-    backgroundColor: "rgba(249,112,102,0.1)",
-    borderColor: "rgba(249,112,102,0.24)",
-    borderRadius: 8,
-    borderWidth: 1,
-    color: colors.danger,
-    fontSize: 13,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  headerCard: {
-    marginBottom: spacing.lg,
-  },
-  headerText: {
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 24,
-    marginTop: spacing.sm,
-  },
-  headerTitle: {
-    color: colors.primaryDark,
-    fontSize: 24,
-    fontWeight: "900",
-  },
-  inlineLoading: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  inlineLoadingText: {
-    color: colors.textMuted,
-    fontSize: 13,
-  },
-  listCard: {
-    marginBottom: spacing.lg,
-  },
-  loadingWrap: {
-    alignItems: "center",
-    flex: 1,
-    justifyContent: "center",
-  },
-  primaryAction: {
-    alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    marginTop: spacing.lg,
-    paddingVertical: 15,
-  },
-  primaryActionText: {
-    color: colors.surface,
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  scorePill: {
-    backgroundColor: "#E3FFDE",
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-  },
-  scorePillText: {
-    color: "#1A7C2B",
-    fontSize: 12,
-    fontWeight: "900",
-  },
-  setBody: {
-    flex: 1,
-  },
-  setIcon: {
-    alignItems: "center",
-    backgroundColor: "#E9EDFA",
-    borderRadius: radius.pill,
-    height: 40,
-    justifyContent: "center",
-    width: 40,
-  },
-  setMeta: {
-    color: colors.textMuted,
-    fontSize: 12,
-    marginTop: 4,
-  },
-  setRow: {
-    alignItems: "center",
-    backgroundColor: "#F8FAFF",
-    borderRadius: radius.md,
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-    padding: spacing.md,
-  },
-  setRowActive: {
-    borderColor: colors.primary,
-    borderWidth: 1.5,
-  },
-  setTitle: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "800",
-  },
-  statBadge: {
-    alignItems: "center",
-    backgroundColor: "#EFF4FD",
-    borderRadius: radius.lg,
-    flex: 1,
-    paddingVertical: spacing.md,
-  },
-  statLabel: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: "800",
-    marginTop: 4,
-  },
-  statValue: {
-    color: colors.primaryDark,
-    fontSize: 22,
-    fontWeight: "900",
-  },
-  statsRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-  },
-});
+const createStyles = (colors: LiquidThemeColors) =>
+  StyleSheet.create({
+    loadingWrap: {
+      alignItems: "center",
+      flex: 1,
+      justifyContent: "center",
+    },
+    errorText: {
+      backgroundColor: colors.isDark ? "rgba(239,68,68,0.16)" : "rgba(249,112,102,0.1)",
+      borderColor: colors.isDark ? "rgba(248,113,113,0.34)" : "rgba(249,112,102,0.24)",
+      borderRadius: 12,
+      borderWidth: 1,
+      color: colors.danger,
+      fontSize: 13,
+      marginBottom: 14,
+      padding: 12,
+    },
+    listCard: {
+      marginBottom: 16,
+    },
+    setList: {
+      gap: 8,
+    },
+    setRow: {
+      alignItems: "center",
+      backgroundColor: colors.glassFill,
+      borderColor: colors.glassBorder,
+      borderRadius: 14,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: 10,
+      padding: 12,
+    },
+    setRowActive: {
+      backgroundColor: colors.primarySoft,
+      borderColor: colors.primary,
+      borderWidth: 1.5,
+    },
+    setIcon: {
+      alignItems: "center",
+      backgroundColor: colors.glassFillStrong,
+      borderColor: colors.glassBorder,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      height: 36,
+      justifyContent: "center",
+      width: 36,
+    },
+    setIconActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    setBody: {
+      flex: 1,
+      minWidth: 0,
+    },
+    setTitle: {
+      color: colors.text,
+      fontWeight: "800",
+    },
+    setMeta: {
+      color: colors.textMuted,
+      fontSize: 12,
+      marginTop: 2,
+    },
+    detailCard: {
+      gap: 8,
+    },
+    inlineLoading: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 8,
+    },
+    inlineLoadingText: {
+      color: colors.textMuted,
+      fontSize: 13,
+    },
+    detailTitle: {
+      color: colors.text,
+      fontWeight: "900",
+    },
+    detailText: {
+      color: colors.textMuted,
+      fontSize: 13.5,
+      lineHeight: 20,
+    },
+    statsRow: {
+      flexDirection: "row",
+      gap: 8,
+      marginTop: 8,
+    },
+    statBadge: {
+      alignItems: "center",
+      backgroundColor: colors.glassFill,
+      borderColor: colors.glassBorder,
+      borderRadius: 14,
+      borderWidth: 1,
+      paddingVertical: 10,
+    },
+    statValue: {
+      color: colors.primaryDark,
+      fontSize: 19,
+      fontWeight: "900",
+    },
+    statLabel: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontWeight: "800",
+      marginTop: 2,
+    },
+    attemptList: {
+      borderTopColor: colors.border,
+      borderTopWidth: 1,
+      marginTop: 14,
+      paddingTop: 12,
+    },
+    attemptTitle: {
+      color: colors.primaryDark,
+      fontSize: 14,
+      fontWeight: "900",
+      marginBottom: 8,
+    },
+    attemptRow: {
+      alignItems: "center",
+      backgroundColor: colors.glassFill,
+      borderColor: colors.glassBorder,
+      borderRadius: 12,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: 8,
+      marginTop: 6,
+      padding: 10,
+    },
+    attemptMain: {
+      color: colors.text,
+      fontSize: 13.5,
+      fontWeight: "800",
+    },
+    attemptSub: {
+      color: colors.textMuted,
+      fontSize: 11.5,
+      marginTop: 2,
+    },
+    scorePill: {
+      backgroundColor: colors.isDark ? "rgba(31,157,108,0.22)" : "#E3FFDE",
+      borderRadius: radius.pill,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    scorePillText: {
+      color: colors.success,
+      fontSize: 12,
+      fontWeight: "900",
+    },
+    emptyText: {
+      color: colors.textMuted,
+      fontSize: 13.5,
+      textAlign: "center",
+    },
+  });
