@@ -3,6 +3,7 @@ import { ComponentRef, useCallback, useEffect, useMemo, useRef, useState } from 
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Modal,
   Platform,
   Pressable,
@@ -35,6 +36,7 @@ import {
   leaveArenaMatchmaking,
   leaveArenaRoom,
   listArenaRooms,
+  sendArenaEmote,
   submitArenaAnswer,
 } from "@/src/services/user.service";
 import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
@@ -46,7 +48,22 @@ import {
   ArenaRoomItem,
 } from "@/src/types/user-api";
 import { pushRoute, safeBack } from "@/src/utils/navigation";
+import {
+  playArenaTauntSound,
+  registerMessengerAudioUnlock,
+} from "@/src/utils/notification-sound";
 import { useResponsiveLayout } from "@/src/utils/responsive";
+
+const ARENA_TAUNTS = [
+  { code: "SMIRK", emoji: "😏", short: "Non lắm bạn ơi~" },
+  { code: "EZ", emoji: "😎", short: "Quá dễ !" },
+  { code: "HURRY", emoji: "⏰", short: "Nhanh tay lên bạn ơi!" },
+  { code: "FIRE", emoji: "🔥", short: "Đẳng cấp vậy!" },
+  { code: "HAHA", emoji: "😂", short: "Haha !" },
+  { code: "SWEAT", emoji: "😅", short: "Đỉnh kout..." },
+  { code: "CLAP", emoji: "👏", short: "Đỉnh đấy, nể!" },
+  { code: "GG", emoji: "🫡", short: "Hẹn kèo sau nhé !" },
+] as const;
 
 function formatReactionSeconds(ms?: number) {
   if (!ms || ms <= 0) return "0.0s";
@@ -96,14 +113,22 @@ export default function ArenaScreen() {
   const [submittingAnswer, setSubmittingAnswer] = useState(false);
   const [savedWordsMap, setSavedWordsMap] = useState<Record<string, boolean>>({});
   const [copiedHint, setCopiedHint] = useState(false);
+  const [emoteCooldown, setEmoteCooldown] = useState(false);
+  const [p1EmoteScale] = useState(() => new Animated.Value(1));
+  const [p2EmoteScale] = useState(() => new Animated.Value(1));
 
   // Smooth local countdown clock synchronized with server remainingSeconds
   const [tickOffsetSec, setTickOffsetSec] = useState(0);
   const lastRoundIndexRef = useRef(-1);
   const spokenHintRoundRef = useRef(-1);
+  const seenOpponentEmoteIdRef = useRef<number | null>(null);
   const vocabInputRef = useRef<ComponentRef<typeof TextInput> | null>(null);
   const searchingRef = useRef(false);
   const accessTokenRef = useRef(auth.accessToken);
+
+  useEffect(() => {
+    registerMessengerAudioUnlock();
+  }, []);
 
   useEffect(() => {
     searchingRef.current = searching;
@@ -127,8 +152,15 @@ export default function ArenaScreen() {
       if (!nextRoom) {
         lastRoundIndexRef.current = -1;
         spokenHintRoundRef.current = -1;
+        seenOpponentEmoteIdRef.current = null;
         setWrongGuessAlert(false);
         return;
+      }
+      const oppPlayer = nextRoom.players?.find((p) => p.email.toLowerCase() !== myEmail);
+      const oppEmoteId = oppPlayer?.activeEmote?.id ?? null;
+      if (oppEmoteId != null && oppEmoteId !== seenOpponentEmoteIdRef.current) {
+        seenOpponentEmoteIdRef.current = oppEmoteId;
+        playArenaTauntSound();
       }
       const nextIdx = nextRoom.currentRoundIndex ?? 0;
       if (lastRoundIndexRef.current !== nextIdx && nextRoom.roundPhase === "QUESTION") {
@@ -149,7 +181,7 @@ export default function ArenaScreen() {
       }
       lastRoundIndexRef.current = nextIdx;
     },
-    [speakText],
+    [myEmail, speakText],
   );
 
   const loadLobby = useCallback(async () => {
@@ -189,18 +221,19 @@ export default function ArenaScreen() {
     return () => clearInterval(timer);
   }, [activeRoom]);
 
-  // Fast live room polling during WAITING / IN_PROGRESS / REVEAL
+  // Fast live room polling during WAITING / IN_PROGRESS / REVEAL, plus gentle emote polling on FINISHED
   useEffect(() => {
-    if (!auth.accessToken || !activeRoom?.roomCode || activeRoom.status === "FINISHED") return;
+    if (!auth.accessToken || !activeRoom?.roomCode) return;
     const token = auth.accessToken;
     const code = activeRoom.roomCode;
-    const intervalMs = activeRoom.status === "WAITING" ? 1300 : 700;
+    const wasFinished = activeRoom.status === "FINISHED";
+    const intervalMs = wasFinished ? 1500 : activeRoom.status === "WAITING" ? 1300 : 700;
     const timer = setInterval(() => {
       void getArenaRoom(token, code)
         .then((res) => {
           if (res.data) {
             applyRoomSnapshot(res.data);
-            if (res.data.status === "FINISHED") {
+            if (!wasFinished && res.data.status === "FINISHED") {
               void loadLobby();
             }
           }
@@ -453,6 +486,76 @@ export default function ArenaScreen() {
     return mine && opp ? [mine, opp] : list;
   }, [activeRoom?.players, myEmail]);
 
+  const myActiveEmoteId = orderedPlayers[0]?.activeEmote?.id ?? null;
+  const oppActiveEmoteId = orderedPlayers[1]?.activeEmote?.id ?? null;
+
+  useEffect(() => {
+    if (myActiveEmoteId == null) return;
+    p1EmoteScale.setValue(0.84);
+    Animated.spring(p1EmoteScale, {
+      friction: 5,
+      tension: 150,
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+  }, [myActiveEmoteId, p1EmoteScale]);
+
+  useEffect(() => {
+    if (oppActiveEmoteId == null) return;
+    p2EmoteScale.setValue(0.84);
+    Animated.spring(p2EmoteScale, {
+      friction: 5,
+      tension: 150,
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+  }, [oppActiveEmoteId, p2EmoteScale]);
+
+  const handleSendEmote = async (emoteCode: string) => {
+    if (!auth.accessToken || !activeRoom?.roomCode || emoteCooldown) return;
+    setEmoteCooldown(true);
+    setTimeout(() => setEmoteCooldown(false), 700);
+    playArenaTauntSound();
+    try {
+      const res = await sendArenaEmote(auth.accessToken, activeRoom.roomCode, emoteCode);
+      if (res.data) {
+        applyRoomSnapshot(res.data);
+      }
+    } catch {
+      // Ignore transient network errors when firing quick taunts
+    }
+  };
+
+  const renderTauntStrip = (showLeadLabel: boolean) => (
+    <ScrollView
+      contentContainerStyle={styles.tauntBarContent}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.tauntStripScroll}
+    >
+      {showLeadLabel ? (
+        <View style={styles.tauntLeadLabel}>
+          <Ionicons color={colors.primary} name="sparkles" size={13} />
+          <Text style={styles.tauntLeadText}>Trêu đối thủ:</Text>
+        </View>
+      ) : null}
+      {ARENA_TAUNTS.map((item) => (
+        <Pressable
+          key={item.code}
+          disabled={emoteCooldown}
+          onPress={() => void handleSendEmote(item.code)}
+          style={({ pressed }) => [
+            styles.tauntChip,
+            pressed ? { transform: [{ scale: 0.94 }] } : null,
+          ]}
+        >
+          <Text style={styles.tauntChipEmoji}>{item.emoji}</Text>
+          <Text style={styles.tauntChipText}>{item.short}</Text>
+        </Pressable>
+      ))}
+    </ScrollView>
+  );
+
   const myDiamonds = leaderboard?.myDiamonds ?? auth.user?.diamonds ?? 50;
 
   // =========================================================================
@@ -632,8 +735,22 @@ export default function ArenaScreen() {
             </Text>
 
             <View style={styles.finishStatsGrid}>
-              {(orderedPlayers ?? []).map((p) => (
+              {(orderedPlayers ?? []).map((p, idx) => (
                 <View key={p.email} style={styles.finishPlayerCard}>
+                  {p.activeEmote ? (
+                    <Animated.View
+                      style={[
+                        styles.tauntBubble,
+                        idx === 0 ? styles.tauntBubbleMine : styles.tauntBubbleOpp,
+                        { transform: [{ scale: idx === 0 ? p1EmoteScale : p2EmoteScale }] },
+                      ]}
+                    >
+                      <Text style={styles.tauntBubbleEmoji}>{p.activeEmote.emoji}</Text>
+                      <Text numberOfLines={1} style={styles.tauntBubbleText}>
+                        {p.activeEmote.label}
+                      </Text>
+                    </Animated.View>
+                  ) : null}
                   <Text numberOfLines={1} style={styles.finishPlayerName}>{p.fullName}</Text>
                   <Text style={styles.finishStatText}>Đúng: {p.correctCount}/{totalQ} câu</Text>
                   <Text style={styles.finishStatText}>Tốc độ: {formatReactionSeconds(p.totalResponseMs)}</Text>
@@ -648,6 +765,8 @@ export default function ArenaScreen() {
                 </View>
               ))}
             </View>
+
+            {renderTauntStrip(false)}
 
             <View style={styles.finishActionRow}>
               <LiquidButton
@@ -707,6 +826,43 @@ export default function ArenaScreen() {
 
         {/* Player Comparison HUD Header (like Parroto screenshot 3-5) */}
         <SurfaceCard padding="sm" style={styles.matchHudCard}>
+          {(player1?.activeEmote || player2?.activeEmote) ? (
+            <View style={styles.emoteBubbleRow}>
+              <View style={styles.emoteBubbleSlotLeft}>
+                {player1?.activeEmote ? (
+                  <Animated.View
+                    style={[
+                      styles.tauntBubble,
+                      styles.tauntBubbleMine,
+                      { transform: [{ scale: p1EmoteScale }] },
+                    ]}
+                  >
+                    <Text style={styles.tauntBubbleEmoji}>{player1.activeEmote.emoji}</Text>
+                    <Text numberOfLines={1} style={styles.tauntBubbleText}>
+                      {player1.activeEmote.label}
+                    </Text>
+                  </Animated.View>
+                ) : null}
+              </View>
+              <View style={styles.emoteBubbleSlotRight}>
+                {player2?.activeEmote ? (
+                  <Animated.View
+                    style={[
+                      styles.tauntBubble,
+                      styles.tauntBubbleOpp,
+                      { transform: [{ scale: p2EmoteScale }] },
+                    ]}
+                  >
+                    <Text style={styles.tauntBubbleEmoji}>{player2.activeEmote.emoji}</Text>
+                    <Text numberOfLines={1} style={styles.tauntBubbleText}>
+                      {player2.activeEmote.label}
+                    </Text>
+                  </Animated.View>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
+
           <View style={styles.matchHudRow}>
             <View style={styles.hudPlayerCol}>
               <UserAvatarWithFrame
@@ -758,6 +914,9 @@ export default function ArenaScreen() {
             </View>
           </View>
         </SurfaceCard>
+
+        {/* Quick 1-Tap Taunt / Reaction Strip */}
+        {renderTauntStrip(true)}
 
         {/* Round badge & live language toggle row */}
         <View style={styles.roundHeaderWrap}>
@@ -1851,6 +2010,51 @@ const createStyles = (colors: LiquidThemeColors) =>
     finishStatText: { color: colors.textMuted, fontSize: 12, fontWeight: "700" },
     finishDiamondDelta: { fontSize: 12.5, fontWeight: "900", marginTop: 2 },
     finishActionRow: { flexDirection: "row", gap: 10, marginTop: 6, width: "100%" },
+    emoteBubbleRow: {
+      flexDirection: "row",
+      gap: 8,
+      justifyContent: "space-between",
+      marginBottom: 8,
+    },
+    emoteBubbleSlotLeft: { alignItems: "flex-start", flex: 1 },
+    emoteBubbleSlotRight: { alignItems: "flex-end", flex: 1 },
+    tauntBubble: {
+      alignItems: "center",
+      borderRadius: 999,
+      borderWidth: 1.25,
+      flexDirection: "row",
+      gap: 5,
+      maxWidth: "100%",
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+    },
+    tauntBubbleMine: {
+      backgroundColor: "#EDE9FE",
+      borderColor: "#8B5CF6",
+    },
+    tauntBubbleOpp: {
+      backgroundColor: "#FEF3C7",
+      borderColor: "#F59E0B",
+    },
+    tauntBubbleEmoji: { fontSize: 15 },
+    tauntBubbleText: { color: "#1E293B", flexShrink: 1, fontSize: 11.5, fontWeight: "900" },
+    tauntStripScroll: { flexGrow: 0, marginBottom: 8, width: "100%" },
+    tauntBarContent: { alignItems: "center", flexDirection: "row", gap: 6, paddingHorizontal: 2 },
+    tauntLeadLabel: { alignItems: "center", flexDirection: "row", gap: 4, marginRight: 2 },
+    tauntLeadText: { color: colors.textMuted, fontSize: 11.5, fontWeight: "800" },
+    tauntChip: {
+      alignItems: "center",
+      backgroundColor: colors.glassFillStrong,
+      borderColor: colors.glassBorder,
+      borderRadius: radius.pill,
+      borderWidth: 1.2,
+      flexDirection: "row",
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+    },
+    tauntChipEmoji: { fontSize: 14 },
+    tauntChipText: { color: colors.text, fontSize: 11.5, fontWeight: "800" },
     modalBackdrop: {
       alignItems: "center",
       backgroundColor: "rgba(15,23,42,0.58)",

@@ -3,6 +3,7 @@ package org.example.backend.service;
 import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.request.ArenaAnswerRequest;
 import org.example.backend.dto.request.ArenaCreateRoomRequest;
+import org.example.backend.dto.request.ArenaEmoteRequest;
 import org.example.backend.dto.request.ArenaMatchmakingRequest;
 import org.example.backend.dto.response.ArenaLeaderboardResponse;
 import org.example.backend.dto.response.ArenaMatchmakingStatusResponse;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -40,8 +42,21 @@ public class ArenaService {
     private static final int VOCAB_AUDIO_HINT_LAST_SECONDS = 7;
     private static final long REVEAL_DURATION_MS = 2400L;
     private static final long QUEUE_HEARTBEAT_TIMEOUT_MS = 25_000L;
+    private static final long EMOTE_TTL_MS = 4000L;
+    private static final long EMOTE_COOLDOWN_MS = 650L;
     private static final int MATCH_WIN_BONUS_DIAMONDS = 5;
     private static final int MATCH_DRAW_BONUS_DIAMONDS = 2;
+
+    private static final Map<String, EmotePreset> EMOTE_PRESETS = Map.of(
+            "EZ", new EmotePreset("EZ", "😎", "Quá dễ !"),
+            "HURRY", new EmotePreset("HURRY", "⏰", "Nhanh tay lên bạn ơi!"),
+            "SMIRK", new EmotePreset("SMIRK", "😏", "Non lắm bạn ơi~"),
+            "FIRE", new EmotePreset("FIRE", "🔥", "Đẳng cấp vậy!"),
+            "SWEAT", new EmotePreset("SWEAT", "😅", "Đỉnh kout..."),
+            "HAHA", new EmotePreset("HAHA", "😂", "Haha !"),
+            "CLAP", new EmotePreset("CLAP", "👏", "Đỉnh đấy, nể!"),
+            "GG", new EmotePreset("GG", "🫡", "Hẹn kèo sau nhé !")
+    );
 
     private final QuestionRepository questionRepository;
     private final UserRepository userRepository;
@@ -1054,6 +1069,9 @@ public class ArenaService {
         res.setRoundWinnerEmail(state.roundWinnerEmail);
         res.setRoundDiamondReward(state.roundDiamondReward);
         res.setFeedbackMessage(state.feedbackMessage);
+        if (state.latestEmote != null && (now - state.latestEmote.getSentAtEpochMs()) <= EMOTE_TTL_MS) {
+            res.setLatestEmote(copyEmote(state.latestEmote));
+        }
         res.setCreatedAt(state.createdAt);
 
         boolean audioHintUnlocked = "REVEAL".equals(state.roundPhase)
@@ -1078,7 +1096,7 @@ public class ArenaService {
         }
 
         List<ArenaRoomResponse.ArenaPlayerState> playersCopy = state.players.values().stream()
-                .map(this::copyPlayerState)
+                .map(p -> copyPlayerState(p, now))
                 .collect(Collectors.toList());
         res.setPlayers(playersCopy);
 
@@ -1117,7 +1135,49 @@ public class ArenaService {
         return res;
     }
 
-    private ArenaRoomResponse.ArenaPlayerState copyPlayerState(ArenaRoomResponse.ArenaPlayerState src) {
+    public ArenaRoomResponse sendEmote(String email, String roomCode, String rawEmoteCode) {
+        User player = findUser(email);
+        RoomState state = findRoom(roomCode);
+
+        String code = rawEmoteCode != null ? rawEmoteCode.trim().toUpperCase(Locale.ROOT) : "";
+        EmotePreset preset = EMOTE_PRESETS.get(code);
+        if (preset == null) {
+            throw new AppException(ErrorCode.ARENA_ROOM_INVALID);
+        }
+
+        synchronized (state) {
+            long now = System.currentTimeMillis();
+            advanceRoomClockIfNeeded(state, now);
+
+            ArenaRoomResponse.ArenaPlayerState ps = state.players.get(player.getEmail());
+            if (ps == null) {
+                throw new AppException(ErrorCode.ARENA_ROOM_INVALID);
+            }
+
+            ArenaRoomResponse.ArenaEmoteEvent prev = ps.getActiveEmote();
+            if (prev != null && (now - prev.getSentAtEpochMs()) < EMOTE_COOLDOWN_MS) {
+                return toResponse(state, player.getEmail());
+            }
+
+            ArenaRoomResponse.ArenaEmoteEvent event = new ArenaRoomResponse.ArenaEmoteEvent();
+            event.setId(state.emoteSeq.incrementAndGet());
+            event.setSenderEmail(player.getEmail());
+            event.setSenderName(ps.getFullName());
+            event.setEmoteCode(preset.code());
+            event.setEmoji(preset.emoji());
+            event.setLabel(preset.label());
+            event.setSentAtEpochMs(now);
+
+            ps.setActiveEmote(event);
+            state.latestEmote = event;
+
+            ArenaRoomResponse snapshot = toResponse(state, player.getEmail());
+            broadcastRoom(state.roomCode, toResponse(state, null));
+            return snapshot;
+        }
+    }
+
+    private ArenaRoomResponse.ArenaPlayerState copyPlayerState(ArenaRoomResponse.ArenaPlayerState src, long now) {
         ArenaRoomResponse.ArenaPlayerState dst = new ArenaRoomResponse.ArenaPlayerState();
         dst.setUserId(src.getUserId());
         dst.setEmail(src.getEmail());
@@ -1138,7 +1198,22 @@ public class ArenaService {
         dst.setEloRating(src.getEloRating());
         dst.setWins(src.getWins());
         dst.setLosses(src.getLosses());
+        if (src.getActiveEmote() != null && (now - src.getActiveEmote().getSentAtEpochMs()) <= EMOTE_TTL_MS) {
+            dst.setActiveEmote(copyEmote(src.getActiveEmote()));
+        }
         return dst;
+    }
+
+    private ArenaRoomResponse.ArenaEmoteEvent copyEmote(ArenaRoomResponse.ArenaEmoteEvent src) {
+        ArenaRoomResponse.ArenaEmoteEvent copy = new ArenaRoomResponse.ArenaEmoteEvent();
+        copy.setId(src.getId());
+        copy.setSenderEmail(src.getSenderEmail());
+        copy.setSenderName(src.getSenderName());
+        copy.setEmoteCode(src.getEmoteCode());
+        copy.setEmoji(src.getEmoji());
+        copy.setLabel(src.getLabel());
+        copy.setSentAtEpochMs(src.getSentAtEpochMs());
+        return copy;
     }
 
     private void broadcastRoom(String roomCode, ArenaRoomResponse snapshot) {
@@ -1233,9 +1308,14 @@ public class ArenaService {
         String feedbackMessage;
         boolean rewardsPersisted;
         LocalDateTime createdAt;
+        AtomicLong emoteSeq = new AtomicLong(0);
+        ArenaRoomResponse.ArenaEmoteEvent latestEmote;
         List<RoundQuestion> questions = new ArrayList<>();
         Map<String, ArenaRoomResponse.ArenaPlayerState> players = new ConcurrentHashMap<>();
         Map<Integer, Map<String, RoundSubmission>> roundSubmissionsByRound = new ConcurrentHashMap<>();
+    }
+
+    private record EmotePreset(String code, String emoji, String label) {
     }
 
     private static final class RoundQuestion {

@@ -556,6 +556,14 @@ export function submitArenaAnswer(
   });
 }
 
+export function sendArenaEmote(accessToken: string, roomCode: string, emoteCode: string) {
+  return apiRequest<ArenaRoomResponse>(`/api/users/arena/rooms/${encodeURIComponent(roomCode)}/emote`, {
+    body: JSON.stringify({ emoteCode }),
+    headers: buildAuthHeaders(accessToken),
+    method: "POST",
+  });
+}
+
 export function joinArenaMatchmaking(
   accessToken: string,
   payload: { mode: ArenaMode; questionCount?: number },

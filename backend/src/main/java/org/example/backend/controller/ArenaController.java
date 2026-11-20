@@ -3,6 +3,7 @@ package org.example.backend.controller;
 import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.request.ArenaAnswerRequest;
 import org.example.backend.dto.request.ArenaCreateRoomRequest;
+import org.example.backend.dto.request.ArenaEmoteRequest;
 import org.example.backend.dto.request.ArenaJoinRoomRequest;
 import org.example.backend.dto.request.ArenaMatchmakingRequest;
 import org.example.backend.dto.response.ApiResponse;
@@ -88,6 +89,22 @@ public class ArenaController {
     ) {
         return ApiResponseUtil.success(
                 arenaService.submitAnswer(authentication.getName(), roomCode, request),
+                SuccessCode.ARENA_ROOM_SUCCESS
+        );
+    }
+
+    @PostMapping("/rooms/{roomCode}/emote")
+    public ResponseEntity<ApiResponse<ArenaRoomResponse>> sendEmote(
+            Authentication authentication,
+            @PathVariable String roomCode,
+            @RequestBody ArenaEmoteRequest request
+    ) {
+        return ApiResponseUtil.success(
+                arenaService.sendEmote(
+                        authentication.getName(),
+                        roomCode,
+                        request != null ? request.getEmoteCode() : null
+                ),
                 SuccessCode.ARENA_ROOM_SUCCESS
         );
     }
