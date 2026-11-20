@@ -1,18 +1,32 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Image,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
-import { colors, radius, spacing } from "@/src/assets/styles/user-theme";
+import { radius } from "@/src/assets/styles/user-theme";
+import { LiquidButton } from "@/src/components/ui/LiquidGlass";
 import AppHeader, { AvatarBadge } from "@/src/components/user/AppHeader";
+import ClayIcon3D from "@/src/components/user/ClayIcon3D";
 import ProgressBar from "@/src/components/user/ProgressBar";
+import SectionTitle from "@/src/components/user/SectionTitle";
 import SurfaceCard from "@/src/components/user/SurfaceCard";
 import UserScreen from "@/src/components/user/UserScreen";
 import { useAuth } from "@/src/hooks/use-auth";
 import { getUserRoadmap } from "@/src/services/user.service";
+import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
 import { UserRoadmap, UserRoadmapModuleItem } from "@/src/types/user-api";
 import { isNoActiveLearningPathError } from "@/src/utils/api-errors";
 import { pushRoute } from "@/src/utils/navigation";
+import { useResponsiveLayout } from "@/src/utils/responsive";
 
 type ModuleNode = {
   ctaLabel?: string;
@@ -23,26 +37,27 @@ type ModuleNode = {
   module: UserRoadmapModuleItem;
 };
 
-function statusLabel(status?: string) {
-  if (status === "COMPLETED") return "Hoàn thành";
-  if (status === "IN_PROGRESS") return "Đang học";
-  if (status === "LOCKED") return "Đang khóa";
-  return "Sẵn sàng";
-}
+type FilterMode = "all" | "active" | "done" | "pending";
 
-function compactType(type?: string) {
-  if (!type) return "Module";
-  if (type === "VOCABULARY") return "Vocab";
-  if (type === "GRAMMAR") return "Grammar";
-  if (type === "MILESTONE") return "Milestone";
-  return type.replaceAll("_", " ");
-}
+const TILE_PALETTES = [
+  { clayColors: ["#FF8AC4", "#EC4899"] as const, icon: "book" as const },
+  { clayColors: ["#68B2FF", "#2563EB"] as const, icon: "headset" as const },
+  { clayColors: ["#FFD066", "#F59E0B"] as const, icon: "bulb" as const },
+  { clayColors: ["#5BE5D5", "#14B8A6"] as const, icon: "sparkles" as const },
+  { clayColors: ["#9D8FFF", "#6E5CEB"] as const, icon: "rocket" as const },
+];
 
 export default function PracticeScreen() {
   const { auth, isHydrated } = useAuth();
+  const { theme } = useAppTheme();
+  const { rf, isNarrow } = useResponsiveLayout();
+  const colors = theme.colors;
+  const styles = useThemedStyles(createStyles);
+
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [roadmap, setRoadmap] = useState<UserRoadmap | null>(null);
+  const [filterMode, setFilterMode] = useState<FilterMode>("all");
 
   const loadRoadmap = useCallback(async () => {
     if (!auth.accessToken) return;
@@ -64,11 +79,6 @@ export default function PracticeScreen() {
     }
   }, [auth.accessToken]);
 
-  useEffect(() => {
-    if (!isHydrated || !auth.accessToken) return;
-    void loadRoadmap();
-  }, [auth.accessToken, isHydrated, loadRoadmap]);
-
   useFocusEffect(
     useCallback(() => {
       if (!isHydrated || !auth.accessToken) return;
@@ -79,14 +89,16 @@ export default function PracticeScreen() {
   const moduleNodes = useMemo<ModuleNode[]>(() => {
     if (!roadmap) return [];
 
-    const items = roadmap.milestones
+    const items = (roadmap.milestones ?? [])
       .flatMap((milestone) =>
-        milestone.modules.map((module) => ({
-          milestoneTitle: milestone.title,
-          module,
-        })),
+        (milestone?.modules ?? [])
+          .filter((module): module is UserRoadmapModuleItem => Boolean(module && typeof module.moduleId === "number"))
+          .map((module) => ({
+            milestoneTitle: milestone?.title ?? "Chặng học",
+            module,
+          })),
       )
-      .sort((a, b) => a.module.sortOrder - b.module.sortOrder)
+      .sort((a, b) => (a.module.sortOrder ?? 0) - (b.module.sortOrder ?? 0))
       .map(({ milestoneTitle, module }) => ({
         isCompleted: module.progressStatus === "COMPLETED",
         isCurrent:
@@ -98,595 +110,702 @@ export default function PracticeScreen() {
     if (roadmap.status !== "COMPLETED" || items.length === 0) return items;
 
     const lastSortOrder = items[items.length - 1]?.module.sortOrder ?? items.length;
-
     return [
       ...items,
       {
-        ctaLabel: "Mở màn chúc mừng",
+        ctaLabel: "Mở tổng kết khóa học",
         isCelebration: true,
         isCompleted: true,
-        isCurrent: true,
-        milestoneTitle: "Hoàn tất lộ trình",
+        isCurrent: false,
+        milestoneTitle: "Tổng kết khóa học",
         module: {
-          description: "Bạn đã hoàn thành toàn bộ roadmap. Xem lại tổng kết và màn chúc mừng cuối khóa.",
-          difficultyLevel: "FINISH",
-          estimatedMinutes: 3,
-          flashcardCount: 0,
+          description: "Toàn bộ module trong lộ trình đã hoàn tất.",
+          difficultyLevel: null,
+          estimatedMinutes: null,
+          flashcardCount: items.reduce((sum, item) => sum + (item.module.flashcardCount ?? 0), 0),
           moduleId: -1,
           moduleType: "MILESTONE",
-          practiceSetCount: 0,
+          practiceSetCount: items.reduce((sum, item) => sum + (item.module.practiceSetCount ?? 0), 0),
           progressPercent: 100,
           progressStatus: "COMPLETED",
           required: true,
           sortOrder: lastSortOrder + 1,
-          title: "Chốt hạ mục tiêu",
-          unlockCondition: "Hoàn thành toàn bộ roadmap",
-          videoLessonCount: 0,
+          title: "Hoàn thành khóa học",
+          unlockCondition: null,
+          videoLessonCount: items.reduce((sum, item) => sum + (item.module.videoLessonCount ?? 0), 0),
         },
       },
     ];
   }, [roadmap]);
 
-  const realModules = moduleNodes.filter((item) => !item.isCelebration);
-  const currentNode =
-    moduleNodes.find((item) => item.isCurrent && !item.isCelebration) ??
-    realModules[0] ??
-    moduleNodes[0] ??
-    null;
-  const currentModule = currentNode?.module ?? null;
-  const completedCount = realModules.filter((item) => item.isCompleted).length;
-  const completionRatio = `${completedCount}/${realModules.length || 0}`;
-  const progressPercent = Math.round(roadmap?.progressPercent ?? 0);
+  const filteredNodes = useMemo(() => {
+    if (filterMode === "all") return moduleNodes;
+    if (filterMode === "done") return moduleNodes.filter((n) => n.isCompleted);
+    if (filterMode === "active") return moduleNodes.filter((n) => n.isCurrent && !n.isCompleted);
+    return moduleNodes.filter((n) => !n.isCompleted && !n.isCurrent);
+  }, [filterMode, moduleNodes]);
 
   const openModule = (moduleId: number) => {
-    if (moduleId < 0) {
+    if (moduleId === -1) {
       pushRoute("/user/path-complete");
       return;
     }
     pushRoute(`/user/roadmap?moduleId=${moduleId}`);
   };
 
-  const openCurrentPractice = () => {
-    if (roadmap?.status === "COMPLETED") {
-      pushRoute("/user/path-complete");
-      return;
-    }
-    if (!currentModule) return;
-    pushRoute(`/user/roadmap?moduleId=${currentModule.moduleId}&focus=practice`);
-  };
+  const coreNodes = useMemo(() => moduleNodes.filter((n) => !n.isCelebration), [moduleNodes]);
+  const progressPercent = Math.round(roadmap?.progressPercent ?? 0);
+  const totalCount = coreNodes.length;
+  const completedCount = coreNodes.filter((n) => n.isCompleted).length;
+  const activeCount = coreNodes.filter((n) => n.isCurrent && !n.isCompleted).length;
+  const pendingCount = Math.max(0, totalCount - completedCount - activeCount);
+  const totalVideos = coreNodes.reduce((sum, n) => sum + (n.module.videoLessonCount ?? 0), 0);
+  const totalVocab = coreNodes.reduce((sum, n) => sum + (n.module.flashcardCount ?? 0), 0);
+  const totalPractice = coreNodes.reduce((sum, n) => sum + (n.module.practiceSetCount ?? 0), 0);
 
   return (
     <UserScreen>
       <AppHeader
         rightSlot={<AvatarBadge label={(auth.user?.fullName ?? "A").charAt(0).toUpperCase()} />}
-        subtitle="Roadmap lộ trình"
-        title="TOEIC Trainer"
+        subtitle="Hành trình học tập"
+        title="Lộ trình TOEIC"
       />
 
-      <SurfaceCard style={styles.heroCard}>
-        <View style={styles.heroOrb} />
-        <View style={styles.heroHeaderRow}>
-          <View style={styles.heroCopy}>
-            <Text style={styles.heroEyebrow}>Lộ trình đang chọn</Text>
-            <Text numberOfLines={1} style={styles.title}>
-              {roadmap?.learningPathTitle ?? "Chưa chọn lộ trình học"}
-            </Text>
-          </View>
-          <View style={styles.heroScorePill}>
-            <Text style={styles.heroScoreValue}>{roadmap?.targetScore ?? auth.user?.targetScore ?? "--"}+</Text>
-          </View>
-        </View>
-
-        <Text style={styles.subtitle}>
-          {roadmap?.status === "COMPLETED"
-            ? "Lộ trình này đã hoàn thành. Bạn vẫn có thể xem lại đầy đủ module và mở màn chúc mừng cuối khóa."
-            : "Theo dõi module hiện tại, làm practice đúng thứ tự và giữ tiến độ học mỗi ngày."}
-        </Text>
-
-        <View style={styles.currentPathBlock}>
-          <View style={styles.currentPathTopRow}>
-            <Text style={styles.currentPathLabel}>{roadmap?.learningPathCode ?? "ROADMAP"}</Text>
-            <Text numberOfLines={1} style={styles.currentPathMeta}>
-              {currentNode?.milestoneTitle ?? "Chưa có chặng"}
-            </Text>
-          </View>
-          <Text numberOfLines={1} style={styles.currentPathTitle}>
-            {currentModule?.title ?? "Chưa có module hiện tại"}
-          </Text>
-        </View>
-
-        <View style={styles.summaryGrid}>
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryValue}>{completionRatio}</Text>
-            <Text style={styles.summaryLabel}>Đã xong</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Text numberOfLines={1} style={styles.summaryValueCompact}>
-              {statusLabel(roadmap?.status)}
-            </Text>
-            <Text style={styles.summaryLabel}>Trạng thái</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Text numberOfLines={1} style={styles.summaryValueCompact}>
-              {compactType(currentModule?.moduleType)}
-            </Text>
-            <Text style={styles.summaryLabel}>Loại</Text>
-          </View>
-        </View>
-
-        <ProgressBar
-          accentColor="#F0A33A"
-          label="Tiến độ toàn lộ trình"
-          rightLabel={`${progressPercent}%`}
-          value={progressPercent}
+      <SurfaceCard padding="none" style={styles.heroBanner}>
+        <Image
+          resizeMode="cover"
+          source={require("@/assets/images/banner-study.jpg")}
+          style={StyleSheet.absoluteFill}
         />
+        <View style={styles.heroOverlay}>
+          <View style={styles.heroTopRow}>
+            <View style={styles.goalBadge}>
+              <Ionicons color="#6EE7B7" name="flag" size={12} />
+              <Text style={styles.goalBadgeText}>
+                {roadmap?.learningPathCode ?? "LỘ TRÌNH"}
+                {roadmap?.targetScore ? ` • Mục tiêu ${roadmap.targetScore}+` : ""}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => pushRoute("/user/onboarding")}
+              style={({ pressed }) => [styles.switchPathBtn, pressed && { opacity: 0.85 }]}
+            >
+              <Ionicons color="#FFFFFF" name="swap-horizontal" size={13} />
+              <Text style={styles.switchPathText}>Đổi lộ trình</Text>
+            </Pressable>
+          </View>
+
+          <Text numberOfLines={2} style={[styles.heroHeadline, { fontSize: rf(isNarrow ? 19 : 21) }]}>
+            {roadmap?.learningPathTitle ?? "Học TOEIC thật vui!"}
+          </Text>
+          <Text numberOfLines={1} style={styles.heroSubtitle}>
+            {roadmap
+              ? `Hoàn thành ${completedCount}/${totalCount} module trọng tâm`
+              : "Chọn lộ trình phù hợp để mở khóa bài học từng bước"}
+          </Text>
+
+          <View style={styles.heroProgressRow}>
+            <View style={styles.heroProgressTrack}>
+              <View style={[styles.heroProgressFill, { width: `${Math.max(0, Math.min(100, progressPercent))}%` }]} />
+            </View>
+            <View style={styles.heroPctBadge}>
+              <Text style={styles.heroPctText}>{progressPercent}%</Text>
+            </View>
+          </View>
+        </View>
       </SurfaceCard>
 
-      <Pressable
-        disabled={!currentModule}
-        onPress={openCurrentPractice}
-        style={[styles.primaryButton, !currentModule ? styles.primaryButtonDisabled : null]}
+      {roadmap && totalCount > 0 ? (
+        <View style={styles.summaryStatsRow}>
+          <SurfaceCard padding="sm" style={styles.summaryStatCard}>
+            <ClayIcon3D colors={["#FF8AC4", "#EC4899"]} icon="videocam" size={38} />
+            <Text style={styles.summaryStatValue}>{totalVideos}</Text>
+            <Text style={styles.summaryStatLabel}>Video</Text>
+          </SurfaceCard>
+
+          <SurfaceCard padding="sm" style={styles.summaryStatCard}>
+            <ClayIcon3D colors={["#9D8FFF", "#6E5CEB"]} icon="albums" size={38} />
+            <Text style={styles.summaryStatValue}>{totalVocab}</Text>
+            <Text style={styles.summaryStatLabel}>Từ vựng</Text>
+          </SurfaceCard>
+
+          <SurfaceCard padding="sm" style={styles.summaryStatCard}>
+            <ClayIcon3D colors={["#4FE3CE", "#10B981"]} icon="document-text" size={38} />
+            <Text style={styles.summaryStatValue}>{totalPractice}</Text>
+            <Text style={styles.summaryStatLabel}>Bộ đề</Text>
+          </SurfaceCard>
+        </View>
+      ) : null}
+
+      <ScrollView
+        contentContainerStyle={styles.filterRow}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
       >
-        <Ionicons color={colors.surface} name="play-circle-outline" size={17} />
-        <Text style={styles.primaryButtonText}>
-          {roadmap?.status === "COMPLETED" ? "Xem màn chúc mừng" : "Tiếp tục module hiện tại"}
-        </Text>
-      </Pressable>
+        {(
+          [
+            { key: "all", label: `Tất cả (${totalCount})` },
+            { key: "active", label: `Đang học (${activeCount})` },
+            { key: "done", label: `Đã xong (${completedCount})` },
+            { key: "pending", label: `Chưa mở (${pendingCount})` },
+          ] as { key: FilterMode; label: string }[]
+        ).map((item) => {
+          const active = filterMode === item.key;
+          return (
+            <Pressable
+              key={item.key}
+              onPress={() => setFilterMode(item.key)}
+              style={[
+                styles.filterPill,
+                active ? styles.filterPillActive : null,
+              ]}
+            >
+              <Text style={[styles.filterText, active ? styles.filterTextActive : null]}>
+                {item.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
 
       {loading ? (
         <View style={styles.feedbackRow}>
-          <ActivityIndicator color={colors.primaryDark} />
-          <Text style={styles.feedbackText}>Đang đồng bộ roadmap từ backend...</Text>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={styles.feedbackText}>Đang tải danh sách bài học...</Text>
         </View>
       ) : null}
 
       {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
-      {!loading && !errorMessage && !roadmap ? (
+      {!loading && !errorMessage && (!roadmap || moduleNodes.length === 0) ? (
         <SurfaceCard style={styles.emptyStateCard}>
-          <Text style={styles.emptyStateTitle}>Bạn chưa có roadmap nào</Text>
-          <Text style={styles.emptyText}>Tài khoản mới cần chọn lộ trình trước khi vào practice.</Text>
-          <Pressable onPress={() => pushRoute("/user/onboarding")} style={styles.secondaryCta}>
-            <Text style={styles.secondaryCtaText}>Bắt đầu onboarding</Text>
+          <Ionicons color={colors.primary} name="compass-outline" size={34} />
+          <Text style={styles.emptyStateTitle}>
+            {roadmap ? "Lộ trình này chưa có module" : "Bạn chưa chọn lộ trình học"}
+          </Text>
+          <Text style={styles.emptyText}>
+            Chạm nút bên dưới để khảo sát mục tiêu hoặc đổi sang lộ trình khác có bài học.
+          </Text>
+          <LiquidButton
+            compact
+            label="Chọn / Đổi lộ trình"
+            onPress={() => pushRoute("/user/onboarding")}
+            style={{ marginTop: 12 }}
+            variant="primary"
+          />
+        </SurfaceCard>
+      ) : null}
+
+      {moduleNodes.length > 0 ? (
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionHeading}>Bài học theo chặng</Text>
+          <Text style={styles.sectionMeta}>{filteredNodes.length} module</Text>
+        </View>
+      ) : null}
+
+      {!loading && moduleNodes.length > 0 && filteredNodes.length === 0 ? (
+        <SurfaceCard style={styles.emptyFilterCard}>
+          <Ionicons color={colors.textMuted} name="filter-outline" size={24} />
+          <Text style={styles.emptyText}>Chưa có module nào khớp bộ lọc đang chọn.</Text>
+          <Pressable onPress={() => setFilterMode("all")} style={styles.resetFilterBtn}>
+            <Text style={styles.resetFilterText}>Xem tất cả ({totalCount})</Text>
           </Pressable>
         </SurfaceCard>
       ) : null}
 
-      {!loading && !errorMessage && roadmap && moduleNodes.length === 0 ? (
-        <SurfaceCard>
-          <Text style={styles.emptyText}>Chưa có module nào trong lộ trình hiện tại.</Text>
-        </SurfaceCard>
-      ) : null}
+      <View style={styles.moduleList}>
+        {filteredNodes.map((item, idx) => {
+          const palette = TILE_PALETTES[idx % TILE_PALETTES.length];
+          const modPct = Number.isFinite(item.module.progressPercent)
+            ? Math.round(item.module.progressPercent)
+            : 0;
+          const statusMeta = item.isCompleted
+            ? {
+                bg: colors.isDark ? "rgba(16,185,129,0.22)" : "#DCFCE7",
+                fg: "#059669",
+                label: "Đã xong",
+              }
+            : item.isCurrent
+              ? {
+                  bg: colors.primarySoft,
+                  fg: colors.primary,
+                  label: "Đang học",
+                }
+              : {
+                  bg: colors.isDark ? "rgba(148,163,184,0.18)" : "#F1F5F9",
+                  fg: colors.textMuted,
+                  label: "Sẵn sàng",
+                };
 
-      <View style={styles.treeWrap}>
-        <View style={styles.centerLine} />
-        {moduleNodes.map((item, index) => {
-          const alignRight = index % 2 === 1;
-          const isCurrent = item.isCurrent;
-          const isDone = item.isCompleted;
+          const metaSummary = [
+            item.module.videoLessonCount ? `${item.module.videoLessonCount} video` : null,
+            item.module.flashcardCount ? `${item.module.flashcardCount} từ` : null,
+            item.module.practiceSetCount ? `${item.module.practiceSetCount} đề` : null,
+          ]
+            .filter(Boolean)
+            .join(" • ") || `${item.module.estimatedMinutes ?? 15} phút`;
 
           return (
-            <View
-              key={item.module.moduleId}
-              style={[styles.branchRow, alignRight ? styles.branchRowRight : styles.branchRowLeft]}
+            <Pressable
+              key={`${item.module.moduleId}-${idx}`}
+              onPress={() => openModule(item.module.moduleId)}
+              style={({ pressed }) => [pressed ? { opacity: 0.92, transform: [{ scale: 0.985 }] } : null]}
             >
-              <View style={[styles.connector, alignRight ? styles.connectorRight : styles.connectorLeft]} />
-
-              <View style={[styles.nodeWrap, alignRight ? styles.nodeWrapRight : styles.nodeWrapLeft]}>
-                <View
-                  style={[
-                    styles.nodeBadge,
-                    isDone ? styles.nodeBadgeDone : null,
-                    isCurrent ? styles.nodeBadgeCurrent : null,
-                    item.isCelebration ? styles.nodeBadgeCelebration : null,
-                  ]}
-                >
-                  <Ionicons
-                    color={isDone || isCurrent ? colors.surface : colors.primaryDark}
-                    name={
-                      item.isCelebration
-                        ? "trophy-outline"
-                        : isDone
-                          ? "checkmark-outline"
-                          : isCurrent
-                            ? "sparkles-outline"
-                            : "book-outline"
-                    }
-                    size={17}
+              <SurfaceCard padding="sm" style={styles.moduleCard}>
+                <View style={styles.moduleRow}>
+                  <ClayIcon3D
+                    colors={item.isCelebration ? ["#FFD066", "#F59E0B"] : palette.clayColors}
+                    icon={item.isCelebration ? "trophy" : palette.icon}
+                    size={54}
                   />
-                </View>
 
-                <Pressable
-                  onPress={() => openModule(item.module.moduleId)}
-                  style={[styles.roadmapCard, item.isCelebration ? styles.roadmapCardCelebration : null]}
-                >
-                  <View style={styles.cardHeader}>
-                    <Text style={styles.moduleStep}>
-                      {item.isCelebration ? "Chặng cuối đã mở" : `Module ${index + 1}`}
-                    </Text>
-                    {isDone ? <Text style={styles.doneTag}>Hoàn thành</Text> : null}
-                    {isCurrent && !isDone ? <Text style={styles.currentTag}>Đang học</Text> : null}
-                  </View>
-                  <Text style={styles.moduleTitle}>{item.module.title}</Text>
-                  <Text numberOfLines={2} style={styles.moduleDescription}>
-                    {item.module.description ?? `Milestone: ${item.milestoneTitle}`}
-                  </Text>
-                  {item.isCelebration ? (
-                    <Text style={styles.celebrationMeta}>
-                      Bấm để xem màn hoàn thành khóa học và tổng kết hành trình của bạn.
-                    </Text>
-                  ) : (
-                    <View style={styles.moduleMetaRow}>
-                      <Text style={styles.moduleMeta}>{item.module.videoLessonCount} video</Text>
-                      <Text style={styles.moduleMeta}>{item.module.flashcardCount} vocab</Text>
-                      <Text style={styles.moduleMeta}>{item.module.practiceSetCount} practice</Text>
+                  <View style={styles.moduleBody}>
+                    <View style={styles.moduleTopMetaRow}>
+                      <Text numberOfLines={1} style={styles.milestoneEyebrow}>
+                        {item.milestoneTitle}
+                      </Text>
+                      <View style={[styles.moduleStatusPill, { backgroundColor: statusMeta.bg }]}>
+                        <Text style={[styles.moduleStatusText, { color: statusMeta.fg }]}>
+                          {statusMeta.label}
+                        </Text>
+                      </View>
                     </View>
-                  )}
-                  <ProgressBar
-                    accentColor={item.isCelebration ? "#F0A33A" : isDone ? colors.success : colors.primary}
-                    rightLabel={`${Math.round(item.module.progressPercent)}%`}
-                    value={item.module.progressPercent}
-                  />
-                  {item.ctaLabel ? <Text style={styles.celebrationCta}>{item.ctaLabel}</Text> : null}
-                </Pressable>
-              </View>
-            </View>
+
+                    <Text numberOfLines={1} style={[styles.moduleTitle, { fontSize: rf(16) }]}>
+                      {item.module.title}
+                    </Text>
+
+                    <Text numberOfLines={1} style={styles.moduleMetaCompact}>
+                      {metaSummary}
+                    </Text>
+
+                    <View style={styles.progressLine}>
+                      <View style={{ flex: 1 }}>
+                        <ProgressBar accentColor={item.isCompleted ? colors.success : colors.primary} value={modPct} />
+                      </View>
+                      <Text style={styles.pctText}>{modPct}%</Text>
+                    </View>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.chevronCircle,
+                      {
+                        backgroundColor: item.isCompleted ? colors.success : colors.primary,
+                        shadowColor: item.isCompleted ? colors.success : colors.primary,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      color="#FFFFFF"
+                      name={item.isCompleted ? "checkmark" : "chevron-forward"}
+                      size={18}
+                    />
+                  </View>
+                </View>
+              </SurfaceCard>
+            </Pressable>
           );
         })}
+      </View>
+
+      {/* Compact 3D Clay Tools Grid (4 Clean Cards) */}
+      <View style={styles.toolsSection}>
+        <SectionTitle title="Công cụ bổ trợ" />
+
+        <View style={styles.toolsRow}>
+          <Pressable
+            onPress={() => pushRoute("/user/youtube-studio")}
+            style={({ pressed }) => [styles.toolCardWrap, pressed && { opacity: 0.9, transform: [{ scale: 0.97 }] }]}
+          >
+            <SurfaceCard padding="sm" style={styles.toolCard}>
+              <ClayIcon3D colors={["#60B6FF", "#0284C7"]} icon="videocam" size={48} />
+              <Text numberOfLines={1} style={styles.toolTitle}>
+                Video AI
+              </Text>
+            </SurfaceCard>
+          </Pressable>
+
+          <Pressable
+            onPress={() => pushRoute("/user/grammar")}
+            style={({ pressed }) => [styles.toolCardWrap, pressed && { opacity: 0.9, transform: [{ scale: 0.97 }] }]}
+          >
+            <SurfaceCard padding="sm" style={styles.toolCard}>
+              <ClayIcon3D colors={["#A78BFA", "#7C3AED"]} icon="library" size={48} />
+              <Text numberOfLines={1} style={styles.toolTitle}>
+                Ngữ pháp TOEIC
+              </Text>
+            </SurfaceCard>
+          </Pressable>
+        </View>
+
+        <View style={styles.toolsRow}>
+          <Pressable
+            onPress={() => pushRoute("/user/document-exam")}
+            style={({ pressed }) => [styles.toolCardWrap, pressed && { opacity: 0.9, transform: [{ scale: 0.97 }] }]}
+          >
+            <SurfaceCard padding="sm" style={styles.toolCard}>
+              <ClayIcon3D colors={["#4ADE80", "#16A34A"]} icon="document-text" size={48} />
+              <Text numberOfLines={1} style={styles.toolTitle}>
+                Luyện đề PDF
+              </Text>
+            </SurfaceCard>
+          </Pressable>
+
+          <Pressable
+            onPress={() => pushRoute("/user/mistakes")}
+            style={({ pressed }) => [styles.toolCardWrap, pressed && { opacity: 0.9, transform: [{ scale: 0.97 }] }]}
+          >
+            <SurfaceCard padding="sm" style={styles.toolCard}>
+              <ClayIcon3D colors={["#FBBF24", "#D97706"]} icon="alert-circle" size={48} />
+              <Text numberOfLines={1} style={styles.toolTitle}>
+                Sổ tay Lỗi sai
+              </Text>
+            </SurfaceCard>
+          </Pressable>
+        </View>
       </View>
     </UserScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  branchRow: {
-    marginBottom: spacing.lg,
-    minHeight: 178,
-    position: "relative",
-    width: "100%",
-  },
-  branchRowLeft: {
-    alignItems: "flex-start",
-  },
-  branchRowRight: {
-    alignItems: "flex-end",
-  },
-  cardHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.xs,
-    marginBottom: spacing.sm,
-  },
-  celebrationCta: {
-    color: "#A25B00",
-    fontSize: 12,
-    fontWeight: "900",
-    marginTop: spacing.xs,
-  },
-  celebrationMeta: {
-    color: "#6B4A17",
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: spacing.xs,
-  },
-  centerLine: {
-    backgroundColor: "#C7BFAE",
-    bottom: 0,
-    left: "50%",
-    marginLeft: -1,
-    position: "absolute",
-    top: 8,
-    width: 2,
-  },
-  connector: {
-    borderColor: "#C7BFAE",
-    borderTopWidth: 2,
-    height: 54,
-    position: "absolute",
-    top: 20,
-    width: 42,
-  },
-  connectorLeft: {
-    borderLeftWidth: 2,
-    borderTopLeftRadius: 26,
-    left: "50%",
-  },
-  connectorRight: {
-    borderRightWidth: 2,
-    borderTopRightRadius: 26,
-    right: "50%",
-  },
-  currentPathBlock: {
-    backgroundColor: "#FFFCF4",
-    borderColor: "#E1D4B8",
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    marginBottom: spacing.md,
-    padding: spacing.md,
-  },
-  currentPathLabel: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: "900",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  currentPathMeta: {
-    color: colors.textMuted,
-    flex: 1,
-    fontSize: 12,
-    textAlign: "right",
-  },
-  currentPathTitle: {
-    color: colors.primaryDark,
-    fontSize: 18,
-    fontWeight: "900",
-    marginTop: 8,
-  },
-  currentPathTopRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-  },
-  currentTag: {
-    backgroundColor: colors.primaryDark,
-    borderRadius: radius.pill,
-    color: colors.surface,
-    fontSize: 11,
-    fontWeight: "900",
-    overflow: "hidden",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  doneTag: {
-    backgroundColor: "#D7F5E3",
-    borderRadius: radius.pill,
-    color: colors.success,
-    fontSize: 11,
-    fontWeight: "900",
-    overflow: "hidden",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  emptyStateCard: {
-    marginBottom: spacing.md,
-  },
-  emptyStateTitle: {
-    color: colors.primaryDark,
-    fontSize: 16,
-    fontWeight: "900",
-    marginBottom: spacing.xs,
-    textAlign: "center",
-  },
-  emptyText: {
-    color: colors.textMuted,
-    fontSize: 14,
-    textAlign: "center",
-  },
-  errorText: {
-    backgroundColor: "rgba(201,87,87,0.1)",
-    borderColor: "rgba(201,87,87,0.24)",
-    borderRadius: radius.md,
-    borderWidth: 1,
-    color: colors.danger,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  feedbackRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  feedbackText: {
-    color: colors.textMuted,
-    fontSize: 14,
-  },
-  heroCard: {
-    backgroundColor: "#F1F8FB",
-    borderColor: "#D7DCCE",
-    marginBottom: spacing.md,
-    overflow: "hidden",
-    padding: spacing.lg,
-  },
-  heroCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  heroEyebrow: {
-    color: colors.accent,
-    fontSize: 12,
-    fontWeight: "900",
-    letterSpacing: 1.5,
-    marginBottom: 8,
-    textTransform: "uppercase",
-  },
-  heroHeaderRow: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  heroOrb: {
-    backgroundColor: "rgba(15,107,98,0.08)",
-    borderRadius: 120,
-    height: 140,
-    position: "absolute",
-    right: -34,
-    top: -24,
-    width: 140,
-  },
-  heroScorePill: {
-    alignItems: "center",
-    backgroundColor: colors.primaryDark,
-    borderRadius: radius.pill,
-    justifyContent: "center",
-    minWidth: 84,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 14,
-  },
-  heroScoreValue: {
-    color: colors.surface,
-    fontSize: 22,
-    fontWeight: "900",
-  },
-  moduleDescription: {
-    color: colors.text,
-    fontSize: 13,
-    lineHeight: 19,
-    marginBottom: spacing.sm,
-  },
-  moduleMeta: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  moduleMetaRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  moduleStep: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: "900",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  moduleTitle: {
-    color: colors.primaryDark,
-    fontSize: 17,
-    fontWeight: "900",
-    marginBottom: spacing.xs,
-  },
-  nodeBadge: {
-    alignItems: "center",
-    backgroundColor: colors.surfaceAlt,
-    borderColor: colors.borderStrong,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    height: 38,
-    justifyContent: "center",
-    left: -19,
-    position: "absolute",
-    top: 20,
-    width: 38,
-    zIndex: 2,
-  },
-  nodeBadgeCelebration: {
-    backgroundColor: "#F0A33A",
-    borderColor: "#F0A33A",
-  },
-  nodeBadgeCurrent: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  nodeBadgeDone: {
-    backgroundColor: colors.success,
-    borderColor: colors.success,
-  },
-  nodeWrap: {
-    position: "relative",
-    width: "47%",
-  },
-  nodeWrapLeft: {
-    marginRight: "53%",
-  },
-  nodeWrapRight: {
-    marginLeft: "53%",
-  },
-  primaryButton: {
-    alignItems: "center",
-    backgroundColor: colors.primaryDark,
-    borderRadius: radius.pill,
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "center",
-    marginBottom: spacing.lg,
-    paddingVertical: 16,
-  },
-  primaryButtonDisabled: {
-    backgroundColor: colors.surfaceDisabled,
-  },
-  primaryButtonText: {
-    color: colors.surface,
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  roadmapCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    minHeight: 152,
-    padding: spacing.md,
-  },
-  roadmapCardCelebration: {
-    backgroundColor: "#FFF8E8",
-    borderColor: "#F6D38C",
-  },
-  secondaryCta: {
-    alignItems: "center",
-    alignSelf: "center",
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.pill,
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 12,
-  },
-  secondaryCtaText: {
-    color: colors.primaryDark,
-    fontSize: 13,
-    fontWeight: "900",
-  },
-  subtitle: {
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 23,
-    marginBottom: spacing.lg,
-  },
-  summaryCard: {
-    backgroundColor: "#FFFCF4",
-    borderRadius: radius.xl,
-    flex: 1,
-    minHeight: 88,
-    minWidth: 0,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.md,
-  },
-  summaryGrid: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  summaryLabel: {
-    color: colors.textMuted,
-    fontSize: 12,
-    marginTop: 6,
-  },
-  summaryValue: {
-    color: colors.primaryDark,
-    fontSize: 18,
-    fontWeight: "900",
-  },
-  summaryValueCompact: {
-    color: colors.primaryDark,
-    fontSize: 15,
-    fontWeight: "900",
-    textTransform: "uppercase",
-  },
-  title: {
-    color: colors.primaryDark,
-    fontSize: 26,
-    fontWeight: "900",
-    lineHeight: 32,
-  },
-  treeWrap: {
-    paddingBottom: spacing.xl,
-    position: "relative",
-  },
-});
+const createStyles = (colors: LiquidThemeColors) =>
+  StyleSheet.create({
+    heroBanner: {
+      borderRadius: 26,
+      marginBottom: 14,
+      minHeight: 162,
+      overflow: "hidden",
+      position: "relative",
+    },
+    heroOverlay: {
+      backgroundColor: "rgba(15, 23, 42, 0.56)",
+      flex: 1,
+      gap: 6,
+      justifyContent: "space-between",
+      padding: 18,
+    },
+    heroTopRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 8,
+      justifyContent: "space-between",
+    },
+    goalBadge: {
+      alignItems: "center",
+      backgroundColor: "rgba(16, 185, 129, 0.28)",
+      borderColor: "rgba(167, 243, 208, 0.45)",
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+    },
+    goalBadgeText: {
+      color: "#FFFFFF",
+      fontSize: 10.5,
+      fontWeight: "900",
+      letterSpacing: 0.5,
+      textTransform: "uppercase",
+    },
+    switchPathBtn: {
+      alignItems: "center",
+      backgroundColor: "rgba(255, 255, 255, 0.22)",
+      borderColor: "rgba(255, 255, 255, 0.35)",
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: 5,
+      paddingHorizontal: 11,
+      paddingVertical: 5,
+    },
+    switchPathText: {
+      color: "#FFFFFF",
+      fontSize: 11.5,
+      fontWeight: "800",
+    },
+    heroHeadline: {
+      color: "#FFFFFF",
+      fontWeight: "900",
+      lineHeight: 26,
+      marginTop: 4,
+      textShadowColor: "rgba(0,0,0,0.22)",
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 4,
+    },
+    heroSubtitle: {
+      color: "rgba(255, 255, 255, 0.9)",
+      fontSize: 12.5,
+      fontWeight: "700",
+    },
+    heroProgressRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 10,
+      marginTop: 6,
+    },
+    heroProgressTrack: {
+      backgroundColor: "rgba(255, 255, 255, 0.26)",
+      borderRadius: radius.pill,
+      flex: 1,
+      height: 8,
+      overflow: "hidden",
+    },
+    heroProgressFill: {
+      backgroundColor: "#34D399",
+      borderRadius: radius.pill,
+      height: "100%",
+    },
+    heroPctBadge: {
+      backgroundColor: "rgba(255, 255, 255, 0.2)",
+      borderRadius: radius.pill,
+      paddingHorizontal: 9,
+      paddingVertical: 3,
+    },
+    heroPctText: {
+      color: "#FFFFFF",
+      fontSize: 11.5,
+      fontWeight: "900",
+    },
+    summaryStatsRow: {
+      flexDirection: "row",
+      gap: 10,
+      marginBottom: 14,
+    },
+    summaryStatCard: {
+      alignItems: "center",
+      borderRadius: 20,
+      flex: 1,
+      gap: 4,
+      paddingVertical: 12,
+    },
+    summaryStatIcon: {
+      alignItems: "center",
+      borderRadius: 12,
+      height: 32,
+      justifyContent: "center",
+      width: 32,
+    },
+    summaryStatValue: {
+      color: colors.text,
+      fontSize: 17,
+      fontWeight: "900",
+    },
+    summaryStatLabel: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontWeight: "700",
+      textAlign: "center",
+    },
+    filterScroll: {
+      flexGrow: 0,
+      flexShrink: 0,
+      marginBottom: 14,
+    },
+    filterRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 8,
+      paddingVertical: 2,
+    },
+    filterPill: {
+      alignItems: "center",
+      backgroundColor: colors.surface,
+      borderColor: colors.glassBorder,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      elevation: Platform.OS === "android" ? 2 : 0,
+      height: 38,
+      justifyContent: "center",
+      paddingHorizontal: 15,
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.08,
+      shadowRadius: 6,
+    },
+    filterPillActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    filterText: {
+      color: colors.textMuted,
+      fontSize: 12.5,
+      fontWeight: "800",
+    },
+    filterTextActive: {
+      color: colors.onPrimary,
+    },
+    feedbackRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 8,
+      marginBottom: 12,
+    },
+    feedbackText: {
+      color: colors.textMuted,
+      fontSize: 13,
+    },
+    errorText: {
+      backgroundColor: "rgba(234,67,89,0.12)",
+      borderColor: "rgba(234,67,89,0.28)",
+      borderRadius: radius.md,
+      borderWidth: 1,
+      color: colors.danger,
+      marginBottom: 14,
+      padding: 12,
+    },
+    emptyStateCard: {
+      alignItems: "center",
+      gap: 6,
+      marginBottom: 16,
+      paddingVertical: 24,
+    },
+    emptyFilterCard: {
+      alignItems: "center",
+      borderRadius: 22,
+      gap: 8,
+      marginBottom: 14,
+      paddingVertical: 22,
+    },
+    resetFilterBtn: {
+      backgroundColor: colors.primarySoft,
+      borderRadius: radius.pill,
+      marginTop: 4,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+    },
+    resetFilterText: {
+      color: colors.primary,
+      fontSize: 12.5,
+      fontWeight: "800",
+    },
+    emptyStateTitle: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: "900",
+      textAlign: "center",
+    },
+    emptyText: {
+      color: colors.textMuted,
+      fontSize: 13,
+      lineHeight: 19,
+      textAlign: "center",
+    },
+    sectionHeaderRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 10,
+      justifyContent: "space-between",
+      marginBottom: 10,
+    },
+    sectionHeading: {
+      color: colors.text,
+      flex: 1,
+      fontSize: 16,
+      fontWeight: "900",
+    },
+    sectionMeta: {
+      color: colors.textMuted,
+      fontSize: 12,
+      fontWeight: "700",
+    },
+    moduleList: {
+      gap: 12,
+    },
+    moduleCard: {
+      borderRadius: 22,
+    },
+    moduleTopMetaRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 8,
+      justifyContent: "space-between",
+      marginBottom: 2,
+    },
+    milestoneEyebrow: {
+      color: colors.textMuted,
+      flex: 1,
+      fontSize: 10.5,
+      fontWeight: "800",
+      letterSpacing: 0.3,
+      textTransform: "uppercase",
+    },
+    moduleStatusPill: {
+      borderRadius: radius.pill,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+    },
+    moduleStatusText: {
+      fontSize: 10,
+      fontWeight: "900",
+    },
+    moduleRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 13,
+    },
+    moduleBody: {
+      flex: 1,
+      minWidth: 0,
+    },
+    moduleTitle: {
+      color: colors.text,
+      fontWeight: "900",
+    },
+    moduleMetaCompact: {
+      color: colors.textMuted,
+      fontSize: 12,
+      fontWeight: "600",
+      marginTop: 2,
+    },
+    progressLine: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 8,
+      marginTop: 8,
+    },
+    pctText: {
+      color: colors.textMuted,
+      fontSize: 11.5,
+      fontWeight: "800",
+      minWidth: 30,
+      textAlign: "right",
+    },
+    chevronCircle: {
+      alignItems: "center",
+      borderRadius: 999,
+      elevation: Platform.OS === "android" ? 5 : 0,
+      height: 36,
+      justifyContent: "center",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      width: 36,
+    },
+    toolsSection: {
+      gap: 10,
+      marginTop: 20,
+    },
+    toolsRow: {
+      flexDirection: "row",
+      gap: 12,
+    },
+    toolCardWrap: {
+      flex: 1,
+    },
+    toolCard: {
+      alignItems: "center",
+      borderRadius: 22,
+      gap: 10,
+      justifyContent: "center",
+      paddingVertical: 16,
+    },
+    toolTitle: {
+      color: colors.text,
+      fontSize: 13.5,
+      fontWeight: "900",
+      textAlign: "center",
+    },
+  });

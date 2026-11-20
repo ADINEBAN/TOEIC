@@ -1,13 +1,16 @@
 package org.example.backend.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.example.backend.dto.request.AskAIExplainRequest;
 import org.example.backend.dto.request.SubmitPracticeAttemptRequest;
+import org.example.backend.dto.response.AIExplainResponse;
 import org.example.backend.dto.response.ApiResponse;
 import org.example.backend.dto.response.PracticeSetResponse;
 import org.example.backend.dto.response.UserPracticeAttemptDetailResponse;
 import org.example.backend.dto.response.UserPracticeAttemptResponse;
 import org.example.backend.dto.response.UserPracticeSetDetailResponse;
 import org.example.backend.enums.SuccessCode;
+import org.example.backend.service.OpenAIAnswerExplainService;
 import org.example.backend.service.UserPracticeService;
 import org.example.backend.util.ApiResponseUtil;
 import org.springframework.http.ResponseEntity;
@@ -20,10 +23,11 @@ import java.util.List;
 @RestController
 @RequestMapping("/users/practice-sets")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('USER')")
+@PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
 public class UserPracticeController {
 
     private final UserPracticeService userPracticeService;
+    private final OpenAIAnswerExplainService openAIAnswerExplainService;
 
     @GetMapping("/modules/{moduleId}")
     public ResponseEntity<ApiResponse<List<PracticeSetResponse>>> getPracticeSetsByModule(@PathVariable Long moduleId) {
@@ -69,6 +73,17 @@ public class UserPracticeController {
     ) {
         UserPracticeAttemptDetailResponse response = userPracticeService.getPracticeAttemptDetail(authentication.getName(), attemptId);
         return ApiResponseUtil.success(response, SuccessCode.PRACTICE_ATTEMPT_GET);
+    }
+
+    @PostMapping("/questions/explain")
+    public ResponseEntity<ApiResponse<AIExplainResponse>> explainPracticeQuestion(@RequestBody AskAIExplainRequest request) {
+        String type = request != null && request.getType() != null ? request.getType() : "BOTH";
+        AIExplainResponse response = openAIAnswerExplainService.explainPracticeQuestion(
+                request != null ? request.getPracticeSetQuestionId() : null,
+                request != null ? request.getSelectedAnswer() : null,
+                type
+        );
+        return ApiResponseUtil.success(response, SuccessCode.TEST_QUESTION_EXPLAINED);
     }
 }
 
