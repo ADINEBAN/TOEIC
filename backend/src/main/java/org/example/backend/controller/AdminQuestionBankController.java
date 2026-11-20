@@ -1,6 +1,7 @@
 package org.example.backend.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.example.backend.dto.request.BulkImportQuestionsRequest;
 import org.example.backend.dto.request.CreateQuestionRequest;
 import org.example.backend.dto.request.UpdateQuestionRequest;
 import org.example.backend.dto.response.ApiResponse;
@@ -36,6 +37,16 @@ public class AdminQuestionBankController {
         return ApiResponseUtil.success(response, SuccessCode.QUESTION_CREATED);
     }
 
+    @PostMapping("/bulk-import")
+    public ResponseEntity<ApiResponse<List<QuestionResponse>>> bulkImportQuestions(
+            @RequestBody BulkImportQuestionsRequest request
+    ) {
+        List<QuestionResponse> response = adminQuestionBankService.bulkCreateQuestions(
+                request != null ? request.getQuestions() : null
+        );
+        return ApiResponseUtil.success(response, SuccessCode.QUESTIONS_BULK_IMPORTED);
+    }
+
     @GetMapping
     public ResponseEntity<ApiResponse<List<QuestionResponse>>> getQuestions(
             @RequestParam(value = "keyword", required = false) String keyword
@@ -44,7 +55,7 @@ public class AdminQuestionBankController {
         return ApiResponseUtil.success(response, SuccessCode.QUESTION_LISTED);
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MANAGER', 'USER')")
     @GetMapping("/parts/{partNo}")
     public ResponseEntity<ApiResponse<List<QuestionResponse>>> getQuestionsByPart(
             @PathVariable Integer partNo,

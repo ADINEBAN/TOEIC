@@ -17,13 +17,26 @@ import org.example.backend.enums.ErrorCode;
 import org.example.backend.exception.AppException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -42,18 +55,30 @@ public class CloudinaryUploadService {
     @Value("${cloudinary.api-secret:}")
     private String apiSecret;
 
+    private static final Set<String> ALLOWED_EXTENSIONS = Set.of("mp4", "mov", "webm", "m4v", "mkv", "avi");
+
     @Value("${cloudinary.upload-folder:toeic-trainer/videos}")
     private String uploadFolder;
 
+    @Value("${toeic.storage-dir:./data}")
+    private String storageDir = "./data";
+
+    @Value("${toeic.ffmpeg-bin:}")
+    private String ffmpegBin = "";
+
     @PostConstruct
     private void initializeAndValidate() {
-        // Log loaded configuration (with masked secret for security)
-        String maskedSecret = isBlank(apiSecret) ? "MISSING" : "***" + apiSecret.substring(Math.max(0, apiSecret.length() - 4));
-        logger.info("Cloudinary config loaded - cloud_name: [{}], api_key: [{}...], api_secret: [{}], upload_folder: [{}]",
-                isBlank(cloudName) ? "MISSING" : cloudName,
-                isBlank(apiKey) ? "MISSING" : apiKey.substring(0, Math.min(4, apiKey.length())) + "...",
-                maskedSecret,
-                isBlank(uploadFolder) ? "default" : uploadFolder);
+        if (hasCloudinaryConfig()) {
+            String maskedSecret = "***" + apiSecret.substring(Math.max(0, apiSecret.length() - 4));
+            logger.info("Cloudinary upload enabled - cloud_name: [{}], api_key: [{}...], api_secret: [{}], upload_folder: [{}]",
+                    cloudName,
+                    apiKey.substring(0, Math.min(4, apiKey.length())),
+                    maskedSecret,
+                    isBlank(uploadFolder) ? "default" : uploadFolder);
+        } else {
+            logger.info("Cloudinary credentials not configured; uploaded videos will be stored locally under [{}].",
+                    resolveLocalVideoDir());
+        }
     }
 
     public VideoUploadResponse uploadVideo(MultipartFile file) {
@@ -61,7 +86,14 @@ public class CloudinaryUploadService {
             throw new AppException(ErrorCode.VIDEO_UPLOAD_FAILED);
         }
 
-        validateConfig();
+        if (!hasCloudinaryConfig()) {
+            return storeLocally(file);
+        }
+
+        return uploadToCloudinary(file);
+    }
+
+    private VideoUploadResponse uploadToCloudinary(MultipartFile file) {
 
         String originalName = file.getOriginalFilename() == null ? "video" : file.getOriginalFilename();
         long timestamp = Instant.now().getEpochSecond();
@@ -129,10 +161,135 @@ public class CloudinaryUploadService {
         }
     }
 
-    private void validateConfig() {
-        if (isBlank(cloudName) || isBlank(apiKey) || isBlank(apiSecret)) {
-            throw new AppException(ErrorCode.VIDEO_UPLOAD_CONFIG_MISSING);
+    private boolean hasCloudinaryConfig() {
+        return !isBlank(cloudName) && !isBlank(apiKey) && !isBlank(apiSecret);
+    }
+
+    private VideoUploadResponse storeLocally(MultipartFile file) {
+        try {
+            Path videoDir = resolveLocalVideoDir();
+            Files.createDirectories(videoDir);
+
+            String originalName = file.getOriginalFilename() == null ? "video.mp4" : file.getOriginalFilename();
+            String ext = resolveVideoExtension(originalName, file.getContentType());
+            String safeBase = sanitizeBaseName(originalName);
+            String token = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+            String storedFileName = token + "_" + safeBase + "." + ext;
+            Path targetPath = videoDir.resolve(storedFileName);
+
+            try (InputStream inputStream = file.getInputStream()) {
+                Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            long storedBytes = Files.size(targetPath);
+            String playbackUrl = buildLocalPlaybackUrl(storedFileName);
+
+            VideoUploadResponse result = new VideoUploadResponse();
+            result.setPublicId("local/" + storedFileName);
+            result.setResourceType("video");
+            result.setFormat(ext);
+            result.setSecureUrl(playbackUrl);
+            result.setPlaybackUrl(playbackUrl);
+            result.setDurationSeconds(probeDurationSeconds(targetPath));
+            result.setBytes(storedBytes);
+            return result;
+        } catch (IOException exception) {
+            logger.error("Failed to store video file locally", exception);
+            throw new AppException(ErrorCode.VIDEO_UPLOAD_FAILED);
         }
+    }
+
+    private Path resolveLocalVideoDir() {
+        String root = isBlank(storageDir) ? "./data" : storageDir.trim();
+        return Paths.get(root).toAbsolutePath().normalize().resolve("uploads").resolve("videos");
+    }
+
+    private String buildLocalPlaybackUrl(String storedFileName) {
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes) {
+            return ServletUriComponentsBuilder.fromCurrentContextPath()
+                    .path("/media/videos/")
+                    .path(storedFileName)
+                    .toUriString();
+        }
+        return "/api/media/videos/" + storedFileName;
+    }
+
+    private String resolveVideoExtension(String originalName, String contentType) {
+        int dotIdx = originalName.lastIndexOf('.');
+        if (dotIdx >= 0 && dotIdx < originalName.length() - 1) {
+            String ext = originalName.substring(dotIdx + 1).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+            if (ALLOWED_EXTENSIONS.contains(ext)) {
+                return ext;
+            }
+        }
+        if (contentType != null) {
+            String lower = contentType.toLowerCase(Locale.ROOT);
+            if (lower.contains("quicktime")) return "mov";
+            if (lower.contains("webm")) return "webm";
+            if (lower.contains("m4v")) return "m4v";
+        }
+        return "mp4";
+    }
+
+    private String sanitizeBaseName(String originalName) {
+        int slashIdx = Math.max(originalName.lastIndexOf('/'), originalName.lastIndexOf('\\'));
+        String filename = slashIdx >= 0 ? originalName.substring(slashIdx + 1) : originalName;
+        int dotIdx = filename.lastIndexOf('.');
+        String base = dotIdx > 0 ? filename.substring(0, dotIdx) : filename;
+        String clean = base.replaceAll("[^a-zA-Z0-9_-]+", "_").replaceAll("^_+|_+$", "");
+        if (clean.isEmpty()) {
+            return "video";
+        }
+        return clean.length() > 40 ? clean.substring(0, 40) : clean;
+    }
+
+    private Integer probeDurationSeconds(Path videoPath) {
+        String probeCmd = resolveFfprobeCommand();
+        if (probeCmd == null) {
+            return null;
+        }
+        Process process = null;
+        try {
+            process = new ProcessBuilder(
+                    probeCmd,
+                    "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    videoPath.toAbsolutePath().toString()
+            ).redirectErrorStream(true).start();
+
+            boolean finished = process.waitFor(3, TimeUnit.SECONDS);
+            if (!finished || process.exitValue() != 0) {
+                return null;
+            }
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line = reader.readLine();
+                if (line != null && !line.isBlank()) {
+                    int seconds = (int) Math.round(Double.parseDouble(line.trim()));
+                    return seconds > 0 ? seconds : null;
+                }
+            }
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            if (process != null) {
+                process.destroy();
+            }
+        }
+        return null;
+    }
+
+    private String resolveFfprobeCommand() {
+        if (!isBlank(ffmpegBin)) {
+            Path ffmpegPath = Paths.get(ffmpegBin.trim());
+            String fileName = ffmpegPath.getFileName() == null ? "" : ffmpegPath.getFileName().toString();
+            String probeName = fileName.toLowerCase(Locale.ROOT).endsWith(".exe") ? "ffprobe.exe" : "ffprobe";
+            Path sibling = ffmpegPath.getParent() == null ? Paths.get(probeName) : ffmpegPath.getParent().resolve(probeName);
+            if (Files.isExecutable(sibling)) {
+                return sibling.toAbsolutePath().toString();
+            }
+        }
+        return "ffprobe";
     }
 
     private String defaultMimeType(String contentType) {

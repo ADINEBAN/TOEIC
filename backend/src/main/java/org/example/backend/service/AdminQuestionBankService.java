@@ -34,16 +34,33 @@ public class AdminQuestionBankService {
 
     @Transactional
     public QuestionResponse createQuestion(CreateQuestionRequest request) {
+        Question question = buildNewQuestionEntity(request);
+        return questionMapper.toResponse(questionRepository.save(question));
+    }
+
+    @Transactional
+    public List<QuestionResponse> bulkCreateQuestions(List<CreateQuestionRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            throw new AppException(ErrorCode.INVALID_QUESTION_DATA);
+        }
+        List<Question> entities = new ArrayList<>();
+        for (CreateQuestionRequest request : requests) {
+            entities.add(buildNewQuestionEntity(request));
+        }
+        return questionMapper.toResponseList(questionRepository.saveAll(entities));
+    }
+
+    private Question buildNewQuestionEntity(CreateQuestionRequest request) {
         if (request == null) {
             throw new AppException(ErrorCode.INVALID_QUESTION_DATA);
         }
-
         Question question = new Question();
         applyQuestionFields(question, request.getPartNo(), request.getQuestionText(), request.getExplanation(),
-                request.getDifficultyLevel(), request.getSourceType(), request.getSourceYear());
+                request.getDifficultyLevel(), request.getSourceType(), request.getSourceYear(),
+                request.getAudioUrl(), request.getImageUrl(), request.getPassageText(),
+                request.getTranscript(), request.getQuestionGroupCode());
         question.setOptions(buildValidatedOptions(question, request.getOptions()));
-
-        return questionMapper.toResponse(questionRepository.save(question));
+        return question;
     }
 
     @Transactional(readOnly = true)
@@ -118,6 +135,26 @@ public class AdminQuestionBankService {
             question.setSourceYear(request.getSourceYear());
         }
 
+        if (request.getAudioUrl() != null) {
+            question.setAudioUrl(trimToNull(request.getAudioUrl()));
+        }
+
+        if (request.getImageUrl() != null) {
+            question.setImageUrl(trimToNull(request.getImageUrl()));
+        }
+
+        if (request.getPassageText() != null) {
+            question.setPassageText(trimToNull(request.getPassageText()));
+        }
+
+        if (request.getTranscript() != null) {
+            question.setTranscript(trimToNull(request.getTranscript()));
+        }
+
+        if (request.getQuestionGroupCode() != null) {
+            question.setQuestionGroupCode(trimToNull(request.getQuestionGroupCode()));
+        }
+
         if (request.getOptions() != null) {
             List<QuestionOption> refreshedOptions = buildValidatedOptions(question, request.getOptions());
             question.getOptions().clear();
@@ -149,7 +186,12 @@ public class AdminQuestionBankService {
             String explanation,
             String difficultyLevel,
             QuestionSourceType sourceType,
-            Integer sourceYear
+            Integer sourceYear,
+            String audioUrl,
+            String imageUrl,
+            String passageText,
+            String transcript,
+            String questionGroupCode
     ) {
         String normalizedQuestionText = trimToNull(questionText);
         if (partNo == null || partNo <= 0 || normalizedQuestionText == null) {
@@ -162,6 +204,11 @@ public class AdminQuestionBankService {
         question.setDifficultyLevel(trimToNull(difficultyLevel));
         question.setSourceType(sourceType);
         question.setSourceYear(sourceYear);
+        question.setAudioUrl(trimToNull(audioUrl));
+        question.setImageUrl(trimToNull(imageUrl));
+        question.setPassageText(trimToNull(passageText));
+        question.setTranscript(trimToNull(transcript));
+        question.setQuestionGroupCode(trimToNull(questionGroupCode));
     }
 
     private List<QuestionOption> buildValidatedOptions(Question question, List<CreateQuestionOptionRequest> options) {

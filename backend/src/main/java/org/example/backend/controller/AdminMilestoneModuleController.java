@@ -2,6 +2,7 @@ package org.example.backend.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.request.CreateMilestoneModuleRequest;
+import org.example.backend.dto.request.CreateMilestoneQuickModuleRequest;
 import org.example.backend.dto.request.UpdateMilestoneModuleRequest;
 import org.example.backend.dto.response.ApiResponse;
 import org.example.backend.dto.response.MilestoneModuleResponse;
@@ -35,6 +36,15 @@ public class AdminMilestoneModuleController {
             @RequestBody CreateMilestoneModuleRequest request
     ) {
         MilestoneModuleResponse response = adminMilestoneModuleService.addModuleToMilestone(milestoneId, request);
+        return ApiResponseUtil.success(response, SuccessCode.MILESTONE_MODULE_CREATED);
+    }
+
+    @PostMapping("/quick")
+    public ResponseEntity<ApiResponse<MilestoneModuleResponse>> createAndLinkModule(
+            @PathVariable Long milestoneId,
+            @RequestBody CreateMilestoneQuickModuleRequest request
+    ) {
+        MilestoneModuleResponse response = adminMilestoneModuleService.createAndLinkModule(milestoneId, request);
         return ApiResponseUtil.success(response, SuccessCode.MILESTONE_MODULE_CREATED);
     }
 

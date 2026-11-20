@@ -2,6 +2,7 @@ package org.example.backend.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.request.CreateMilestoneModuleRequest;
+import org.example.backend.dto.request.CreateMilestoneQuickModuleRequest;
 import org.example.backend.dto.request.UpdateMilestoneModuleRequest;
 import org.example.backend.dto.response.MilestoneModuleResponse;
 import org.example.backend.entity.LearningModule;
@@ -44,6 +45,46 @@ public class AdminMilestoneModuleService {
         milestoneModule.setMilestone(milestone);
         milestoneModule.setModule(module);
         milestoneModule.setSortOrder(request.getSortOrder());
+        milestoneModule.setRequired(request.getRequired() == null ? true : request.getRequired());
+        milestoneModule.setUnlockCondition(trimToNull(request.getUnlockCondition()));
+
+        return milestoneModuleMapper.toResponse(milestoneModuleRepository.save(milestoneModule));
+    }
+
+    @Transactional
+    public MilestoneModuleResponse createAndLinkModule(Long milestoneId, CreateMilestoneQuickModuleRequest request) {
+        if (request == null) {
+            throw new AppException(ErrorCode.INVALID_LEARNING_MODULE_DATA);
+        }
+        String title = trimToNull(request.getTitle());
+        Integer minutes = request.getEstimatedMinutes() != null ? request.getEstimatedMinutes() : 30;
+        if (request.getModuleType() == null || title == null || minutes <= 0) {
+            throw new AppException(ErrorCode.INVALID_LEARNING_MODULE_DATA);
+        }
+        if (learningModuleRepository.existsByTitleIgnoreCase(title)) {
+            throw new AppException(ErrorCode.LEARNING_MODULE_TITLE_EXISTED);
+        }
+
+        LearningPathMilestone milestone = findMilestone(milestoneId);
+
+        LearningModule module = new LearningModule();
+        module.setModuleType(request.getModuleType());
+        module.setTitle(title);
+        module.setDescription(trimToNull(request.getDescription()));
+        module.setThumbnailUrl(trimToNull(request.getThumbnailUrl()));
+        module.setEstimatedMinutes(minutes);
+        module.setDifficultyLevel(trimToNull(request.getDifficultyLevel()));
+        module.setActive(request.getActive() == null ? true : request.getActive());
+        LearningModule savedModule = learningModuleRepository.save(module);
+
+        int resolvedOrder = request.getSortOrder() != null && request.getSortOrder() > 0
+                ? request.getSortOrder()
+                : milestoneModuleRepository.findByMilestoneIdOrderBySortOrderAsc(milestoneId).size() + 1;
+
+        MilestoneModule milestoneModule = new MilestoneModule();
+        milestoneModule.setMilestone(milestone);
+        milestoneModule.setModule(savedModule);
+        milestoneModule.setSortOrder(resolvedOrder);
         milestoneModule.setRequired(request.getRequired() == null ? true : request.getRequired());
         milestoneModule.setUnlockCondition(trimToNull(request.getUnlockCondition()));
 
