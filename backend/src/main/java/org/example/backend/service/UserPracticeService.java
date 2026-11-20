@@ -24,6 +24,7 @@ import org.example.backend.repository.PracticeSetRepository;
 import org.example.backend.repository.UserPracticeAnswerRepository;
 import org.example.backend.repository.UserPracticeAttemptRepository;
 import org.example.backend.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,6 +49,9 @@ public class UserPracticeService {
     private final UserRepository userRepository;
     private final LearningModuleRepository learningModuleRepository;
     private final PracticeSetMapper practiceSetMapper;
+
+    @Autowired(required = false)
+    private DiamondRewardService diamondRewardService;
 
     @Transactional(readOnly = true)
     public List<PracticeSetResponse> getPracticeSetsByModule(Long moduleId) {
@@ -156,7 +160,20 @@ public class UserPracticeService {
         attempt.setStatus(AttemptStatus.SUBMITTED);
         userPracticeAttemptRepository.save(attempt);
 
-        return buildAttemptDetail(attempt, answersToSave);
+        int diamondsEarned = 0;
+        if (diamondRewardService != null && !practiceQuestions.isEmpty()) {
+            int reward = Math.min(25, 5 + (correctCount / 2));
+            int studyMins = Math.max(1, (attempt.getDurationSeconds() != null ? attempt.getDurationSeconds() : 60) / 60);
+            diamondsEarned = diamondRewardService.grantStudyReward(
+                    user, "PRACTICE_SUBMIT", "practice:" + attempt.getId(), reward, 15 + correctCount * 2, studyMins,
+                    "Hoàn thành luyện tập: " + practiceSet.getTitle() + " (" + correctCount + "/" + practiceQuestions.size() + ")",
+                    true);
+        }
+
+        UserPracticeAttemptDetailResponse detail = buildAttemptDetail(attempt, answersToSave);
+        detail.setDiamondsEarned(diamondsEarned);
+        detail.setCurrentDiamonds(user.getDiamonds());
+        return detail;
     }
 
     @Transactional(readOnly = true)
@@ -212,6 +229,10 @@ public class UserPracticeService {
         item.setDifficultyLevel(question.getDifficultyLevel());
         item.setSourceType(question.getSourceType() != null ? question.getSourceType().name() : null);
         item.setSourceYear(question.getSourceYear());
+        item.setAudioUrl(question.getAudioUrl());
+        item.setImageUrl(question.getImageUrl());
+        item.setPassageText(question.getPassageText());
+        item.setQuestionGroupCode(question.getQuestionGroupCode());
         item.setOptions(question.getOptions().stream().map(option -> {
             UserPracticeSetDetailResponse.OptionItem opt = new UserPracticeSetDetailResponse.OptionItem();
             opt.setId(option.getId());
@@ -276,6 +297,11 @@ public class UserPracticeService {
         item.setDifficultyLevel(question.getDifficultyLevel());
         item.setSourceType(question.getSourceType() != null ? question.getSourceType().name() : null);
         item.setSourceYear(question.getSourceYear());
+        item.setAudioUrl(question.getAudioUrl());
+        item.setImageUrl(question.getImageUrl());
+        item.setPassageText(question.getPassageText());
+        item.setTranscript(question.getTranscript());
+        item.setQuestionGroupCode(question.getQuestionGroupCode());
         item.setSelectedOptionId(answer != null && answer.getSelectedOption() != null ? answer.getSelectedOption().getId() : null);
         item.setSelectedLabel(answer != null && answer.getSelectedOption() != null ? answer.getSelectedOption().getOptionLabel() : null);
         item.setSelectedText(answer != null && answer.getSelectedOption() != null ? answer.getSelectedOption().getOptionText() : null);
