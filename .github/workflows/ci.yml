@@ -2,7 +2,7 @@ name: TOEIC Trainer CI
 
 on:
   push:
-    branches: [ main, 'role-*', 'feat/**', 'ci/**', 'test/**', 'docs/**' ]
+    branches: [ main, 'role-*', 'feat/**', 'ci/**', 'test/**', 'docs/**', 'fix/**' ]
   pull_request:
     branches: [ main ]
 
@@ -20,6 +20,14 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
           cache: 'maven'
+
+      - name: Set up Python 3.11 & FFmpeg tools for Video/OCR unit tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python media dependencies
+        run: pip install --no-cache-dir imageio-ffmpeg yt-dlp youtube-transcript-api pillow
 
       - name: Verify project config & run Service Unit Tests
         working-directory: backend
