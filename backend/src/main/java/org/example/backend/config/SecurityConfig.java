@@ -52,8 +52,8 @@ public class SecurityConfig {
                                 "/queue/**",
                                 "/user/**"
                         ).permitAll()
-                        .requestMatchers(HttpMethod.GET, "/media/**").permitAll()
-                        .requestMatchers(HttpMethod.HEAD, "/media/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/media/**", "/updates/**").permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/media/**", "/updates/**").permitAll()
                         .requestMatchers("/auth/logout", "/auth/change-password").authenticated()
                         .requestMatchers(HttpMethod.GET, "/admin/learning-paths", "/admin/learning-paths/*", "/admin/questions/parts/*").hasAnyRole("ADMIN", "CONTENT_MANAGER", "USER")
                         .requestMatchers("/admin/videos", "/admin/videos/**").hasAnyRole("ADMIN", "CONTENT_MANAGER")
