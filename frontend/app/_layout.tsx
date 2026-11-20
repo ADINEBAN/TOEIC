@@ -4,6 +4,7 @@ import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import AppErrorBoundary from '@/src/components/common/AppErrorBoundary';
+import OtaUpdateModal from '@/src/components/common/OtaUpdateModal';
 import { AuthProvider } from '@/src/store/auth-store';
 import { ThemeProvider, useAppTheme } from '@/src/store/theme-store';
 import { VoiceProvider } from '@/src/store/voice-store';
@@ -33,6 +34,7 @@ export default function RootLayout() {
           <AuthProvider>
             <VoiceProvider>
               <AppShellNavigator />
+              <OtaUpdateModal />
             </VoiceProvider>
           </AuthProvider>
         </ThemeProvider>

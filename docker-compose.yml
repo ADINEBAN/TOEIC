@@ -30,11 +30,13 @@ services:
       SERVER_PORT: ${SERVER_PORT:-8080}
       APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:-http://localhost:8081,https://toeic.daovuanh2207.workers.dev,https://toeic-trainer-api.koreacentral.cloudapp.azure.com}
       TOEIC_STORAGE_DIR: /app/data
+      TOEIC_UPDATES_DIR: /app/updates
       TOEIC_PYTHON_BIN: /opt/venv/bin/python3
       TOEIC_YTDLP_BIN: /opt/venv/bin/yt-dlp
       TOEIC_FFMPEG_BIN: /usr/bin/ffmpeg
     volumes:
       - /opt/toeic/data:/app/data
+      - /opt/toeic/updates:/app/updates
     depends_on:
       mysql:
         condition: service_healthy

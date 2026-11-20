@@ -63,6 +63,7 @@ speechify:
 
 toeic:
   storage-dir: ${TOEIC_STORAGE_DIR:./data}
+  updates-dir: ${TOEIC_UPDATES_DIR:./updates}
   python-bin: ${TOEIC_PYTHON_BIN:python}
   ytdlp-bin: ${TOEIC_YTDLP_BIN:yt-dlp}
   ytdlp-cookies: ${TOEIC_YTDLP_COOKIES:}

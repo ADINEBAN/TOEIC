@@ -2,7 +2,14 @@
   "expo": {
     "name": "Toeic Trainer",
     "slug": "toeic-trainer",
-    "version": "1.0.0",
+    "version": "1.2.0",
+    "runtimeVersion": "1.2.0",
+    "updates": {
+      "enabled": true,
+      "url": "https://toeic-trainer-api.koreacentral.cloudapp.azure.com/api/updates/manifest",
+      "checkAutomatically": "NEVER",
+      "fallbackToCacheTimeout": 0
+    },
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "toeic-trainer",
