@@ -1,19 +1,30 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { colors, radius, spacing } from "@/src/assets/styles/user-theme";
+import { radius } from "@/src/assets/styles/user-theme";
+import { LiquidButton, LiquidCard } from "@/src/components/ui/LiquidGlass";
 import AppHeader, { AvatarBadge } from "@/src/components/user/AppHeader";
+import SectionTitle from "@/src/components/user/SectionTitle";
 import SurfaceCard from "@/src/components/user/SurfaceCard";
 import UserScreen from "@/src/components/user/UserScreen";
 import { useAuth } from "@/src/hooks/use-auth";
+import { getMyGeneratedDocumentExams } from "@/src/services/user.service";
 import { UserTestService } from "@/src/services/user-test.service";
-import { UserTestResponse, TestAttemptResponse } from "@/src/types/user-api";
+import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
+import { TestAttemptResponse, UserTestResponse } from "@/src/types/user-api";
 import { pushRoute } from "@/src/utils/navigation";
+import { useResponsiveLayout } from "@/src/utils/responsive";
 
 export default function TestHubScreen() {
   const { auth } = useAuth();
+  const { theme } = useAppTheme();
+  const { gridItemWidth, rf, isNarrow } = useResponsiveLayout();
+  const colors = theme.colors;
+  const styles = useThemedStyles(createStyles);
+
   const [tests, setTests] = useState<UserTestResponse[]>([]);
+  const [docExams, setDocExams] = useState<UserTestResponse[]>([]);
   const [attempts, setAttempts] = useState<TestAttemptResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -22,13 +33,14 @@ export default function TestHubScreen() {
   }, [auth.accessToken]);
 
   useEffect(() => {
-    if (!service) return;
+    if (!service || !auth.accessToken) return;
 
     const loadData = async () => {
       try {
         setLoading(true);
-        const [testsResp, attemptsResp] = await Promise.allSettled([
+        const [testsResp, docExamsResp, attemptsResp] = await Promise.allSettled([
           service.getPublishedTests(),
+          getMyGeneratedDocumentExams(auth.accessToken!),
           service.getMyAttempts(),
         ]);
 
@@ -36,14 +48,18 @@ export default function TestHubScreen() {
           setTests(testsResp.value.data || []);
         } else {
           setTests([]);
-          console.error("Failed to load published tests", testsResp.reason);
+        }
+
+        if (docExamsResp.status === "fulfilled") {
+          setDocExams(docExamsResp.value.data || []);
+        } else {
+          setDocExams([]);
         }
 
         if (attemptsResp.status === "fulfilled") {
           setAttempts(attemptsResp.value.data || []);
         } else {
           setAttempts([]);
-          console.error("Failed to load attempts", attemptsResp.reason);
         }
       } catch (error) {
         console.error("Failed to load test hub data", error);
@@ -53,7 +69,10 @@ export default function TestHubScreen() {
     };
 
     void loadData();
-  }, [service]);
+  }, [auth.accessToken, service]);
+
+  const tileGap = isNarrow ? 10 : 12;
+  const quickTileW = gridItemWidth(2, tileGap);
 
   if (loading) {
     return (
@@ -67,226 +86,369 @@ export default function TestHubScreen() {
 
   return (
     <UserScreen>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <AppHeader
-          rightSlot={<AvatarBadge label={auth.user?.fullName?.[0] || "U"} />}
-          title="Trung tâm thi TOEIC"
-        />
+      <AppHeader
+        rightSlot={<AvatarBadge label={auth.user?.fullName?.[0] || "U"} />}
+        subtitle="Luyện đề TOEIC"
+        title="Trung tâm thi"
+      />
 
-        <Text style={styles.title}>Luyện thi TOEIC chính thức</Text>
-        <Text style={styles.subtitle}>
-          Thi thử có giải thích, theo dõi thời gian và khả năng nộp bài sớm.
-        </Text>
-
-        {tests.length > 0 ? (
-          <SurfaceCard style={styles.examCard}>
-            <View style={styles.timerPill}>
-              <Ionicons color="#CB2313" name="timer-outline" size={18} />
-              <Text style={styles.timerText}>{tests[0].totalDurationMinutes}:00</Text>
+      {tests.length > 0 ? (
+        <LiquidCard hero style={styles.heroCard}>
+          <View style={styles.heroTop}>
+            <View style={styles.typePill}>
+              <Text style={styles.typePillText}>{tests[0].testType}</Text>
             </View>
-            <Text style={styles.sectionLabel}>{tests[0].testType}</Text>
-            <Text style={styles.questionCounter}>{tests[0].title}</Text>
-            <Text style={styles.examSnippet}>
-              {tests[0].description || "Sẵn sàng bắt đầu hành trình TOEIC của bạn?"}
+            <View style={styles.timerChip}>
+              <Ionicons color="#FFE082" name="timer-outline" size={14} />
+              <Text style={styles.timerChipText}>{tests[0].totalDurationMinutes} phút</Text>
+            </View>
+          </View>
+
+          <Text numberOfLines={2} style={[styles.heroTitle, { fontSize: rf(isNarrow ? 19 : 21) }]}>
+            {tests[0].title}
+          </Text>
+          <Text numberOfLines={2} style={[styles.heroDesc, { fontSize: rf(13) }]}>
+            {tests[0].description || "Làm bài bấm giờ chuẩn, lưu nháp tự động và xem giải thích AI."}
+          </Text>
+
+          <LiquidButton
+            label="Bắt đầu làm bài"
+            leftIcon={<Ionicons color={colors.primary} name="play" size={16} />}
+            onPress={() => pushRoute(`/user/exam?testId=${tests[0].id}`)}
+            style={{ marginTop: 14 }}
+            variant="glass"
+          />
+        </LiquidCard>
+      ) : (
+        <LiquidCard hero style={styles.heroCard}>
+          <Text numberOfLines={1} style={[styles.heroTitle, { fontSize: rf(isNarrow ? 19 : 21) }]}>
+            Phòng thi & Đấu trường TOEIC
+          </Text>
+          <Text numberOfLines={2} style={[styles.heroDesc, { fontSize: rf(13) }]}>
+            Hiện chưa có đề thi nào được phát hành trong DB. Bạn vẫn có thể thử Đấu trường 1v1 hoặc Ôn câu sai bên dưới!
+          </Text>
+        </LiquidCard>
+      )}
+
+      <View style={[styles.bentoRow, { gap: tileGap }]}>
+        <Pressable
+          onPress={() => pushRoute("/user/arena")}
+          style={({ pressed }) => [
+            { width: quickTileW },
+            pressed ? { opacity: 0.9, transform: [{ scale: 0.98 }] } : null,
+          ]}
+        >
+          <LiquidCard hero padding="sm" style={styles.bentoTile}>
+            <View style={styles.bentoIconArena}>
+              <Ionicons color={colors.accentGradient[0]} name="flash" size={18} />
+            </View>
+            <Text numberOfLines={1} style={[styles.arenaTitle, { fontSize: rf(14) }]}>
+              Đấu trường 1v1
             </Text>
-            <View style={styles.examActions}>
-              <Pressable
-                onPress={() => pushRoute(`/user/exam?testId=${tests[0].id}`)}
-                style={styles.primaryAction}
-              >
-                <Text style={styles.primaryActionText}>Bắt đầu test</Text>
-              </Pressable>
-            </View>
-          </SurfaceCard>
-        ) : null}
+            <Text numberOfLines={1} style={styles.arenaSub}>
+              Thi tốc độ WebSocket
+            </Text>
+          </LiquidCard>
+        </Pressable>
 
-        <Text style={styles.blockTitle}>Danh sách bài test</Text>
-        {tests.slice(1).map((test) => (
-          <Pressable
-            key={test.id}
-            onPress={() => pushRoute(`/user/exam?testId=${test.id}`)}
-            style={styles.resultItem}
-          >
-            <View style={styles.resultMain}>
-              <Text style={styles.resultTitle}>{test.title}</Text>
-              <Text style={styles.resultMeta}>
-                {test.testType} | {test.totalDurationMinutes} phút
+        <Pressable
+          onPress={() => pushRoute("/user/mistakes")}
+          style={({ pressed }) => [
+            { width: quickTileW },
+            pressed ? { opacity: 0.9, transform: [{ scale: 0.98 }] } : null,
+          ]}
+        >
+          <SurfaceCard padding="sm" style={styles.bentoTile}>
+            <View style={styles.bentoIconMistake}>
+              <Ionicons color={colors.danger} name="alert-circle-outline" size={18} />
+            </View>
+            <Text numberOfLines={1} style={[styles.mistakeTitle, { fontSize: rf(14) }]}>
+              Sổ tay câu sai
+            </Text>
+            <Text numberOfLines={1} style={styles.mistakeSub}>
+              Làm lại câu hay sai
+            </Text>
+          </SurfaceCard>
+        </Pressable>
+      </View>
+
+      <Pressable
+        onPress={() => pushRoute("/user/document-exam")}
+        style={({ pressed }) => [{ marginBottom: 14 }, pressed ? { opacity: 0.92 } : null]}
+      >
+        <SurfaceCard padding="sm" style={styles.itemCard}>
+          <View style={styles.itemRow}>
+            <View style={styles.bentoIconArena}>
+              <Ionicons color={colors.primary} name="document-text-outline" size={20} />
+            </View>
+            <View style={styles.itemMain}>
+              <Text numberOfLines={1} style={[styles.itemTitle, { fontSize: rf(14.5) }]}>
+                Tạo đề TOEIC từ Tài liệu (PDF / DOCX / OCR)
+              </Text>
+              <Text numberOfLines={1} style={styles.itemMeta}>
+                AI trích xuất Part 5, 6, 7 nguyên bản & kiểm tra tính trung thực
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </Pressable>
-        ))}
+            <Ionicons color={colors.primary} name="chevron-forward" size={18} />
+          </View>
+        </SurfaceCard>
+      </Pressable>
 
-        <Text style={[styles.blockTitle, styles.resultsTitle]}>Kết quả gần đây</Text>
-        {attempts.length > 0 ? (
-          attempts.map((attempt) => (
+      {docExams.length > 0 ? (
+        <>
+          <SectionTitle title="Đề tạo từ tài liệu của bạn" />
+          <View style={styles.listCol}>
+            {docExams.map((exam) => (
+              <Pressable
+                key={`doc-exam-${exam.id}`}
+                onPress={() => pushRoute(`/user/exam?testId=${exam.id}`)}
+                style={({ pressed }) => [pressed ? { opacity: 0.9 } : null]}
+              >
+                <SurfaceCard padding="sm" style={styles.itemCard}>
+                  <View style={styles.itemRow}>
+                    <View style={styles.itemMain}>
+                      <Text numberOfLines={1} style={[styles.itemTitle, { fontSize: rf(14.5) }]}>
+                        {exam.title}
+                      </Text>
+                      <Text style={styles.itemMeta}>
+                        {exam.questionCount ?? 0} câu • {exam.testType} • {exam.totalDurationMinutes} phút
+                      </Text>
+                    </View>
+                    <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
+                  </View>
+                </SurfaceCard>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      ) : null}
+
+      {tests.slice(1).length > 0 ? (
+        <>
+          <SectionTitle title="Đề thi khác" />
+          <View style={styles.listCol}>
+            {tests.slice(1).map((test) => (
+              <Pressable
+                key={test.id}
+                onPress={() => pushRoute(`/user/exam?testId=${test.id}`)}
+                style={({ pressed }) => [pressed ? { opacity: 0.9 } : null]}
+              >
+                <SurfaceCard padding="sm" style={styles.itemCard}>
+                  <View style={styles.itemRow}>
+                    <View style={styles.itemMain}>
+                      <Text numberOfLines={1} style={[styles.itemTitle, { fontSize: rf(14.5) }]}>
+                        {test.title}
+                      </Text>
+                      <Text style={styles.itemMeta}>
+                        {test.testType} • {test.totalDurationMinutes} phút
+                      </Text>
+                    </View>
+                    <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
+                  </View>
+                </SurfaceCard>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      ) : null}
+
+      <SectionTitle title="Kết quả gần đây" />
+      {attempts.length > 0 ? (
+        <View style={styles.listCol}>
+          {attempts.map((attempt) => (
             <Pressable
               key={attempt.attemptId}
               onPress={() => pushRoute(`/user/attempt-review?attemptId=${attempt.attemptId}`)}
-              style={styles.resultItem}
+              style={({ pressed }) => [pressed ? { opacity: 0.9 } : null]}
             >
-              <View style={styles.resultMain}>
-                <Text style={styles.resultTitle}>{attempt.testTitle}</Text>
-                <Text style={styles.resultMeta}>
-                  {new Date(attempt.startedAt).toLocaleDateString()} | {attempt.correctCount}/{attempt.totalQuestions} câu đúng
-                </Text>
-                <View style={styles.reviewPill}>
-                  <Ionicons name="sparkles-outline" size={14} color="#0E7C66" />
-                  <Text style={styles.reviewPillText}>Xem bai lam va giai thich AI</Text>
+              <SurfaceCard padding="sm" style={styles.itemCard}>
+                <View style={styles.itemRow}>
+                  <View style={styles.itemMain}>
+                    <Text numberOfLines={1} style={[styles.itemTitle, { fontSize: rf(14.5) }]}>
+                      {attempt.testTitle}
+                    </Text>
+                    <Text style={styles.itemMeta}>
+                      {new Date(attempt.startedAt).toLocaleDateString()} • {attempt.correctCount}/{attempt.totalQuestions} đúng
+                    </Text>
+                    <View style={styles.aiTag}>
+                      <Ionicons color={colors.success} name="sparkles-outline" size={13} />
+                      <Text style={styles.aiTagText}>Xem bài & giải thích AI</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.scoreBadge}>
+                    <Text style={styles.scoreText}>
+                      {attempt.toeicScore ? `${attempt.toeicScore} TOEIC` : `${Math.round(attempt.score || 0)}%`}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.resultAside}>
-                <View style={styles.scoreBadge}>
-                  <Text style={styles.scoreText}>{Math.round(attempt.score || 0)}%</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-              </View>
+              </SurfaceCard>
             </Pressable>
-          ))
-        ) : (
-          <Text style={styles.resultMeta}>Chưa có kết quả nào.</Text>
-        )}
-      </ScrollView>
+          ))}
+        </View>
+      ) : (
+        <SurfaceCard>
+          <Text style={styles.emptyText}>Chưa có lượt thi thử nào. Bắt đầu ngay hôm nay!</Text>
+        </SurfaceCard>
+      )}
     </UserScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  blockTitle: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: "900",
-    marginBottom: spacing.md,
-  },
-  examActions: {
-    flexDirection: "row",
-    gap: spacing.md,
-    marginTop: spacing.lg,
-  },
-  examCard: {
-    marginBottom: spacing.xl,
-  },
-  examSnippet: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: "700",
-    lineHeight: 32,
-    marginBottom: spacing.lg,
-  },
-  loadingState: {
-    alignItems: "center",
-    flex: 1,
-    justifyContent: "center",
-  },
-  primaryAction: {
-    alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    flex: 1,
-    paddingVertical: 16,
-  },
-  primaryActionText: {
-    color: colors.surface,
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  questionCounter: {
-    color: colors.text,
-    fontSize: 24,
-    fontWeight: "900",
-    marginBottom: spacing.md,
-  },
-  resultAside: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  resultItem: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderRadius: radius.lg,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: spacing.md,
-    padding: spacing.md,
-  },
-  resultMain: {
-    flex: 1,
-  },
-  resultMeta: {
-    color: colors.textMuted,
-    fontSize: 13,
-    marginTop: 4,
-  },
-  resultsTitle: {
-    marginTop: spacing.lg,
-  },
-  resultTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  reviewPill: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    backgroundColor: "#DFF7F1",
-    borderRadius: radius.pill,
-    flexDirection: "row",
-    gap: 6,
-    marginTop: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
-  },
-  reviewPillText: {
-    color: "#0E7C66",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  scoreBadge: {
-    backgroundColor: "#E3FFDE",
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-  },
-  scoreText: {
-    color: "#1A7C2B",
-    fontSize: 13,
-    fontWeight: "900",
-  },
-  sectionLabel: {
-    color: colors.text,
-    fontSize: 13,
-    letterSpacing: 2,
-    marginBottom: spacing.sm,
-  },
-  subtitle: {
-    color: colors.text,
-    fontSize: 16,
-    lineHeight: 24,
-    marginBottom: spacing.xl,
-    maxWidth: 300,
-  },
-  timerPill: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    backgroundColor: "#FFE0DB",
-    borderRadius: radius.pill,
-    flexDirection: "row",
-    gap: spacing.xs,
-    marginBottom: spacing.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-  },
-  timerText: {
-    color: "#CB2313",
-    fontSize: 18,
-    fontWeight: "900",
-  },
-  title: {
-    color: colors.primaryDark,
-    fontSize: 30,
-    fontWeight: "900",
-    lineHeight: 36,
-    marginBottom: spacing.sm,
-  },
-});
+const createStyles = (colors: LiquidThemeColors) =>
+  StyleSheet.create({
+    loadingState: {
+      alignItems: "center",
+      flex: 1,
+      justifyContent: "center",
+    },
+    heroCard: {
+      marginBottom: 14,
+    },
+    heroTop: {
+      alignItems: "center",
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginBottom: 10,
+    },
+    typePill: {
+      backgroundColor: "rgba(255,255,255,0.14)",
+      borderColor: "rgba(255,255,255,0.22)",
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+    },
+    typePillText: {
+      color: colors.heroText,
+      fontSize: 11,
+      fontWeight: "900",
+      letterSpacing: 0.7,
+      textTransform: "uppercase",
+    },
+    timerChip: {
+      alignItems: "center",
+      backgroundColor: "rgba(255,255,255,0.12)",
+      borderRadius: radius.pill,
+      flexDirection: "row",
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+    },
+    timerChipText: {
+      color: colors.heroText,
+      fontSize: 12,
+      fontWeight: "800",
+    },
+    heroTitle: {
+      color: colors.heroText,
+      fontWeight: "900",
+      lineHeight: 26,
+    },
+    heroDesc: {
+      color: colors.heroTextMuted,
+      lineHeight: 19,
+      marginTop: 5,
+    },
+    bentoRow: {
+      flexDirection: "row",
+      marginBottom: 18,
+    },
+    bentoTile: {
+      minHeight: 104,
+    },
+    bentoIconArena: {
+      alignItems: "center",
+      backgroundColor: "rgba(255,255,255,0.14)",
+      borderRadius: 12,
+      height: 34,
+      justifyContent: "center",
+      marginBottom: 8,
+      width: 34,
+    },
+    bentoIconMistake: {
+      alignItems: "center",
+      backgroundColor: colors.isDark ? "rgba(239,68,68,0.2)" : "#FFE5E2",
+      borderRadius: 12,
+      height: 34,
+      justifyContent: "center",
+      marginBottom: 8,
+      width: 34,
+    },
+    arenaTitle: {
+      color: colors.heroText,
+      fontWeight: "900",
+    },
+    arenaSub: {
+      color: colors.heroTextMuted,
+      fontSize: 11.5,
+      marginTop: 2,
+    },
+    mistakeTitle: {
+      color: colors.text,
+      fontWeight: "900",
+    },
+    mistakeSub: {
+      color: colors.textMuted,
+      fontSize: 11.5,
+      marginTop: 2,
+    },
+    listCol: {
+      gap: 10,
+      marginBottom: 18,
+    },
+    itemCard: {
+      width: "100%",
+    },
+    itemRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 10,
+      justifyContent: "space-between",
+    },
+    itemMain: {
+      flex: 1,
+      minWidth: 0,
+    },
+    itemTitle: {
+      color: colors.text,
+      fontWeight: "800",
+    },
+    itemMeta: {
+      color: colors.textMuted,
+      fontSize: 12,
+      marginTop: 3,
+    },
+    aiTag: {
+      alignItems: "center",
+      alignSelf: "flex-start",
+      backgroundColor: colors.isDark ? "rgba(31,157,108,0.20)" : "#DFF7F1",
+      borderRadius: radius.pill,
+      flexDirection: "row",
+      gap: 5,
+      marginTop: 8,
+      paddingHorizontal: 9,
+      paddingVertical: 4,
+    },
+    aiTagText: {
+      color: colors.success,
+      fontSize: 11.5,
+      fontWeight: "800",
+    },
+    scoreBadge: {
+      backgroundColor: colors.isDark ? "rgba(31,157,108,0.22)" : "#E3FFDE",
+      borderRadius: radius.pill,
+      paddingHorizontal: 11,
+      paddingVertical: 6,
+    },
+    scoreText: {
+      color: colors.success,
+      fontSize: 12.5,
+      fontWeight: "900",
+    },
+    emptyText: {
+      color: colors.textMuted,
+      fontSize: 13,
+      textAlign: "center",
+    },
+  });

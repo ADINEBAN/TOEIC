@@ -1,26 +1,87 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { colors, radius, spacing } from "@/src/assets/styles/user-theme";
+import { radius } from "@/src/assets/styles/user-theme";
+import { LiquidButton, LiquidIconButton } from "@/src/components/ui/LiquidGlass";
+import ProgressBar from "@/src/components/user/ProgressBar";
+import QuestionMediaBlock from "@/src/components/user/QuestionMediaBlock";
 import SurfaceCard from "@/src/components/user/SurfaceCard";
 import UserScreen from "@/src/components/user/UserScreen";
 import { useAuth } from "@/src/hooks/use-auth";
 import { UserTestService } from "@/src/services/user-test.service";
+import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
 import { TestAttemptResponse, UserTestResponse } from "@/src/types/user-api";
-import { replaceRoute } from "@/src/utils/navigation";
+import { replaceRoute, safeBack } from "@/src/utils/navigation";
+import { useResponsiveLayout } from "@/src/utils/responsive";
+
+type ExamDraft = {
+  answers: Record<number, string>;
+  flaggedIds: number[];
+};
+
+const examDraftMemoryFallback: Record<string, string> = {};
+
+function readExamDraft(key: string): ExamDraft | null {
+  try {
+    const raw =
+      Platform.OS === "web" && typeof localStorage !== "undefined"
+        ? localStorage.getItem(key)
+        : examDraftMemoryFallback[key] ?? null;
+    if (!raw) return null;
+    return JSON.parse(raw) as ExamDraft;
+  } catch {
+    return null;
+  }
+}
+
+function saveExamDraft(key: string, draft: ExamDraft) {
+  try {
+    const serialized = JSON.stringify(draft);
+    if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+      localStorage.setItem(key, serialized);
+    } else {
+      examDraftMemoryFallback[key] = serialized;
+    }
+  } catch {
+    // Ignore storage quota/private mode failures
+  }
+}
+
+function clearExamDraft(key: string) {
+  try {
+    if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+      localStorage.removeItem(key);
+    } else {
+      delete examDraftMemoryFallback[key];
+    }
+  } catch {
+    // Ignore cleanup errors
+  }
+}
 
 export default function ExamScreen() {
-  const { testId } = useLocalSearchParams<{ testId: string }>();
-  const { auth } = useAuth();
+  const { testId, partFilter, retryIds } = useLocalSearchParams<{
+    testId: string;
+    partFilter?: string;
+    retryIds?: string;
+  }>();
+  const { auth, updateUserProfile } = useAuth();
+  const { theme } = useAppTheme();
+  const { gridItemWidth, isNarrow, isTablet, rf } = useResponsiveLayout();
+  const colors = theme.colors;
+  const styles = useThemedStyles(createStyles);
 
   const [test, setTest] = useState<UserTestResponse | null>(null);
   const [attempt, setAttempt] = useState<TestAttemptResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userAnswers, setUserAnswers] = useState<Record<number, string>>({});
+  const [flaggedIds, setFlaggedIds] = useState<number[]>([]);
+  const [showNavigator, setShowNavigator] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
+  const draftStorageKey = `toeic_exam_draft_${testId ?? "unknown"}`;
 
   const service = useMemo(() => {
     return auth.accessToken ? new UserTestService(auth.accessToken) : null;
@@ -28,13 +89,33 @@ export default function ExamScreen() {
 
   const allQuestions = useMemo(() => {
     if (!test?.parts) return [];
-    return test.parts.flatMap((part) =>
+    const targetPart = partFilter ? Number.parseInt(partFilter, 10) : NaN;
+    const retrySet = retryIds
+      ? new Set(
+          retryIds
+            .split(",")
+            .map((v) => Number.parseInt(v.trim(), 10))
+            .filter((n) => Number.isFinite(n)),
+        )
+      : null;
+
+    const flattened = test.parts.flatMap((part) =>
       (part.questions || []).map((question) => ({
         ...question,
         partName: part.partName,
       })),
     );
-  }, [test]);
+    const filtered = flattened.filter((q) => {
+      if (Number.isFinite(targetPart) && q.partNo !== targetPart) {
+        return false;
+      }
+      if (retrySet && retrySet.size > 0 && !retrySet.has(q.id)) {
+        return false;
+      }
+      return true;
+    });
+    return filtered.length > 0 ? filtered : flattened;
+  }, [partFilter, retryIds, test]);
 
   const currentQuestion = allQuestions[currentIndex];
 
@@ -51,18 +132,23 @@ export default function ExamScreen() {
         ]);
         setTest(testResp.data);
         setAttempt(attemptResp.data);
-        setTimeLeft(testResp.data.totalDurationMinutes * 60);
+        setTimeLeft((testResp.data?.totalDurationMinutes ?? 15) * 60);
+        const restored = readExamDraft(draftStorageKey);
+        if (restored?.answers) {
+          setUserAnswers(restored.answers);
+          setFlaggedIds(Array.isArray(restored.flaggedIds) ? restored.flaggedIds : []);
+        }
       } catch (error) {
         console.error("Failed to start test", error);
         Alert.alert("Lỗi", "Không thể bắt đầu bài thi. Vui lòng thử lại sau.");
-        router.back();
+        safeBack("/user/test");
       } finally {
         setLoading(false);
       }
     };
 
     void initTest();
-  }, [service, testId]);
+  }, [draftStorageKey, service, testId]);
 
   const performSubmit = useCallback(async () => {
     if (!service || !attempt) return;
@@ -73,16 +159,26 @@ export default function ExamScreen() {
         selectedLabel: label,
         testPartQuestionId: Number.parseInt(id, 10),
       }));
-      await service.submitAttempt(attempt.attemptId, { answers });
-      Alert.alert("Thành công", "Bài thi của bạn đã được nộp.");
-      replaceRoute("/user/test");
+      const res = await service.submitAttempt(attempt.attemptId, { answers });
+      clearExamDraft(draftStorageKey);
+      const earned = res.data?.diamondsEarned ?? 0;
+      if (auth.user && typeof res.data?.currentDiamonds === "number") {
+        updateUserProfile({ ...auth.user, diamonds: res.data.currentDiamonds });
+      }
+      Alert.alert(
+        "Thành công",
+        earned > 0
+          ? `Bài thi của bạn đã được nộp (+${earned} 💎)!`
+          : "Bài thi của bạn đã được nộp.",
+      );
+      replaceRoute(`/user/attempt-review?attemptId=${res.data?.attemptId ?? attempt.attemptId}`);
     } catch (error) {
       console.error("Failed to submit test", error);
       Alert.alert("Lỗi", "Nộp bài thất bại. Vui lòng thử lại.");
     } finally {
       setLoading(false);
     }
-  }, [attempt, service, userAnswers]);
+  }, [attempt, auth.user, draftStorageKey, service, updateUserProfile, userAnswers]);
 
   useEffect(() => {
     if (timeLeft <= 0 || loading || !attempt) return;
@@ -110,10 +206,22 @@ export default function ExamScreen() {
 
   const handleSelectOption = (label: string) => {
     if (!currentQuestion) return;
-    setUserAnswers((prev) => ({
-      ...prev,
-      [currentQuestion.id]: label,
-    }));
+    setUserAnswers((prev) => {
+      const nextAnswers = { ...prev, [currentQuestion.id]: label };
+      saveExamDraft(draftStorageKey, { answers: nextAnswers, flaggedIds });
+      return nextAnswers;
+    });
+  };
+
+  const handleToggleFlag = () => {
+    if (!currentQuestion) return;
+    setFlaggedIds((prev) => {
+      const nextFlags = prev.includes(currentQuestion.id)
+        ? prev.filter((id) => id !== currentQuestion.id)
+        : [...prev, currentQuestion.id];
+      saveExamDraft(draftStorageKey, { answers: userAnswers, flaggedIds: nextFlags });
+      return nextFlags;
+    });
   };
 
   const handleSubmit = () => {
@@ -125,7 +233,7 @@ export default function ExamScreen() {
 
   if (loading || !test || !currentQuestion) {
     return (
-      <UserScreen>
+      <UserScreen hasTabDock={false}>
         <View style={styles.loadingWrap}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
@@ -134,206 +242,335 @@ export default function ExamScreen() {
   }
 
   const selectedOptionLabel = userAnswers[currentQuestion.id];
+  const navCols = isNarrow ? 6 : isTablet ? 10 : 7;
+  const navCellW = gridItemWidth(navCols, 6, true);
+  const progressPct = allQuestions.length ? ((currentIndex + 1) / allQuestions.length) * 100 : 0;
 
   return (
-    <UserScreen>
+    <UserScreen hasTabDock={false}>
       <View style={styles.topBar}>
-        <Pressable onPress={() => router.back()} style={styles.iconButton}>
-          <Ionicons color={colors.primaryDark} name="close-outline" size={28} />
-        </Pressable>
-        <Text style={styles.title}>{test.title}</Text>
+        <LiquidIconButton accessibilityLabel="Thoát" onPress={() => safeBack("/user/test")}>
+          <Ionicons color={colors.primaryDark} name="close" size={20} />
+        </LiquidIconButton>
+
+        <View style={styles.titleCenter}>
+          <Text numberOfLines={1} style={[styles.title, { fontSize: rf(16) }]}>
+            {test.title}
+          </Text>
+          <Text numberOfLines={1} style={styles.partSubText}>
+            {(currentQuestion as typeof currentQuestion & { partName?: string }).partName ?? "TOEIC"}
+          </Text>
+        </View>
+
         <View style={styles.timerPill}>
-          <Ionicons color="#CB2313" name="timer-outline" size={16} />
+          <Ionicons color={colors.danger} name="timer-outline" size={14} />
           <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
         </View>
       </View>
 
-      <Text style={styles.partText}>{(currentQuestion as typeof currentQuestion & { partName?: string }).partName}</Text>
-      <Text style={styles.counter}>Câu hỏi {currentIndex + 1} / {allQuestions.length}</Text>
+      <View style={styles.metaStrip}>
+        <View style={{ flex: 1 }}>
+          <ProgressBar
+            accentColor={colors.primary}
+            label={`Câu ${currentIndex + 1} / ${allQuestions.length}`}
+            rightLabel={`Đã làm ${Object.keys(userAnswers).length}`}
+            value={progressPct}
+          />
+        </View>
+
+        <View style={styles.metaBtns}>
+          <Pressable
+            onPress={handleToggleFlag}
+            style={[
+              styles.toolChip,
+              flaggedIds.includes(currentQuestion.id) ? styles.flagChipActive : null,
+            ]}
+          >
+            <Ionicons
+              color={flaggedIds.includes(currentQuestion.id) ? colors.accent : colors.textMuted}
+              name={flaggedIds.includes(currentQuestion.id) ? "flag" : "flag-outline"}
+              size={15}
+            />
+          </Pressable>
+
+          <Pressable
+            onPress={() => setShowNavigator((prev) => !prev)}
+            style={[styles.toolChip, showNavigator ? styles.toolChipActive : null]}
+          >
+            <Ionicons
+              color={showNavigator ? colors.onPrimary : colors.primaryDark}
+              name="grid-outline"
+              size={15}
+            />
+          </Pressable>
+        </View>
+      </View>
+
+      {showNavigator ? (
+        <SurfaceCard padding="sm" style={styles.navigatorCard}>
+          <View style={styles.navigatorGrid}>
+            {allQuestions.map((q, idx) => {
+              const answered = Boolean(userAnswers[q.id]);
+              const flagged = flaggedIds.includes(q.id);
+              const active = idx === currentIndex;
+              return (
+                <Pressable
+                  key={q.id}
+                  onPress={() => {
+                    setCurrentIndex(idx);
+                    setShowNavigator(false);
+                  }}
+                  style={[
+                    styles.navCell,
+                    { width: navCellW },
+                    answered ? styles.navCellAnswered : null,
+                    flagged ? styles.navCellFlagged : null,
+                    active ? styles.navCellActive : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.navCellText,
+                      answered && !active ? styles.navCellTextAnswered : null,
+                    ]}
+                  >
+                    {idx + 1}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </SurfaceCard>
+      ) : null}
+
+      <QuestionMediaBlock
+        audioUrl={currentQuestion.audioUrl}
+        imageUrl={currentQuestion.imageUrl}
+        passageText={currentQuestion.passageText}
+        questionGroupCode={currentQuestion.questionGroupCode}
+      />
 
       <SurfaceCard style={styles.promptCard}>
-        <Text style={styles.prompt}>{currentQuestion.questionText}</Text>
+        <Text style={[styles.prompt, { fontSize: rf(17), lineHeight: rf(25) }]}>
+          {currentQuestion.questionText}
+        </Text>
       </SurfaceCard>
 
-      {currentQuestion.options.map((option) => {
-        const selected = selectedOptionLabel === option.optionLabel;
-
-        return (
-          <Pressable
-            key={option.id}
-            onPress={() => handleSelectOption(option.optionLabel)}
-            style={[styles.optionCard, selected ? styles.optionSelected : null]}
-          >
-            <View style={styles.optionBadge}>
-              <Text style={styles.optionBadgeText}>{option.optionLabel}</Text>
-            </View>
-            <Text style={styles.optionText}>{option.optionText}</Text>
-          </Pressable>
-        );
-      })}
+      <View style={styles.optionsList}>
+        {(currentQuestion.options ?? []).map((option) => {
+          const selected = selectedOptionLabel === option.optionLabel;
+          return (
+            <Pressable
+              key={option.id}
+              onPress={() => handleSelectOption(option.optionLabel)}
+              style={[styles.optionCard, selected ? styles.optionSelected : null]}
+            >
+              <View style={[styles.optionBadge, selected ? styles.optionBadgeSelected : null]}>
+                <Text style={[styles.optionBadgeText, selected ? styles.optionBadgeTextSelected : null]}>
+                  {option.optionLabel}
+                </Text>
+              </View>
+              <Text style={[styles.optionText, { fontSize: rf(15) }]}>{option.optionText}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
 
       <View style={styles.bottomActions}>
-        <Pressable
+        <LiquidButton
+          compact
           disabled={currentIndex === 0}
+          label="Trước"
           onPress={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
-          style={[styles.secondaryAction, currentIndex === 0 ? styles.actionDisabled : null]}
-        >
-          <Text style={styles.secondaryActionText}>Trước</Text>
-        </Pressable>
-        <Pressable
+          style={{ flex: 1 }}
+          variant="glass"
+        />
+        <LiquidButton
+          compact
           disabled={currentIndex === allQuestions.length - 1}
+          label="Câu tiếp"
           onPress={() => setCurrentIndex((prev) => Math.min(allQuestions.length - 1, prev + 1))}
-          style={[styles.primaryAction, currentIndex === allQuestions.length - 1 ? styles.actionDisabled : null]}
-        >
-          <Text style={styles.primaryActionText}>Tiếp</Text>
-        </Pressable>
-        <Pressable onPress={handleSubmit} style={styles.submitAction}>
-          <Text style={styles.submitActionText}>Nộp bài sớm</Text>
-        </Pressable>
+          style={{ flex: 1.2 }}
+          variant="primary"
+        />
+        <LiquidButton
+          compact
+          label="Nộp bài"
+          onPress={handleSubmit}
+          style={{ flex: 0.9 }}
+          variant="accent"
+        />
       </View>
     </UserScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  actionDisabled: {
-    opacity: 0.5,
-  },
-  bottomActions: {
-    flexDirection: "row",
-    gap: spacing.md,
-    marginTop: spacing.lg,
-  },
-  counter: {
-    color: colors.text,
-    fontSize: 30,
-    fontWeight: "900",
-    marginBottom: spacing.lg,
-  },
-  iconButton: {
-    height: 40,
-    justifyContent: "center",
-    width: 40,
-  },
-  loadingWrap: {
-    alignItems: "center",
-    flex: 1,
-    justifyContent: "center",
-  },
-  optionBadge: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  optionBadgeText: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  optionCard: {
-    alignItems: "center",
-    backgroundColor: "rgba(241,243,252,0.95)",
-    borderRadius: radius.lg,
-    flexDirection: "row",
-    gap: spacing.md,
-    marginBottom: spacing.md,
-    minHeight: 106,
-    paddingHorizontal: spacing.md,
-  },
-  optionSelected: {
-    borderColor: colors.primary,
-    borderWidth: 2,
-  },
-  optionText: {
-    color: colors.text,
-    flex: 1,
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  partText: {
-    color: colors.text,
-    fontSize: 13,
-    letterSpacing: 2.2,
-    marginBottom: spacing.sm,
-    textTransform: "uppercase",
-  },
-  primaryAction: {
-    alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 72,
-  },
-  primaryActionText: {
-    color: colors.surface,
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  prompt: {
-    color: colors.text,
-    fontSize: 24,
-    fontWeight: "700",
-    lineHeight: 42,
-  },
-  promptCard: {
-    marginBottom: spacing.lg,
-  },
-  secondaryAction: {
-    alignItems: "center",
-    backgroundColor: "#EFF1FA",
-    borderRadius: radius.pill,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 72,
-  },
-  secondaryActionText: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  submitAction: {
-    alignItems: "center",
-    borderColor: "#D6DDED",
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    justifyContent: "center",
-    minHeight: 72,
-    paddingHorizontal: spacing.md,
-    width: 98,
-  },
-  submitActionText: {
-    color: colors.primaryDark,
-    fontSize: 14,
-    fontWeight: "900",
-    textAlign: "center",
-  },
-  timerPill: {
-    alignItems: "center",
-    backgroundColor: "#FFE0DB",
-    borderRadius: radius.pill,
-    flexDirection: "row",
-    gap: 4,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-  },
-  timerText: {
-    color: "#CB2313",
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  title: {
-    color: colors.primaryDark,
-    fontSize: 18,
-    fontWeight: "900",
-  },
-  topBar: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: spacing.xl,
-  },
-});
+const createStyles = (colors: LiquidThemeColors) =>
+  StyleSheet.create({
+    loadingWrap: {
+      alignItems: "center",
+      flex: 1,
+      justifyContent: "center",
+    },
+    topBar: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 10,
+      marginBottom: 12,
+    },
+    titleCenter: {
+      flex: 1,
+      minWidth: 0,
+    },
+    title: {
+      color: colors.text,
+      fontWeight: "900",
+    },
+    partSubText: {
+      color: colors.primary,
+      fontSize: 11.5,
+      fontWeight: "800",
+      marginTop: 1,
+    },
+    timerPill: {
+      alignItems: "center",
+      backgroundColor: colors.isDark ? "rgba(239,68,68,0.18)" : "#FFE3DF",
+      borderColor: colors.isDark ? "rgba(248,113,113,0.34)" : "#F8C3BB",
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+    },
+    timerText: {
+      color: colors.danger,
+      fontSize: 13.5,
+      fontWeight: "900",
+    },
+    metaStrip: {
+      alignItems: "flex-end",
+      flexDirection: "row",
+      gap: 10,
+      marginBottom: 14,
+    },
+    metaBtns: {
+      flexDirection: "row",
+      gap: 6,
+    },
+    toolChip: {
+      alignItems: "center",
+      backgroundColor: colors.glassFillStrong,
+      borderColor: colors.glassBorder,
+      borderRadius: 12,
+      borderWidth: 1.25,
+      height: 36,
+      justifyContent: "center",
+      width: 36,
+    },
+    toolChipActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    flagChipActive: {
+      backgroundColor: colors.accentSoft,
+      borderColor: colors.accent,
+    },
+    navigatorCard: {
+      marginBottom: 14,
+    },
+    navigatorGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+    },
+    navCell: {
+      alignItems: "center",
+      backgroundColor: colors.glassFill,
+      borderColor: colors.glassBorder,
+      borderRadius: 10,
+      borderWidth: 1,
+      height: 34,
+      justifyContent: "center",
+    },
+    navCellAnswered: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    navCellFlagged: {
+      borderColor: colors.accent,
+      borderWidth: 2,
+    },
+    navCellActive: {
+      borderColor: colors.text,
+      borderWidth: 2,
+    },
+    navCellText: {
+      color: colors.text,
+      fontSize: 12,
+      fontWeight: "800",
+    },
+    navCellTextAnswered: {
+      color: colors.onPrimary,
+    },
+    promptCard: {
+      marginBottom: 12,
+    },
+    prompt: {
+      color: colors.text,
+      fontWeight: "700",
+    },
+    optionsList: {
+      gap: 10,
+      marginBottom: 16,
+    },
+    optionCard: {
+      alignItems: "center",
+      backgroundColor: colors.glassFillStrong,
+      borderColor: colors.glassBorder,
+      borderRadius: 16,
+      borderWidth: 1.25,
+      flexDirection: "row",
+      gap: 12,
+      minHeight: 56,
+      paddingHorizontal: 14,
+      paddingVertical: 11,
+    },
+    optionSelected: {
+      backgroundColor: colors.primarySoft,
+      borderColor: colors.primary,
+      borderWidth: 1.75,
+    },
+    optionBadge: {
+      alignItems: "center",
+      backgroundColor: colors.glassFill,
+      borderColor: colors.glassBorder,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      height: 34,
+      justifyContent: "center",
+      width: 34,
+    },
+    optionBadgeSelected: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    optionBadgeText: {
+      color: colors.text,
+      fontSize: 14,
+      fontWeight: "900",
+    },
+    optionBadgeTextSelected: {
+      color: colors.onPrimary,
+    },
+    optionText: {
+      color: colors.text,
+      flex: 1,
+      fontWeight: "600",
+      lineHeight: 21,
+    },
+    bottomActions: {
+      flexDirection: "row",
+      gap: 8,
+    },
+  });
