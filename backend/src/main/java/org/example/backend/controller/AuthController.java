@@ -1,7 +1,9 @@
 package org.example.backend.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.example.backend.dto.request.ChangePasswordRequest;
 import org.example.backend.dto.request.LoginRequest;
+import org.example.backend.dto.request.RefreshTokenRequest;
 import org.example.backend.dto.request.RegisterRequest;
 import org.example.backend.dto.response.ApiResponse;
 import org.example.backend.dto.response.AuthResponse;
@@ -9,6 +11,8 @@ import org.example.backend.enums.SuccessCode;
 import org.example.backend.service.AuthService;
 import org.example.backend.util.ApiResponseUtil;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,5 +42,20 @@ public class AuthController {
     ) {
         authService.logout(authorizationHeader);
         return ApiResponseUtil.success(SuccessCode.LOGOUT_SUCCESS);
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResponse<AuthResponse>> refresh(@RequestBody RefreshTokenRequest request) {
+        return ApiResponseUtil.success(authService.refresh(request), SuccessCode.TOKEN_REFRESHED);
+    }
+
+    @PostMapping("/change-password")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<Void>> changePassword(
+            Authentication authentication,
+            @RequestBody ChangePasswordRequest request
+    ) {
+        authService.changePassword(authentication.getName(), request);
+        return ApiResponseUtil.success(SuccessCode.PASSWORD_UPDATED);
     }
 }

@@ -1,8 +1,11 @@
-import { ReactNode } from 'react';
-import { ScrollView, StatusBar, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from "expo-linear-gradient";
+import { ReactNode } from "react";
+import { KeyboardAvoidingView, Platform, ScrollView, StatusBar, StyleSheet, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { colors, radius, spacing } from '@/src/assets/styles/theme';
+import { LiquidCard } from "@/src/components/ui/LiquidGlass";
+import { useAppTheme } from "@/src/store/theme-store";
+import { useResponsiveLayout } from "@/src/utils/responsive";
 
 type AuthLayoutProps = {
   children: ReactNode;
@@ -15,120 +18,131 @@ export default function AuthLayout({
   compact = false,
   scrollable = true,
 }: AuthLayoutProps) {
+  const { theme, prismaticGlow } = useAppTheme();
+  const { width, screenPadding, isShort, isNarrow, insets } = useResponsiveLayout();
+  const c = theme.colors;
+  const orbSize = Math.round(Math.min(width * 0.72, 290));
+
   const content = (
-    <View style={[styles.card, compact ? styles.cardCompact : null]}>{children}</View>
+    <View style={styles.centerSlot}>
+      <LiquidCard
+        padding={compact || isShort ? "sm" : "md"}
+        style={[
+          styles.card,
+          {
+            borderRadius: isNarrow ? 24 : 28,
+            paddingHorizontal: isNarrow ? 16 : 22,
+            paddingVertical: isShort ? 18 : 24,
+          },
+        ]}
+      >
+        {children}
+      </LiquidCard>
+    </View>
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
-      <View style={styles.backgroundTop} />
-      <View style={styles.backgroundMid} />
-      <View style={styles.backgroundGrid} />
-      <View style={styles.backgroundGlow} />
-      <View style={styles.backgroundGlowSecondary} />
-      <View style={styles.backgroundOrb} />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: c.background }]}>
+      <StatusBar barStyle={c.isDark ? "light-content" : "dark-content"} />
+      <LinearGradient
+        colors={c.backgroundGradient}
+        end={{ x: 1, y: 1 }}
+        pointerEvents="none"
+        start={{ x: 0, y: 0 }}
+        style={StyleSheet.absoluteFill}
+      />
+      {prismaticGlow ? (
+        <>
+          <View
+            pointerEvents="none"
+            style={[
+              styles.orb,
+              {
+                backgroundColor: c.orbPrimary,
+                borderRadius: orbSize,
+                height: orbSize,
+                right: -Math.round(orbSize * 0.3),
+                top: 24,
+                width: orbSize,
+              },
+            ]}
+          />
+          <View
+            pointerEvents="none"
+            style={[
+              styles.orb,
+              {
+                backgroundColor: c.orbSecondary,
+                borderRadius: orbSize,
+                bottom: 40,
+                height: orbSize,
+                left: -Math.round(orbSize * 0.32),
+                width: orbSize,
+              },
+            ]}
+          />
+        </>
+      ) : null}
 
-      {scrollable ? (
-        <ScrollView
-          bounces={false}
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
-          {content}
-        </ScrollView>
-      ) : (
-        <View style={styles.content}>{content}</View>
-      )}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.flex}
+      >
+        {scrollable ? (
+          <ScrollView
+            bounces={false}
+            contentContainerStyle={[
+              styles.scrollContent,
+              {
+                paddingBottom: Math.max(insets.bottom, 16) + 12,
+                paddingHorizontal: screenPadding,
+                paddingTop: isShort ? 12 : 24,
+              },
+            ]}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {content}
+          </ScrollView>
+        ) : (
+          <View
+            style={[
+              styles.scrollContent,
+              {
+                paddingBottom: Math.max(insets.bottom, 16) + 12,
+                paddingHorizontal: screenPadding,
+                paddingTop: isShort ? 12 : 24,
+              },
+            ]}
+          >
+            {content}
+          </View>
+        )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  backgroundGlow: {
-    backgroundColor: 'rgba(224, 138, 46, 0.18)',
-    borderRadius: 220,
-    height: 280,
-    position: 'absolute',
-    right: -70,
-    top: 84,
-    width: 280,
+  safeArea: {
+    flex: 1,
   },
-  backgroundGlowSecondary: {
-    backgroundColor: 'rgba(15, 107, 98, 0.12)',
-    borderRadius: 240,
-    height: 260,
-    left: -90,
-    position: 'absolute',
-    top: 280,
-    width: 260,
+  flex: {
+    flex: 1,
   },
-  backgroundGrid: {
-    backgroundColor: 'rgba(255,255,255,0.34)',
-    borderRadius: 44,
-    bottom: 120,
-    left: 20,
-    opacity: 0.55,
-    position: 'absolute',
-    right: 20,
-    top: 24,
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
   },
-  backgroundOrb: {
-    backgroundColor: 'rgba(255,255,255,0.52)',
-    borderRadius: 200,
-    height: 180,
-    left: '50%',
-    marginLeft: -90,
-    position: 'absolute',
-    top: 118,
-    width: 180,
-  },
-  backgroundMid: {
-    backgroundColor: '#EDE4D3',
-    borderBottomLeftRadius: 72,
-    borderBottomRightRadius: 72,
-    height: 320,
-    left: 20,
-    opacity: 0.82,
-    position: 'absolute',
-    right: 20,
-    top: 30,
-  },
-  backgroundTop: {
-    backgroundColor: '#F4ECDD',
-    borderBottomLeftRadius: 76,
-    borderBottomRightRadius: 76,
-    height: 286,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
+  centerSlot: {
+    alignSelf: "center",
+    maxWidth: 460,
+    width: "100%",
   },
   card: {
-    backgroundColor: 'rgba(255,253,248,0.92)',
-    borderRadius: radius.xl,
-    borderColor: 'rgba(216,208,191,0.88)',
-    borderWidth: 1,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xl,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 28 },
-    shadowOpacity: 0.18,
-    shadowRadius: 34,
+    width: "100%",
   },
-  cardCompact: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.lg,
-  },
-  content: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    paddingBottom: spacing.xl,
-    paddingHorizontal: spacing.lg,
-    paddingTop: 88,
-  },
-  safeArea: {
-    backgroundColor: '#F7F1E7',
-    flex: 1,
+  orb: {
+    position: "absolute",
   },
 });

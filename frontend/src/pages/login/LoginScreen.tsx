@@ -1,17 +1,9 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useState } from "react";
-import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Alert, Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { colors, radius, spacing } from "@/src/assets/styles/theme";
+import { radius } from "@/src/assets/styles/user-theme";
 import PrimaryButton from "@/src/components/common/PrimaryButton";
 import TextField, { FieldIconButton } from "@/src/components/common/TextField";
 import { API_BASE_URL } from "@/src/config/env";
@@ -20,11 +12,17 @@ import AuthLayout from "@/src/layouts/AuthLayout";
 import { ApiError } from "@/src/services/api.client";
 import { login } from "@/src/services/auth.service";
 import { getUserRoadmap } from "@/src/services/user.service";
+import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
 import { isNoActiveLearningPathError } from "@/src/utils/api-errors";
 import { formatExpiry } from "@/src/utils/format";
+import { useResponsiveLayout } from "@/src/utils/responsive";
 
 export default function LoginScreen() {
   const { auth, signIn } = useAuth();
+  const { theme } = useAppTheme();
+  const { isShort, rf } = useResponsiveLayout();
+  const colors = theme.colors;
+  const styles = useThemedStyles(createStyles);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -58,10 +56,6 @@ export default function LoginScreen() {
       });
 
       const payload = await login({ email: email.trim(), password });
-      console.log("[auth] login success", {
-        status: payload.status,
-        userId: payload.data.user.id,
-      });
       signIn(payload.data);
 
       try {
@@ -96,243 +90,205 @@ export default function LoginScreen() {
     }
   };
 
+  const badgeSize = isShort ? 74 : 88;
+
   return (
-    <AuthLayout>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <View style={styles.header}>
-          <View style={styles.logoWrap}>
-            <View style={styles.logoHalo} />
-            <View style={styles.logoCircle}>
-              <Ionicons color={colors.primaryDark} name="school" size={64} />
-            </View>
-          </View>
+    <AuthLayout compact={isShort}>
+      <View style={styles.header}>
+        <View
+          style={[
+            styles.logoCircle,
+            {
+              borderColor: colors.glassBorder,
+              height: badgeSize,
+              shadowColor: colors.primary,
+              width: badgeSize,
+            },
+          ]}
+        >
+          <Image
+            resizeMode="cover"
+            source={require("@/assets/images/brand-logo.png")}
+            style={styles.logoImage}
+          />
+        </View>
 
-          <View style={styles.brandBadge}>
-            <Text style={styles.brandText}>TOEIC_trainer</Text>
-          </View>
+        <Text style={[styles.title, { fontSize: rf(24) }]}>Toeic Trainer</Text>
+        <Text style={[styles.subtitle, { fontSize: rf(14) }]}>
+          Học thông minh • Lộ trình cá nhân hóa
+        </Text>
+      </View>
 
-          <Text style={styles.subtitle}>
-            Tiếp tục hành trình luyện thi TOEIC
+      <View style={styles.form}>
+        <TextField
+          autoCapitalize="none"
+          error={emailError}
+          keyboardType="email-address"
+          label="Email"
+          leftIcon={
+            <MaterialCommunityIcons
+              color={colors.textMuted}
+              name="email-outline"
+              size={20}
+            />
+          }
+          onChangeText={setEmail}
+          placeholder="Nhập email của bạn"
+          value={email}
+          variant="light"
+        />
+
+        <TextField
+          autoCapitalize="none"
+          error={passwordError}
+          label="Mật khẩu"
+          leftIcon={
+            <MaterialCommunityIcons
+              color={colors.textMuted}
+              name="lock-outline"
+              size={20}
+            />
+          }
+          onChangeText={setPassword}
+          placeholder="Nhập mật khẩu"
+          rightSlot={
+            <FieldIconButton onPress={() => setShowPassword((current) => !current)}>
+              <Ionicons
+                color={colors.textMuted}
+                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                size={20}
+              />
+            </FieldIconButton>
+          }
+          secureTextEntry={!showPassword}
+          value={password}
+          variant="light"
+        />
+
+        <Pressable
+          hitSlop={8}
+          onPress={() => Alert.alert("Thông báo", "Chức năng đang cập nhật.")}
+          style={styles.linkWrap}
+        >
+          <Text style={styles.linkText}>Quên mật khẩu?</Text>
+        </Pressable>
+
+        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
+        <PrimaryButton label="ĐĂNG NHẬP" loading={loading} onPress={handleLogin} />
+
+        <Pressable
+          hitSlop={8}
+          onPress={() => router.push("/register")}
+          style={styles.registerWrap}
+        >
+          <Text style={styles.registerText}>
+            Chưa có tài khoản? <Text style={styles.registerHighlight}>Đăng ký ngay</Text>
           </Text>
-        </View>
+        </Pressable>
 
-        <View style={styles.form}>
-          <TextField
-            autoCapitalize="none"
-            error={emailError}
-            keyboardType="email-address"
-            label="Địa chỉ email"
-            leftIcon={
-              <MaterialCommunityIcons
-                color={colors.textMuted}
-                name="email-outline"
-                size={22}
-              />
-            }
-            onChangeText={setEmail}
-            placeholder="Nhập email của bạn"
-            variant="light"
-            value={email}
-          />
-
-          <TextField
-            autoCapitalize="none"
-            error={passwordError}
-            label="Mật khẩu"
-            leftIcon={
-              <MaterialCommunityIcons
-                color={colors.textMuted}
-                name="lock-outline"
-                size={22}
-              />
-            }
-            onChangeText={setPassword}
-            placeholder="Nhập mật khẩu của bạn"
-            rightSlot={
-              <FieldIconButton
-                onPress={() => setShowPassword((current) => !current)}
-              >
-                <Ionicons
-                  color={colors.textMuted}
-                  name={showPassword ? "eye-off-outline" : "eye-outline"}
-                  size={22}
-                />
-              </FieldIconButton>
-            }
-            secureTextEntry={!showPassword}
-            variant="light"
-            value={password}
-          />
-
-          <Pressable
-            onPress={() => Alert.alert("Thông báo", "Chức năng đang cập nhật.")}
-            style={styles.linkWrap}
-          >
-            <Text style={styles.linkText}>Quên mật khẩu?</Text>
-          </Pressable>
-
-          {errorMessage ? (
-            <Text style={styles.errorText}>{errorMessage}</Text>
-          ) : null}
-          <Text style={styles.debugText}>API endpoint: {API_BASE_URL}</Text>
-
-          <PrimaryButton
-            label="ĐĂNG NHẬP"
-            loading={loading}
-            onPress={handleLogin}
-          />
-
-          <Pressable
-            onPress={() => router.push("/register")}
-            style={styles.registerWrap}
-          >
-            <Text style={styles.registerText}>
-              Chưa có tài khoản?{" "}
-              <Text style={styles.registerHighlight}>Đăng ký ngay</Text>
-            </Text>
-          </Pressable>
-
-          {auth.user ? (
-            <View style={styles.successCard}>
-              <View style={styles.successHeader}>
-                <Ionicons
-                  color={colors.success}
-                  name="checkmark-circle"
-                  size={22}
-                />
-                <Text style={styles.successTitle}>Đăng nhập thành công</Text>
-              </View>
-              <Text style={styles.successLine}>{auth.user.fullName}</Text>
-              <Text style={styles.successMeta}>{auth.user.email}</Text>
-              <Text style={styles.successMeta}>
-                Token hết hạn sau {formatExpiry(auth.expiresIn)}
-              </Text>
+        {auth.user ? (
+          <View style={styles.successCard}>
+            <View style={styles.successHeader}>
+              <Ionicons color={colors.success} name="checkmark-circle" size={18} />
+              <Text style={styles.successTitle}>Đã đăng nhập: {auth.user.fullName}</Text>
             </View>
-          ) : null}
-        </View>
-      </KeyboardAvoidingView>
+            <Text style={styles.successMeta}>
+              Phiên hết hạn sau {formatExpiry(auth.expiresIn)}
+            </Text>
+          </View>
+        ) : null}
+      </View>
     </AuthLayout>
   );
 }
 
-const styles = StyleSheet.create({
-  brandBadge: {
-    backgroundColor: '#DCE8FB',
-    borderRadius: radius.pill,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-  },
-  brandText: {
-    color: '#274A83',
-    fontSize: 14,
-    fontWeight: "900",
-    letterSpacing: 0.8,
-  },
-  debugText: {
-    color: '#8A9CB6',
-    fontSize: 12,
-    marginBottom: spacing.md,
-    textAlign: "center",
-  },
-  errorText: {
-    color: '#C0392B',
-    fontSize: 14,
-    marginBottom: spacing.md,
-    textAlign: "center",
-  },
-  form: {
-    marginTop: spacing.lg,
-  },
-  header: {
-    alignItems: "center",
-  },
-  linkText: {
-    color: '#355D9A',
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  linkWrap: {
-    alignItems: "flex-end",
-    marginBottom: spacing.lg,
-  },
-  logoCircle: {
-    alignItems: "center",
-    backgroundColor: '#2A4675',
-    borderColor: "#E6EDF9",
-    borderRadius: radius.pill,
-    borderWidth: 8,
-    height: 132,
-    justifyContent: "center",
-    width: 132,
-  },
-  logoHalo: {
-    backgroundColor: "rgba(219, 201, 171, 0.35)",
-    borderRadius: radius.pill,
-    height: 170,
-    position: "absolute",
-    width: 170,
-  },
-  logoWrap: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: spacing.lg,
-    minHeight: 170,
-  },
-  registerHighlight: {
-    color: '#2E5DA3',
-    fontWeight: "800",
-  },
-  registerText: {
-    color: '#5B6C86',
-    fontSize: 15,
-  },
-  registerWrap: {
-    alignItems: "center",
-    marginTop: spacing.lg,
-  },
-  subtitle: {
-    color: '#6D7F98',
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: "center",
-  },
-  successCard: {
-    backgroundColor: "#EFFAF2",
-    borderColor: "#B6E2C3",
-    borderRadius: radius.md,
-    borderWidth: 1,
-    marginTop: spacing.lg,
-    padding: spacing.md,
-  },
-  successHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.xs,
-    marginBottom: spacing.xs,
-  },
-  successLine: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  successMeta: {
-    color: colors.textMuted,
-    fontSize: 14,
-    marginTop: 2,
-  },
-  successTitle: {
-    color: colors.success,
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  title: {
-    color: colors.text,
-    fontSize: 34,
-    fontWeight: "900",
-    marginBottom: spacing.xs,
-    textAlign: "center",
-  },
-});
+const createStyles = (colors: LiquidThemeColors) =>
+  StyleSheet.create({
+    header: {
+      alignItems: "center",
+      marginBottom: 16,
+    },
+    logoCircle: {
+      alignItems: "center",
+      borderRadius: 24,
+      borderWidth: 1,
+      elevation: Platform.OS === "android" ? 0 : 6,
+      justifyContent: "center",
+      marginBottom: 12,
+      overflow: "hidden",
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.24,
+      shadowRadius: 16,
+    },
+    logoImage: {
+      height: "100%",
+      width: "100%",
+    },
+    title: {
+      color: colors.text,
+      fontWeight: "900",
+      letterSpacing: -0.3,
+      textAlign: "center",
+    },
+    subtitle: {
+      color: colors.textMuted,
+      marginTop: 4,
+      textAlign: "center",
+    },
+    form: {
+      gap: 2,
+    },
+    linkWrap: {
+      alignSelf: "flex-end",
+      marginBottom: 14,
+      marginTop: -2,
+    },
+    linkText: {
+      color: colors.primary,
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    errorText: {
+      color: colors.danger,
+      fontSize: 13,
+      fontWeight: "700",
+      marginBottom: 12,
+      textAlign: "center",
+    },
+    registerWrap: {
+      alignItems: "center",
+      marginTop: 16,
+    },
+    registerText: {
+      color: colors.textMuted,
+      fontSize: 14,
+    },
+    registerHighlight: {
+      color: colors.primary,
+      fontWeight: "800",
+    },
+    successCard: {
+      backgroundColor: colors.accentSoft,
+      borderColor: colors.glassBorder,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      marginTop: 14,
+      padding: 12,
+    },
+    successHeader: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 6,
+    },
+    successTitle: {
+      color: colors.success,
+      fontSize: 13,
+      fontWeight: "800",
+    },
+    successMeta: {
+      color: colors.textMuted,
+      fontSize: 12,
+      marginTop: 4,
+    },
+  });
