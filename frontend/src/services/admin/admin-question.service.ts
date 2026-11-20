@@ -31,6 +31,13 @@ export class AdminQuestionService extends BaseAdminService {
     });
   }
 
+  bulkImport(questions: CreateQuestionRequest[]) {
+    return this.request<QuestionListResponse>('/api/admin/questions/bulk-import', {
+      body: JSON.stringify({ questions }),
+      method: 'POST',
+    });
+  }
+
   update(questionId: number, request: UpdateQuestionRequest) {
     return this.request<QuestionResponse>(`/api/admin/questions/${questionId}`, {
       body: JSON.stringify(request),

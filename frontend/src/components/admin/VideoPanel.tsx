@@ -23,9 +23,9 @@ export default function VideoPanel({
 }: VideoPanelProps) {
   return (
     <View>
-      <Text style={styles.heading}>Manage Lesson Video</Text>
+      <Text style={styles.heading}>Quản lý bài giảng Video</Text>
       <Text style={styles.subHeading}>
-        {loading ? 'Dang tai du lieu video...' : `${videos.length} video lesson(s)`}
+        {loading ? 'Đang tải danh sách video...' : `${videos.length} bài giảng video`}
       </Text>
 
       <Pressable
@@ -33,17 +33,17 @@ export default function VideoPanel({
         onPress={onCreate}
         style={styles.primaryAction}
       >
-        <Ionicons color={colors.surface} name="add" size={22} />
+        <Ionicons color={colors.onPrimary} name="add" size={20} />
         <Text style={styles.primaryActionText}>
-          {working ? 'Dang xu ly...' : 'Add New Video'}
+          {working ? 'Đang xử lý...' : 'Thêm Video mới'}
         </Text>
       </Pressable>
 
       <View style={styles.table}>
         <View style={styles.tableHeader}>
-          <Text style={[styles.headerCell, styles.titleCell]}>Title</Text>
-          <Text style={[styles.headerCell, styles.durationCell]}>Duration</Text>
-          <Text style={[styles.headerCell, styles.actionsCell]}>Actions</Text>
+          <Text style={[styles.headerCell, styles.titleCell]}>Tiêu đề</Text>
+          <Text style={[styles.headerCell, styles.durationCell]}>Thời lượng</Text>
+          <Text style={[styles.headerCell, styles.actionsCell]}>Thao tác</Text>
         </View>
 
         {videos.map((video) => (
@@ -64,17 +64,17 @@ export default function VideoPanel({
                 disabled={working}
                 hitSlop={8}
                 onPress={() => onEdit(video)}
-                style={styles.iconButton}
+                style={styles.editBtn}
               >
-                <Ionicons color={colors.textMuted} name="create-outline" size={18} />
+                <Ionicons color={colors.primary} name="create-outline" size={16} />
               </Pressable>
               <Pressable
                 disabled={working}
                 hitSlop={8}
                 onPress={() => onDelete(video)}
-                style={styles.iconButton}
+                style={styles.deleteBtn}
               >
-                <Ionicons color={colors.textMuted} name="trash-outline" size={18} />
+                <Ionicons color={colors.danger} name="trash-outline" size={16} />
               </Pressable>
             </View>
           </View>
@@ -82,7 +82,7 @@ export default function VideoPanel({
 
         {!loading && videos.length === 0 ? (
           <View style={styles.tableRow}>
-            <Text style={styles.emptyText}>Chua co video lesson trong module nay.</Text>
+            <Text style={styles.emptyText}>Chưa có video nào trong mô-đun này.</Text>
           </View>
         ) : null}
       </View>
@@ -94,36 +94,55 @@ const styles = StyleSheet.create({
   actionRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
   },
   actionsCell: {
     flex: 0.8,
     justifyContent: 'flex-end',
   },
   cell: {
-    color: colors.text,
-    fontSize: 14,
+    color: colors.textSecondary,
+    fontSize: 13.5,
+    fontWeight: '600',
+  },
+  deleteBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.dangerSoft,
+    borderColor: '#FECACA',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
   },
   durationCell: {
     flex: 0.7,
   },
+  editBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderColor: '#BFDBFE',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
   emptyText: {
     color: colors.textMuted,
-    fontSize: 14,
+    fontSize: 13.5,
   },
   headerCell: {
-    color: colors.text,
-    fontSize: 14,
+    color: colors.textMuted,
+    fontSize: 11.5,
     fontWeight: '800',
+    textTransform: 'uppercase',
   },
   heading: {
     color: colors.text,
-    fontSize: 22,
-    fontWeight: '600',
+    fontSize: 19,
+    fontWeight: '800',
     marginBottom: 4,
-  },
-  iconButton: {
-    padding: 2,
   },
   metaCell: {
     color: colors.textMuted,
@@ -132,22 +151,18 @@ const styles = StyleSheet.create({
   },
   primaryAction: {
     alignItems: 'center',
-    backgroundColor: colors.primaryDark,
+    backgroundColor: colors.primary,
     borderRadius: 10,
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.xs,
     justifyContent: 'center',
     marginBottom: spacing.md,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    paddingVertical: 14,
+    paddingVertical: 12,
   },
   primaryActionText: {
-    color: colors.surface,
-    fontSize: 16,
-    fontWeight: '500',
+    color: colors.onPrimary,
+    fontSize: 14.5,
+    fontWeight: '700',
   },
   subHeading: {
     color: colors.textMuted,
@@ -156,22 +171,24 @@ const styles = StyleSheet.create({
   },
   table: {
     backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: 14,
+    borderWidth: 1,
     overflow: 'hidden',
   },
   tableHeader: {
-    backgroundColor: '#F5F7FA',
+    backgroundColor: colors.surfaceAlt,
     flexDirection: 'row',
     paddingHorizontal: spacing.md,
-    paddingVertical: 14,
+    paddingVertical: 12,
   },
   tableRow: {
     alignItems: 'center',
-    borderTopColor: '#E7ECF2',
+    borderTopColor: colors.border,
     borderTopWidth: 1,
     flexDirection: 'row',
     paddingHorizontal: spacing.md,
-    paddingVertical: 14,
+    paddingVertical: 12,
   },
   titleCell: {
     flex: 1.8,

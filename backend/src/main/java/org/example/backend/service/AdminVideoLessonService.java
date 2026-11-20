@@ -50,7 +50,7 @@ public class AdminVideoLessonService {
         videoLesson.setModule(module);
         videoLesson.setTitle(title);
         videoLesson.setDescription(trimToNull(request.getDescription()));
-        videoLesson.setVideoUrl(videoUrl);
+        videoLesson.setVideoUrl(normalizeVideoUrlForStorage(videoUrl));
         videoLesson.setDurationSeconds(request.getDurationSeconds());
         videoLesson.setSortOrder(request.getSortOrder());
         videoLesson.setFree(request.getFree() == null ? false : request.getFree());
@@ -99,7 +99,7 @@ public class AdminVideoLessonService {
             if (videoUrl == null) {
                 throw new AppException(ErrorCode.INVALID_VIDEO_LESSON_DATA);
             }
-            videoLesson.setVideoUrl(videoUrl);
+            videoLesson.setVideoUrl(normalizeVideoUrlForStorage(videoUrl));
         }
 
         if (request.getDurationSeconds() != null) {
@@ -194,13 +194,36 @@ public class AdminVideoLessonService {
         videoLesson.setModule(module);
         videoLesson.setTitle(title);
         videoLesson.setDescription(trimToNull(request.getDescription()));
-        // Auto-populate from Cloudinary response
-        videoLesson.setVideoUrl(uploadResponse.getSecureUrl());
-        videoLesson.setDurationSeconds(uploadResponse.getDurationSeconds());
+        // Auto-populate from upload response (Cloudinary or local storage fallback)
+        Integer resolvedDuration = uploadResponse.getDurationSeconds() != null && uploadResponse.getDurationSeconds() > 0
+                ? uploadResponse.getDurationSeconds()
+                : (isValidPositive(request.getDurationSeconds()) ? request.getDurationSeconds() : 60);
+        String storedUrl = uploadResponse.getPublicId() != null && uploadResponse.getPublicId().startsWith("local/")
+                ? "/api/media/videos/" + uploadResponse.getPublicId().substring("local/".length())
+                : normalizeVideoUrlForStorage(uploadResponse.getSecureUrl());
+        videoLesson.setVideoUrl(storedUrl);
+        videoLesson.setDurationSeconds(resolvedDuration);
         videoLesson.setSortOrder(request.getSortOrder());
         videoLesson.setFree(request.getFree() == null ? false : request.getFree());
         videoLesson.setPublished(request.getPublished() == null ? false : request.getPublished());
 
         return videoLessonMapper.toResponse(videoLessonRepository.save(videoLesson));
+    }
+
+    /**
+     * Converts any local/LAN absolute media URL (e.g. http://192.168.1.5:8082/api/media/...) into a
+     * portable relative path (/api/media/...) so lessons stay playable across Wi-Fi changes & cloud deploys.
+     */
+    private String normalizeVideoUrlForStorage(String rawUrl) {
+        if (rawUrl == null) {
+            return null;
+        }
+        String trimmed = rawUrl.trim();
+        String marker = "/api/media/";
+        int idx = trimmed.indexOf(marker);
+        if (idx > 0 && trimmed.toLowerCase().matches("^https?://(?:localhost|127\\.0\\.0\\.1|10\\.0\\.2\\.2|192\\.168\\.\\d+\\.\\d+|172\\.(?:1[6-9]|2\\d|3[01])\\.\\d+\\.\\d+)(?::\\d+)?/.*")) {
+            return trimmed.substring(idx);
+        }
+        return trimmed;
     }
 }

@@ -37,12 +37,12 @@ export type AdminTabKey = 'video' | 'vocabulary' | 'exercises';
 
 export type AdminSectionKey =
   | 'paths'
-  | 'milestones'
-  | 'modules'
-  | 'grammars'
   | 'content'
+  | 'grammars'
+  | 'video-library'
   | 'questions'
   | 'tests'
+  | 'users'
   | 'permissions';
 
 export type AdminVideoLesson = {

@@ -9,3 +9,5 @@ export { AdminVideoLessonService } from '@/src/services/admin/admin-video-lesson
 export { AdminQuestionService } from '@/src/services/admin/admin-question.service';
 export { AdminPermissionService } from '@/src/services/admin/admin-permission.service';
 export { AdminTestService } from '@/src/services/admin/admin-test.service';
+export { AdminAnalyticsService } from '@/src/services/admin/admin-analytics.service';
+export { AdminVideoLibraryService } from '@/src/services/admin/admin-video-library.service';

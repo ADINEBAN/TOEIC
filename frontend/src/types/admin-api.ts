@@ -126,6 +126,11 @@ export type QuestionApiItem = {
   difficultyLevel: string | null;
   sourceType: string | null;
   sourceYear: number | null;
+  audioUrl?: string | null;
+  imageUrl?: string | null;
+  passageText?: string | null;
+  transcript?: string | null;
+  questionGroupCode?: string | null;
   options: QuestionOptionApiItem[];
   createdAt: string;
   updatedAt: string;
@@ -206,6 +211,66 @@ export type CreateMilestoneModuleRequest = {
 
 export type UpdateMilestoneModuleRequest = Partial<CreateMilestoneModuleRequest>;
 
+export type CreateMilestoneQuickModuleRequest = {
+  moduleType: ModuleType | string;
+  title: string;
+  description?: string | null;
+  thumbnailUrl?: string | null;
+  estimatedMinutes: number;
+  difficultyLevel?: string | null;
+  active?: boolean;
+  sortOrder?: number;
+  required?: boolean;
+  unlockCondition?: string | null;
+};
+
+export type AdminMilestoneModuleLinkNode = {
+  milestoneModuleId: number;
+  milestoneId: number;
+  moduleId: number;
+  sortOrder: number;
+  required: boolean;
+  unlockCondition: string | null;
+  moduleTitle: string;
+  moduleDescription: string | null;
+  moduleType: ModuleType | string;
+  estimatedMinutes: number;
+  difficultyLevel: string | null;
+  moduleActive: boolean;
+  videoLessonCount: number;
+  flashcardCount: number;
+  practiceSetCount: number;
+};
+
+export type AdminMilestoneNodeItem = {
+  id: number;
+  learningPathId: number;
+  title: string;
+  description: string | null;
+  sortOrder: number;
+  modules: AdminMilestoneModuleLinkNode[];
+};
+
+export type AdminLearningPathOverviewItem = {
+  id: number;
+  code: string;
+  title: string;
+  description: string | null;
+  targetScore: number;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  milestoneCount: number;
+  moduleCount: number;
+  estimatedTotalMinutes: number;
+  readyForUsers: boolean;
+  milestones: AdminMilestoneNodeItem[];
+};
+
+export type AdminLearningPathOverviewListResponse = ApiResponse<
+  AdminLearningPathOverviewItem[]
+>;
+
 export type UpdateAdminFlashcardRequest = {
   active?: boolean;
   englishWord?: string;
@@ -279,13 +344,18 @@ export type CreateQuestionOptionRequest = {
 };
 
 export type CreateQuestionRequest = {
+  audioUrl?: string | null;
   difficultyLevel?: string | null;
   explanation?: string | null;
+  imageUrl?: string | null;
   options: CreateQuestionOptionRequest[];
   partNo?: number | null;
+  passageText?: string | null;
+  questionGroupCode?: string | null;
   questionText: string;
   sourceType?: QuestionSourceType | string | null;
   sourceYear?: number | null;
+  transcript?: string | null;
 };
 
 export type UpdateQuestionRequest = Partial<CreateQuestionRequest>;
@@ -322,6 +392,32 @@ export type PracticeSetResponse = ApiResponse<PracticeSetApiItem>;
 export type VideoLessonResponse = ApiResponse<VideoLessonApiItem>;
 export type GrammarResponse = ApiResponse<GrammarApiItem>;
 export type QuestionResponse = ApiResponse<QuestionApiItem>;
+export type AdminAnalyticsOverviewApiItem = {
+  totalUsers: number;
+  activeUsers: number;
+  premiumUsers: number;
+  usersWithStreak: number;
+  totalQuestions: number;
+  totalTests: number;
+  publishedTests: number;
+  totalTestAttempts: number;
+  averageAccuracyPercent: number;
+  averageToeicScore: number;
+};
+
+export type AdminUserApiItem = {
+  id: number;
+  email: string;
+  fullName: string | null;
+  avatarUrl: string | null;
+  currentLevel: string | null;
+  targetScore: number | null;
+  premium: boolean;
+  role: string;
+  status: 'ACTIVE' | 'BLOCKED' | 'DELETED' | string;
+  createdAt: string;
+};
+
 export type ApiVoidResponse = ApiResponse<null>;
 
 export type TestApiItem = {

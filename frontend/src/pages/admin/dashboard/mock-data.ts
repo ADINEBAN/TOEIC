@@ -1,14 +1,14 @@
 import { AdminCourse, AdminLessonWord, AdminSidebarItem } from '@/src/types/admin';
 
 export const adminSidebarItems: AdminSidebarItem[] = [
-  { id: 'paths', icon: 'map-outline', label: 'Learning Paths' },
-  { id: 'milestones', icon: 'flag-outline', label: 'Milestones' },
-  { id: 'modules', icon: 'albums-outline', label: 'Modules' },
-  { id: 'grammars', icon: 'book-outline', label: 'Grammars' },
-  { id: 'content', icon: 'document-text-outline', label: 'Content APIs' },
-  { id: 'questions', icon: 'help-circle-outline', label: 'Questions' },
-  { id: 'tests', icon: 'list-outline', label: 'Tests' },
-  { id: 'permissions', icon: 'key-outline', label: 'Permissions' },
+  { id: 'paths', icon: 'map-outline', label: 'Lộ trình & Mục tiêu' },
+  { id: 'content', icon: 'document-text-outline', label: 'Nội dung Mô-đun' },
+  { id: 'grammars', icon: 'book-outline', label: 'Ngữ pháp TOEIC' },
+  { id: 'video-library', icon: 'videocam-outline', label: 'Thư viện Video AI' },
+  { id: 'questions', icon: 'help-circle-outline', label: 'Ngân hàng câu hỏi' },
+  { id: 'tests', icon: 'list-outline', label: 'Đề thi TOEIC' },
+  { id: 'users', icon: 'people-outline', label: 'Học viên & Thống kê' },
+  { id: 'permissions', icon: 'key-outline', label: 'Phân quyền' },
 ];
 
 export const adminCourseData: AdminCourse = {
@@ -36,7 +36,7 @@ export const adminVocabularyData: AdminLessonWord[] = [
     audio: 'audio-1',
     pronunciation: "/həˈləʊ/",
     status: 'Published',
-    translation: 'Xin chao',
+    translation: 'Xin chào',
     word: 'Hello',
   },
   {
@@ -44,7 +44,7 @@ export const adminVocabularyData: AdminLessonWord[] = [
     audio: 'audio-2',
     pronunciation: "/ɡʊdˈbaɪ/",
     status: 'Published',
-    translation: 'Tam biet',
+    translation: 'Tạm biệt',
     word: 'Goodbye',
   },
   {
@@ -52,7 +52,7 @@ export const adminVocabularyData: AdminLessonWord[] = [
     audio: 'audio-3',
     pronunciation: "/siː juː/",
     status: 'Draft',
-    translation: 'Hen gap lai',
+    translation: 'Hẹn gặp lại',
     word: 'See you',
   },
 ];

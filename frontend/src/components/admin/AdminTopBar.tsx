@@ -14,27 +14,37 @@ export default function AdminTopBar({
   isLoggingOut = false,
   onLogout,
 }: AdminTopBarProps) {
+  const initial = (adminName || 'A').trim().charAt(0).toUpperCase() || 'A';
+
   return (
     <View style={styles.bar}>
       <View style={styles.brandRow}>
         <View style={styles.logoBadge}>
-          <Ionicons color={colors.surface} name="school" size={22} />
+          <Ionicons color={colors.onPrimary} name="school" size={20} />
         </View>
         <View>
           <Text style={styles.eyebrow}>TOEIC Trainer</Text>
-          <Text style={styles.title}>Admin Console</Text>
+          <Text style={styles.title}>Cổng Quản Trị (Admin Console)</Text>
         </View>
       </View>
 
       <View style={styles.actions}>
         <View style={styles.statusBadge}>
           <View style={styles.statusDot} />
-          <Text style={styles.statusText}>Live API</Text>
+          <Text style={styles.statusText}>API Sẵn sàng</Text>
         </View>
+
         <View style={styles.divider} />
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{adminName.charAt(0)}</Text>
+
+        <View style={styles.profilePill}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{initial}</Text>
+          </View>
+          <Text numberOfLines={1} style={styles.adminNameText}>
+            {adminName || 'Admin'}
+          </Text>
         </View>
+
         <Pressable
           disabled={isLoggingOut}
           onPress={onLogout}
@@ -44,9 +54,9 @@ export default function AdminTopBar({
             isLoggingOut ? styles.logoutButtonDisabled : null,
           ]}
         >
-          <Ionicons color="#FCA5A5" name="log-out-outline" size={15} />
+          <Ionicons color={colors.danger} name="log-out-outline" size={16} />
           <Text style={styles.logoutText}>
-            {isLoggingOut ? 'Dang xuat...' : 'Dang xuat'}
+            {isLoggingOut ? 'Đang xuất...' : 'Đăng xuất'}
           </Text>
         </Pressable>
       </View>
@@ -58,118 +68,137 @@ const styles = StyleSheet.create({
   actions: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.md,
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  adminNameText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+    maxWidth: 160,
   },
   avatar: {
     alignItems: 'center',
-    backgroundColor: '#172235',
-    borderColor: colors.borderStrong,
-    borderWidth: 1,
+    backgroundColor: colors.primarySoft,
+    borderColor: '#BFDBFE',
     borderRadius: radius.pill,
-    height: 42,
+    borderWidth: 1,
+    height: 32,
     justifyContent: 'center',
-    width: 42,
+    width: 32,
   },
   avatarText: {
-    color: colors.surface,
-    fontSize: 14,
+    color: colors.primaryDark,
+    fontSize: 13,
     fontWeight: '900',
   },
   bar: {
     alignItems: 'center',
-    backgroundColor: 'rgba(15,27,49,0.94)',
-    borderColor: '#2D496B',
-    borderRadius: 26,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 18,
     borderWidth: 1,
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
     justifyContent: 'space-between',
     marginBottom: spacing.md,
-    paddingHorizontal: 22,
-    paddingVertical: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 28 },
-    shadowOpacity: 0.3,
-    shadowRadius: 44,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 1,
+    shadowRadius: 20,
   },
   brandRow: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.sm,
   },
+  divider: {
+    backgroundColor: colors.border,
+    height: 24,
+    width: 1,
+  },
   eyebrow: {
-    color: colors.textMuted,
+    color: colors.primary,
     fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0,
+    letterSpacing: 0.4,
     textTransform: 'uppercase',
   },
   logoBadge: {
     alignItems: 'center',
-    backgroundColor: '#17365E',
-    borderColor: '#59A6FF',
-    borderRadius: 14,
-    borderWidth: 1,
-    height: 44,
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    height: 40,
     justifyContent: 'center',
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.28,
-    shadowRadius: 20,
-    width: 44,
+    shadowColor: 'rgba(37, 99, 235, 0.25)',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    width: 40,
+  },
+  logoutButton: {
+    alignItems: 'center',
+    backgroundColor: colors.dangerSoft,
+    borderColor: '#FECACA',
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  logoutButtonDisabled: {
+    opacity: 0.6,
+  },
+  logoutButtonPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
+  },
+  logoutText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  profilePill: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingLeft: 4,
+    paddingRight: 12,
+    paddingVertical: 4,
   },
   statusBadge: {
     alignItems: 'center',
-    backgroundColor: '#0F3938',
-    borderColor: '#257D74',
+    backgroundColor: colors.accentSoft,
+    borderColor: '#A7F3D0',
     borderRadius: radius.pill,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 7,
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 6,
   },
   statusDot: {
     backgroundColor: colors.accent,
     borderRadius: radius.pill,
-    height: 7,
-    width: 7,
+    height: 8,
+    width: 8,
   },
   statusText: {
-    color: '#6EE7D8',
+    color: '#047857',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   title: {
     color: colors.text,
-    fontSize: 24,
-    fontWeight: '900',
-  },
-  divider: {
-    backgroundColor: colors.border,
-    height: 26,
-    width: 1,
-  },
-  logoutButton: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(127,29,29,0.35)',
-    borderColor: '#B91C1C',
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  logoutButtonDisabled: {
-    opacity: 0.7,
-  },
-  logoutButtonPressed: {
-    opacity: 0.8,
-    transform: [{ scale: 0.98 }],
-  },
-  logoutText: {
-    color: '#FCA5A5',
-    fontSize: 12,
+    fontSize: 18,
     fontWeight: '800',
   },
 });

@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View, Pressable } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { colors, spacing } from "@/src/assets/styles/theme";
@@ -18,116 +18,135 @@ export default function AdminSidebar({
   return (
     <View style={styles.sidebar}>
       <View style={styles.sidebarHeader}>
-        <Text style={styles.sidebarEyebrow}>Workspace</Text>
-        <Text style={styles.sidebarTitle}>Operations</Text>
+        <Text style={styles.sidebarEyebrow}>Danh mục</Text>
+        <Text style={styles.sidebarTitle}>Quản trị hệ thống</Text>
       </View>
-      {items.map((item) => {
-        const active = item.id === activeItemId;
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <View style={styles.list}>
+          {items.map((item) => {
+            const active = item.id === activeItemId;
 
-        return (
-          <Pressable
-            key={item.id}
-            onPress={() => onSelect(item.id)}
-            style={[styles.item, active ? styles.itemActive : null]}
-          >
-            {active ? <View style={styles.activeRail} /> : null}
-            <View
-              style={[styles.iconWrap, active ? styles.iconWrapActive : null]}
-            >
-              <Ionicons
-                color={active ? colors.text : colors.textMuted}
-                name={item.icon as keyof typeof Ionicons.glyphMap}
-                size={18}
-              />
-            </View>
-            <Text style={[styles.label, active ? styles.labelActive : null]}>
-              {item.label}
-            </Text>
-          </Pressable>
-        );
-      })}
+            return (
+              <Pressable
+                key={item.id}
+                onPress={() => onSelect(item.id)}
+                style={({ pressed }) => [
+                  styles.item,
+                  active ? styles.itemActive : null,
+                  pressed && !active ? styles.itemPressed : null,
+                ]}
+              >
+                {active ? <View style={styles.activeRail} /> : null}
+                <View
+                  style={[styles.iconWrap, active ? styles.iconWrapActive : null]}
+                >
+                  <Ionicons
+                    color={active ? colors.onPrimary : colors.textMuted}
+                    name={item.icon as keyof typeof Ionicons.glyphMap}
+                    size={17}
+                  />
+                </View>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.label, active ? styles.labelActive : null]}
+                >
+                  {item.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   activeRail: {
-    backgroundColor: colors.accent,
+    backgroundColor: colors.primary,
     borderRadius: 999,
-    bottom: 10,
+    bottom: 8,
     left: 0,
     position: "absolute",
-    top: 10,
+    top: 8,
     width: 3,
-  },
-  item: {
-    alignItems: "center",
-    borderRadius: 16,
-    flexDirection: "row",
-    gap: spacing.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  itemActive: {
-    backgroundColor: "#19304E",
-    borderColor: "#59A6FF",
-    borderWidth: 1,
-    shadowColor: "rgba(89,166,255,0.18)",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 1,
-    shadowRadius: 22,
   },
   iconWrap: {
     alignItems: "center",
-    backgroundColor: "#16253C",
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.border,
     borderRadius: 10,
-    height: 36,
+    borderWidth: 1,
+    height: 34,
     justifyContent: "center",
-    width: 36,
+    width: 34,
   },
   iconWrapActive: {
-    backgroundColor: "#2F6EA8",
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  item: {
+    alignItems: "center",
+    borderColor: "transparent",
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  itemActive: {
+    backgroundColor: colors.primarySoft,
+    borderColor: "#BFDBFE",
+  },
+  itemPressed: {
+    backgroundColor: colors.surfaceAlt,
   },
   label: {
-    color: colors.textMuted,
-    fontSize: 13,
-    fontWeight: "700",
+    color: colors.textSecondary,
+    flex: 1,
+    fontSize: 13.5,
+    fontWeight: "600",
   },
   labelActive: {
-    color: colors.text,
-    fontWeight: "900",
+    color: colors.primaryDark,
+    fontWeight: "800",
+  },
+  list: {
+    gap: 4,
   },
   sidebar: {
-    backgroundColor: "rgba(11,18,32,0.9)",
-    borderColor: "#29456B",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 18,
     borderWidth: 1,
-    borderRadius: 24,
-    gap: 6,
-    minWidth: 258,
+    maxWidth: 256,
+    minWidth: 236,
     padding: 14,
     shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.28,
-    shadowRadius: 38,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 1,
+    shadowRadius: 20,
   },
   sidebarEyebrow: {
     color: colors.textMuted,
     fontSize: 11,
-    fontWeight: "900",
+    fontWeight: "800",
+    letterSpacing: 0.4,
     textTransform: "uppercase",
   },
   sidebarHeader: {
-    borderBottomColor: "#223047",
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
-    marginBottom: 8,
-    paddingHorizontal: 10,
-    paddingBottom: 14,
-    paddingTop: 6,
+    marginBottom: 10,
+    paddingBottom: 12,
+    paddingHorizontal: 8,
+    paddingTop: 4,
   },
   sidebarTitle: {
-    color: colors.surface,
-    fontSize: 18,
-    fontWeight: "900",
-    marginTop: 3,
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "800",
+    marginTop: 2,
   },
 });
