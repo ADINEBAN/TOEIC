@@ -3,12 +3,18 @@ package org.example.backend.controller;
 import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.request.BulkImportQuestionsRequest;
 import org.example.backend.dto.request.CreateQuestionRequest;
+import org.example.backend.dto.request.DraftQuestionExplainRequest;
 import org.example.backend.dto.request.UpdateQuestionRequest;
+import org.example.backend.dto.response.AIExplainResponse;
 import org.example.backend.dto.response.ApiResponse;
+import org.example.backend.dto.response.QuestionImportResponse;
 import org.example.backend.dto.response.QuestionResponse;
 import org.example.backend.enums.SuccessCode;
 import org.example.backend.service.AdminQuestionBankService;
+import org.example.backend.service.OpenAIAnswerExplainService;
+import org.example.backend.service.QuestionImportService;
 import org.example.backend.util.ApiResponseUtil;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -20,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -30,11 +37,31 @@ import java.util.List;
 public class AdminQuestionBankController {
 
     private final AdminQuestionBankService adminQuestionBankService;
+    private final QuestionImportService questionImportService;
+    private final OpenAIAnswerExplainService openAIAnswerExplainService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<QuestionResponse>> createQuestion(@RequestBody CreateQuestionRequest request) {
         QuestionResponse response = adminQuestionBankService.createQuestion(request);
         return ApiResponseUtil.success(response, SuccessCode.QUESTION_CREATED);
+    }
+
+    @PostMapping(value = "/import-file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<QuestionImportResponse>> importQuestionsFromFile(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "defaultPartNo", required = false) Integer defaultPartNo,
+            @RequestParam(value = "autoExplainAi", defaultValue = "false") boolean autoExplainAi
+    ) {
+        QuestionImportResponse response = questionImportService.importFromFile(file, defaultPartNo, autoExplainAi);
+        return ApiResponseUtil.success(response, SuccessCode.QUESTIONS_BULK_IMPORTED);
+    }
+
+    @PostMapping("/ai-explain-draft")
+    public ResponseEntity<ApiResponse<AIExplainResponse>> generateDraftExplanation(
+            @RequestBody DraftQuestionExplainRequest request
+    ) {
+        AIExplainResponse response = openAIAnswerExplainService.generateDraftExplanation(request);
+        return ApiResponseUtil.success(response, SuccessCode.QUESTION_GET);
     }
 
     @PostMapping("/bulk-import")

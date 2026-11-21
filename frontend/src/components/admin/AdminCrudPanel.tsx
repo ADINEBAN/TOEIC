@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -22,13 +22,22 @@ export type SelectOption = {
   value: string;
 };
 
+export type AdminFieldAction = {
+  isEnabled?: (values: FormValues) => boolean;
+  label: string;
+  loadingLabel?: string;
+  onPress: (values: FormValues) => Promise<Partial<FormValues> | null>;
+};
+
 export type AdminField = {
+  actionButton?: AdminFieldAction;
   label: string;
   name: string;
   options?: SelectOption[];
   placeholder?: string;
   required?: boolean;
   type: "text" | "number" | "textarea" | "select" | "switch";
+  visibleWhen?: (values: FormValues) => boolean;
 };
 
 export type AdminColumn<T> = {
@@ -51,6 +60,7 @@ type AdminCrudPanelProps<T> = {
   columns: AdminColumn<T>[];
   emptyText?: string;
   fields: AdminField[];
+  filterBar?: ReactNode;
   getInitialValues: (item?: T) => FormValues;
   getItemId: (item: T) => number;
   loading?: boolean;
@@ -128,6 +138,7 @@ export default function AdminCrudPanel<T>({
   columns,
   emptyText = "Chưa có dữ liệu.",
   fields,
+  filterBar,
   getInitialValues,
   getItemId,
   loading = false,
@@ -148,6 +159,7 @@ export default function AdminCrudPanel<T>({
   const [searchQuery, setSearchQuery] = useState("");
   const [values, setValues] = useState<FormValues>(() => getInitialValues());
   const [autoFilling, setAutoFilling] = useState(false);
+  const [activeFieldAction, setActiveFieldAction] = useState<string | null>(null);
   const [autoFillMessage, setAutoFillMessage] = useState<string | null>(null);
   const manualEditedTargetsRef = useRef<Set<string>>(new Set());
   const lastAutoFilledWordRef = useRef<string>("");
@@ -184,6 +196,7 @@ export default function AdminCrudPanel<T>({
     manualEditedTargetsRef.current = new Set();
     lastAutoFilledWordRef.current = "";
     setAutoFilling(false);
+    setActiveFieldAction(null);
     setAutoFillMessage(null);
   };
 
@@ -369,6 +382,8 @@ export default function AdminCrudPanel<T>({
         </View>
       </View>
 
+      {filterBar}
+
       <Modal
         animationType="fade"
         onRequestClose={closeForm}
@@ -392,8 +407,15 @@ export default function AdminCrudPanel<T>({
             </View>
             <ScrollView style={styles.modalBody}>
               <View style={styles.formGrid}>
-                {fields.map((field) => {
+                {fields
+                  .filter((field) => !field.visibleWhen || field.visibleWhen(values))
+                  .map((field) => {
                   const isSelectOpen = openSelectName === field.name;
+                  const fieldBtn = field.actionButton;
+                  const fieldBtnBusy = activeFieldAction === field.name;
+                  const fieldBtnEnabled = fieldBtn
+                    ? (fieldBtn.isEnabled ? fieldBtn.isEnabled(values) : true)
+                    : false;
                   return (
                     <View
                       key={field.name}
@@ -426,6 +448,48 @@ export default function AdminCrudPanel<T>({
                             )}
                             <Text style={styles.aiFillChipText}>
                               {autoFilling ? "Đang gợi ý..." : (autoFillAction.buttonLabel ?? "AI tự điền")}
+                            </Text>
+                          </Pressable>
+                        ) : null}
+                        {fieldBtn ? (
+                          <Pressable
+                            disabled={fieldBtnBusy || working || !fieldBtnEnabled}
+                            onPress={async () => {
+                              try {
+                                setActiveFieldAction(field.name);
+                                setAutoFillMessage(null);
+                                const patch = await fieldBtn.onPress(valuesRef.current);
+                                if (patch) {
+                                  setValues((cur) => {
+                                    const next = { ...cur };
+                                    for (const [k, v] of Object.entries(patch)) {
+                                      if (v !== undefined) next[k] = v;
+                                    }
+                                    return next;
+                                  });
+                                  setAutoFillMessage("AI đã tạo gợi ý xong.");
+                                }
+                              } catch (err) {
+                                setAutoFillMessage(
+                                  err instanceof Error ? err.message : "Không thể gọi AI lúc này.",
+                                );
+                              } finally {
+                                setActiveFieldAction(null);
+                              }
+                            }}
+                            style={({ pressed }) => [
+                              styles.aiFillChip,
+                              pressed ? styles.aiFillChipPressed : null,
+                              (fieldBtnBusy || !fieldBtnEnabled) ? styles.aiFillChipDisabled : null,
+                            ]}
+                          >
+                            {fieldBtnBusy ? (
+                              <ActivityIndicator color={colors.primary} size="small" />
+                            ) : (
+                              <Ionicons color={colors.primary} name="sparkles" size={13} />
+                            )}
+                            <Text style={styles.aiFillChipText}>
+                              {fieldBtnBusy ? (fieldBtn.loadingLabel ?? "Đang tạo...") : fieldBtn.label}
                             </Text>
                           </Pressable>
                         ) : null}

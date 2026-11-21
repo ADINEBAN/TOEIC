@@ -412,6 +412,38 @@ export type PracticeSetResponse = ApiResponse<PracticeSetApiItem>;
 export type VideoLessonResponse = ApiResponse<VideoLessonApiItem>;
 export type GrammarResponse = ApiResponse<GrammarApiItem>;
 export type QuestionResponse = ApiResponse<QuestionApiItem>;
+
+export type DraftQuestionExplainRequest = {
+  partNo?: number | null;
+  questionText: string;
+  optionA: string;
+  optionB: string;
+  optionC: string;
+  optionD: string;
+  correctLabel: string;
+  passageText?: string | null;
+  transcript?: string | null;
+  explanation?: string | null;
+};
+
+export type QuestionDraftExplainApiItem = {
+  correctAnswer: string;
+  userAnswer: string | null;
+  explanation: string;
+  tips: string | null;
+};
+
+export type QuestionDraftExplainResponse = ApiResponse<QuestionDraftExplainApiItem>;
+
+export type QuestionImportApiResult = {
+  totalParsed: number;
+  importedCount: number;
+  skippedDuplicateCount: number;
+  aiExplainedCount: number;
+  items: QuestionApiItem[];
+};
+
+export type QuestionImportResponse = ApiResponse<QuestionImportApiResult>;
 export type AdminAnalyticsOverviewApiItem = {
   totalUsers: number;
   activeUsers: number;

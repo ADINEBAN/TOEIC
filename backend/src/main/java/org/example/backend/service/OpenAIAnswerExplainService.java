@@ -1,7 +1,11 @@
 package org.example.backend.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.example.backend.dto.request.CreateQuestionOptionRequest;
+import org.example.backend.dto.request.CreateQuestionRequest;
+import org.example.backend.dto.request.DraftQuestionExplainRequest;
 import org.example.backend.dto.response.AIExplainResponse;
 import org.example.backend.entity.AiQuestionExplanation;
 import org.example.backend.entity.PracticeSetQuestion;
@@ -125,30 +129,10 @@ public class OpenAIAnswerExplainService {
         );
 
         try {
-            Map<String, Object> requestBody = Map.of(
-                    "model", isBlank(model) ? "gpt-4o-mini" : model.trim(),
-                    "messages", List.of(
-                            Map.of(
-                                    "role", "system",
-                                    "content", "Bạn là gia sư luyện thi TOEIC chuyên nghiệp. Giải thích chính xác, ngắn gọn bằng tiếng Việt."
-                            ),
-                            Map.of("role", "user", "content", prompt)
-                    )
+            String aiResponse = requestChatCompletion(
+                    "Bạn là gia sư luyện thi TOEIC chuyên nghiệp. Giải thích chính xác, ngắn gọn bằng tiếng Việt.",
+                    prompt
             );
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(apiKey.trim());
-
-            String endpoint = isBlank(baseUrl) ? "https://api.openai.com/v1/chat/completions" : baseUrl.trim();
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
-            ResponseEntity<String> response = restTemplate.exchange(endpoint, HttpMethod.POST, request, String.class);
-
-            String aiResponse = parseResponse(response.getBody());
-            if (isBlank(aiResponse)) {
-                throw new AppException(ErrorCode.AI_API_NO_RESPONSE);
-            }
-
             String extractedTips = extractTips(aiResponse);
 
             AiQuestionExplanation record = new AiQuestionExplanation();
@@ -168,6 +152,160 @@ public class OpenAIAnswerExplainService {
             return result;
         } catch (AppException e) {
             throw e;
+        } catch (Exception e) {
+            logger.error("OpenAI API error: {}", e.getMessage(), e);
+            throw new AppException(ErrorCode.AI_API_ERROR);
+        }
+    }
+
+    public AIExplainResponse generateDraftExplanation(DraftQuestionExplainRequest request) {
+        if (request == null || isBlank(request.getQuestionText())) {
+            throw new AppException(ErrorCode.INVALID_QUESTION_DATA);
+        }
+
+        String correctLabel = isBlank(request.getCorrectLabel())
+                ? "A"
+                : request.getCorrectLabel().trim().toUpperCase(Locale.ROOT);
+        List<String> allOptions = List.of(
+                "A: " + safeOption(request.getOptionA()),
+                "B: " + safeOption(request.getOptionB()),
+                "C: " + safeOption(request.getOptionC()),
+                "D: " + safeOption(request.getOptionD())
+        );
+        String correctOptionText = switch (correctLabel) {
+            case "B" -> safeOption(request.getOptionB());
+            case "C" -> safeOption(request.getOptionC());
+            case "D" -> safeOption(request.getOptionD());
+            default -> safeOption(request.getOptionA());
+        };
+        String correctAnswer = correctLabel + ": " + correctOptionText;
+
+        if (isBlank(apiKey)) {
+            String fallbackExplanation = String.format(
+                    "Đáp án đúng là %s (%s). Hãy đối chiếu ngữ cảnh câu hỏi%s để loại trừ các phương án gây nhiễu.\nMẹo làm bài: Xác định từ loại/thì hoặc từ khóa chính xung quanh chỗ trống trước khi chọn đáp án.",
+                    correctLabel,
+                    correctOptionText,
+                    request.getPartNo() != null ? " (Part " + request.getPartNo() + ")" : ""
+            );
+            AIExplainResponse fallback = new AIExplainResponse();
+            fallback.setCorrectAnswer(correctAnswer);
+            fallback.setUserAnswer(correctLabel);
+            fallback.setExplanation(fallbackExplanation);
+            fallback.setTips(extractTips(fallbackExplanation));
+            return fallback;
+        }
+
+        String prompt = buildPrompt(
+                request.getQuestionText().trim(),
+                request.getPassageText(),
+                request.getTranscript(),
+                allOptions,
+                correctAnswer,
+                null,
+                request.getExplanation(),
+                "EXPLAIN"
+        );
+        String aiResponse = requestChatCompletion(
+                "Bạn là gia sư luyện thi TOEIC chuyên nghiệp. Giải thích chính xác, ngắn gọn bằng tiếng Việt.",
+                prompt
+        );
+        AIExplainResponse result = new AIExplainResponse();
+        result.setCorrectAnswer(correctAnswer);
+        result.setUserAnswer(correctLabel);
+        result.setExplanation(aiResponse);
+        result.setTips(extractTips(aiResponse));
+        return result;
+    }
+
+    public int batchFillMissingExplanations(List<CreateQuestionRequest> requests) {
+        if (requests == null || requests.isEmpty() || isBlank(apiKey)) {
+            return 0;
+        }
+        List<Integer> missingIndices = new java.util.ArrayList<>();
+        for (int i = 0; i < requests.size(); i++) {
+            if (isBlank(requests.get(i).getExplanation())) {
+                missingIndices.add(i);
+            }
+        }
+        if (missingIndices.isEmpty()) {
+            return 0;
+        }
+
+        int enriched = 0;
+        int chunkSize = 10;
+        for (int start = 0; start < missingIndices.size(); start += chunkSize) {
+            List<Integer> chunk = missingIndices.subList(start, Math.min(start + chunkSize, missingIndices.size()));
+            try {
+                List<Map<String, Object>> payload = new java.util.ArrayList<>();
+                for (int idx : chunk) {
+                    CreateQuestionRequest q = requests.get(idx);
+                    String correct = q.getOptions() == null ? "A" : q.getOptions().stream()
+                            .filter(o -> Boolean.TRUE.equals(o.getCorrect()))
+                            .map(CreateQuestionOptionRequest::getOptionLabel)
+                            .findFirst()
+                            .orElse("A");
+                    List<String> opts = q.getOptions() == null ? List.of() : q.getOptions().stream()
+                            .map(o -> o.getOptionLabel() + ": " + o.getOptionText())
+                            .toList();
+                    payload.add(Map.of(
+                            "index", idx,
+                            "partNo", q.getPartNo() != null ? q.getPartNo() : 5,
+                            "questionText", q.getQuestionText(),
+                            "options", opts,
+                            "correctLabel", correct
+                    ));
+                }
+
+                String aiRaw = requestChatCompletion(
+                        "You are a TOEIC tutor. Return ONLY strict JSON: {\"items\":[{\"index\":0,\"explanation\":\"concise Vietnamese explanation + tip (2-4 lines)\"}]}",
+                        "Generate concise Vietnamese explanations for these TOEIC questions: "
+                                + objectMapper.writeValueAsString(payload)
+                );
+                String cleanedJson = aiRaw.replaceAll("(?s)^```json\\s*|\\s*```$", "").trim();
+                JsonNode root = objectMapper.readTree(cleanedJson);
+                JsonNode items = root.path("items");
+                if (items.isArray()) {
+                    for (JsonNode node : items) {
+                        int idx = node.path("index").asInt(-1);
+                        String exp = node.path("explanation").asText("").trim();
+                        if (idx >= 0 && idx < requests.size() && !exp.isEmpty()) {
+                            requests.get(idx).setExplanation(exp);
+                            enriched++;
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                logger.debug("Batch question explanation skipped chunk: {}", ex.getMessage());
+            }
+        }
+        return enriched;
+    }
+
+    private String requestChatCompletion(String systemPrompt, String userPrompt) {
+        try {
+            Map<String, Object> requestBody = Map.of(
+                    "model", isBlank(model) ? "gpt-4o-mini" : model.trim(),
+                    "messages", List.of(
+                            Map.of("role", "system", "content", systemPrompt),
+                            Map.of("role", "user", "content", userPrompt)
+                    )
+            );
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(apiKey.trim());
+
+            String endpoint = isBlank(baseUrl) ? "https://api.openai.com/v1/chat/completions" : baseUrl.trim();
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
+            ResponseEntity<String> response = restTemplate.exchange(endpoint, HttpMethod.POST, request, String.class);
+
+            String aiResponse = parseResponse(response.getBody());
+            if (isBlank(aiResponse)) {
+                throw new AppException(ErrorCode.AI_API_NO_RESPONSE);
+            }
+            return aiResponse;
+        } catch (AppException e) {
+            throw e;
         } catch (HttpStatusCodeException e) {
             logger.error("OpenAI API HTTP {}: {}", e.getStatusCode().value(), e.getResponseBodyAsString());
             throw new AppException(ErrorCode.AI_API_ERROR);
@@ -175,6 +313,10 @@ public class OpenAIAnswerExplainService {
             logger.error("OpenAI API error: {}", e.getMessage(), e);
             throw new AppException(ErrorCode.AI_API_ERROR);
         }
+    }
+
+    private String safeOption(String raw) {
+        return isBlank(raw) ? "-" : raw.trim();
     }
 
     @SuppressWarnings("unchecked")
