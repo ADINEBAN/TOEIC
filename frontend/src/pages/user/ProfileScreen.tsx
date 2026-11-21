@@ -65,7 +65,7 @@ export default function ProfileScreen() {
     setAccentId,
     setPrismaticGlow,
   } = useAppTheme();
-  const { gridItemWidth, height, rf, isNarrow, screenPadding } = useResponsiveLayout();
+  const { height, rf, isNarrow, screenPadding } = useResponsiveLayout();
   const {
     engine: voiceEngine,
     voiceRegion,
@@ -101,6 +101,9 @@ export default function ProfileScreen() {
   const [insights, setInsights] = useState<ProfileInsightsData | null>(null);
   const [showStreakModal, setShowStreakModal] = useState(false);
   const [showLevelModal, setShowLevelModal] = useState(false);
+  const [showAllAchievementsModal, setShowAllAchievementsModal] = useState(false);
+  const [achFilter, setAchFilter] = useState<"ALL" | "UNLOCKED" | "IN_PROGRESS">("ALL");
+  const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
   const [checkingInStreak, setCheckingInStreak] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -338,7 +341,30 @@ export default function ProfileScreen() {
     }
   };
 
-  const presetTileW = gridItemWidth(2, 8, true);
+  const featuredAchievements = useMemo(() => {
+    const items = insights?.achievements ?? [];
+    return [...items]
+      .sort((a, b) => {
+        if (a.unlocked !== b.unlocked) return a.unlocked ? -1 : 1;
+        const ratioA = a.currentProgress / Math.max(1, a.targetProgress);
+        const ratioB = b.currentProgress / Math.max(1, b.targetProgress);
+        return ratioB - ratioA;
+      })
+      .slice(0, 3);
+  }, [insights?.achievements]);
+
+  const filteredAchievements = useMemo(() => {
+    const items = insights?.achievements ?? [];
+    if (achFilter === "UNLOCKED") return items.filter((a) => a.unlocked);
+    if (achFilter === "IN_PROGRESS") return items.filter((a) => !a.unlocked);
+    return items;
+  }, [achFilter, insights?.achievements]);
+
+  const activeAccentLabel = useMemo(
+    () => ACCENT_SWATCHES.find((swatch) => swatch.id === accentId)?.label ?? "Mặc định",
+    [accentId],
+  );
+
   const shortLevel = useMemo(() => {
     if (currentLevel === "ADVANCED") return "ADV";
     if (currentLevel === "INTERMEDIATE") return "INT";
@@ -535,36 +561,92 @@ export default function ProfileScreen() {
           </SurfaceCard>
 
           <SectionTitle
+            actionLabel={`Xem tất cả (${insights.achievements.length})`}
+            onActionPress={() => setShowAllAchievementsModal(true)}
             title={`Thành tựu đạt được (${insights.stats.totalAchievementsUnlocked}/${insights.achievements.length})`}
           />
           <SurfaceCard style={styles.achContainerCard}>
-            <View style={styles.achGridCol}>
-              {insights.achievements.map((a) => (
-                <View key={a.code} style={[styles.achRowCard, !a.unlocked ? styles.achRowLocked : null]}>
-                  <View
-                    style={[
-                      styles.achBadgeIcon,
-                      { backgroundColor: a.unlocked ? a.accentColor : colors.surfaceMuted },
-                    ]}
-                  >
-                    <Ionicons
-                      color={a.unlocked ? "#FFFFFF" : colors.textMuted}
-                      name={(a.iconName as keyof typeof Ionicons.glyphMap) || "trophy"}
-                      size={18}
-                    />
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text numberOfLines={1} style={styles.achTitleText}>{a.title}</Text>
-                    <Text numberOfLines={2} style={styles.achDescText}>{a.description}</Text>
-                  </View>
-                  <View style={styles.achRightTag}>
-                    <Text style={[styles.achRewardTxt, a.unlocked ? { color: "#10B981" } : null]}>
-                      {a.unlocked ? `✓ +${a.rewardDiamonds}💎` : `${a.currentProgress}/${a.targetProgress}`}
-                    </Text>
-                  </View>
-                </View>
-              ))}
+            <View style={styles.achSummaryRow}>
+              <Text style={styles.achSummaryText}>
+                Đã mở khóa {insights.stats.totalAchievementsUnlocked}/{insights.achievements.length} huy hiệu
+              </Text>
+              <Text style={[styles.achSummaryPct, { color: colors.primary }]}>
+                {Math.round(
+                  (insights.stats.totalAchievementsUnlocked / Math.max(1, insights.achievements.length)) * 100,
+                )}
+                %
+              </Text>
             </View>
+            <View style={styles.achMiniTrack}>
+              <View
+                style={[
+                  styles.achMiniFill,
+                  {
+                    backgroundColor: colors.primary,
+                    width: `${Math.min(
+                      100,
+                      Math.round(
+                        (insights.stats.totalAchievementsUnlocked / Math.max(1, insights.achievements.length)) *
+                          100,
+                      ),
+                    )}%`,
+                  },
+                ]}
+              />
+            </View>
+
+            <View style={styles.achGridCol}>
+              {featuredAchievements.map((a) => {
+                const ratio = Math.min(100, Math.round((a.currentProgress / Math.max(1, a.targetProgress)) * 100));
+                return (
+                  <View key={a.code} style={[styles.achRowCard, !a.unlocked ? styles.achRowLocked : null]}>
+                    <View
+                      style={[
+                        styles.achBadgeIcon,
+                        { backgroundColor: a.unlocked ? a.accentColor : colors.surfaceMuted },
+                      ]}
+                    >
+                      <Ionicons
+                        color={a.unlocked ? "#FFFFFF" : colors.textMuted}
+                        name={(a.iconName as keyof typeof Ionicons.glyphMap) || "trophy"}
+                        size={17}
+                      />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text numberOfLines={1} style={styles.achTitleText}>{a.title}</Text>
+                      <Text numberOfLines={1} style={styles.achDescText}>{a.description}</Text>
+                      {!a.unlocked ? (
+                        <View style={styles.achItemTrack}>
+                          <View
+                            style={[
+                              styles.achItemFill,
+                              { backgroundColor: colors.primary, width: `${ratio}%` },
+                            ]}
+                          />
+                        </View>
+                      ) : null}
+                    </View>
+                    <View style={styles.achRightTag}>
+                      <Text style={[styles.achRewardTxt, a.unlocked ? { color: "#10B981" } : null]}>
+                        {a.unlocked ? `✓ +${a.rewardDiamonds}💎` : `${a.currentProgress}/${a.targetProgress}`}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
+            {insights.achievements.length > 3 ? (
+              <Pressable
+                onPress={() => setShowAllAchievementsModal(true)}
+                style={styles.achViewAllBtn}
+              >
+                <Text style={[styles.achViewAllText, { color: colors.primary }]}>
+                  Xem toàn bộ {insights.achievements.length} thành tựu
+                </Text>
+                <Ionicons color={colors.primary} name="chevron-forward" size={15} />
+              </Pressable>
+            ) : null}
           </SurfaceCard>
         </>
       ) : null}
@@ -606,87 +688,114 @@ export default function ProfileScreen() {
 
       <SectionTitle title="Giao diện & Màu sắc" />
       <SurfaceCard style={styles.themeCard}>
-        <View style={styles.themeTopHeader}>
-          <Text style={styles.themeSubHeading}>1. Chủ đề Pastel 3D</Text>
-          <View style={[styles.currentThemeBadge, { backgroundColor: colors.primarySoft }]}>
-            <Text style={[styles.currentThemeText, { color: colors.primary }]}>{theme.name}</Text>
-          </View>
-        </View>
-
-        <View style={styles.presetGrid}>
-          {LIQUID_THEME_PRESETS.map((preset) => {
-            const active = preset.id === presetId;
-            return (
-              <Pressable
-                key={preset.id}
-                onPress={() => setPresetId(preset.id)}
-                style={[
-                  styles.presetCard,
-                  { width: presetTileW },
-                  active ? styles.presetCardActive : null,
-                ]}
-              >
-                <LinearGradient
-                  colors={preset.previewStops}
-                  end={{ x: 1, y: 1 }}
-                  start={{ x: 0, y: 0 }}
-                  style={styles.presetOrb}
-                >
-                  {active ? <Ionicons color="#FFFFFF" name="checkmark" size={12} /> : null}
-                </LinearGradient>
-                <Text numberOfLines={1} style={[styles.presetLabel, { fontSize: rf(isNarrow ? 12 : 13) }]}>
-                  {preset.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <Text style={[styles.themeSubHeading, { marginTop: 12 }]}>2. Màu điểm nhấn nút 3D</Text>
-        <ScrollView
-          contentContainerStyle={styles.accentRow}
-          horizontal
-          showsHorizontalScrollIndicator={false}
+        <Pressable
+          onPress={() => setShowThemeCustomizer((prev) => !prev)}
+          style={styles.themeCollapseHeader}
         >
-          {ACCENT_SWATCHES.map((swatch) => {
-            const selected = swatch.id === accentId;
-            return (
-              <Pressable
-                key={swatch.id}
-                onPress={() => setAccentId(swatch.id)}
-                style={[
-                  styles.accentPill,
-                  selected ? { backgroundColor: colors.primarySoft, borderColor: colors.primary } : null,
-                ]}
-              >
-                {swatch.id === "preset" ? (
-                  <View style={[styles.accentDot, { backgroundColor: colors.text }]}>
-                    <Ionicons color={colors.surface} name="sparkles" size={10} />
-                  </View>
-                ) : (
-                  <LinearGradient
-                    colors={[swatch.gradient[0], swatch.gradient[1]]}
-                    end={{ x: 1, y: 1 }}
-                    start={{ x: 0, y: 0 }}
-                    style={styles.accentDot}
-                  />
-                )}
-                <Text style={styles.accentLabel}>{swatch.label}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        <View style={styles.prismRow}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.prismTitle}>Hiệu ứng chiều sâu 3D</Text>
-          </View>
-          <LiquidSwitch
-            accessibilityLabel="Bật tắt hiệu ứng pastel"
-            onValueChange={setPrismaticGlow}
-            value={prismaticGlow}
+          <LinearGradient
+            colors={theme.previewStops}
+            end={{ x: 1, y: 1 }}
+            start={{ x: 0, y: 0 }}
+            style={styles.themePreviewOrb}
           />
-        </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text numberOfLines={1} style={styles.themeCollapseTitle}>
+              {theme.name}
+            </Text>
+            <Text numberOfLines={1} style={styles.themeCollapseSub}>
+              Điểm nhấn: {activeAccentLabel} · 3D: {prismaticGlow ? "Bật" : "Tắt"}
+            </Text>
+          </View>
+          <View style={[styles.currentThemeBadge, styles.themeTogglePill, { backgroundColor: colors.primarySoft }]}>
+            <Text style={[styles.currentThemeText, { color: colors.primary }]}>
+              {showThemeCustomizer ? "Thu gọn" : "Tùy chỉnh"}
+            </Text>
+            <Ionicons
+              color={colors.primary}
+              name={showThemeCustomizer ? "chevron-up" : "chevron-down"}
+              size={14}
+            />
+          </View>
+        </Pressable>
+
+        {showThemeCustomizer ? (
+          <View style={styles.themeExpandedBody}>
+            <View style={styles.themeTopHeader}>
+              <Text style={styles.themeSubHeading}>1. Chủ đề Pastel 3D</Text>
+              <Text style={styles.themeHintCount}>{LIQUID_THEME_PRESETS.length} giao diện</Text>
+            </View>
+
+            <View style={styles.presetGrid}>
+              {LIQUID_THEME_PRESETS.map((preset) => {
+                const active = preset.id === presetId;
+                return (
+                  <Pressable
+                    key={preset.id}
+                    onPress={() => setPresetId(preset.id)}
+                    style={[
+                      styles.presetCard,
+                      active ? styles.presetCardActive : null,
+                    ]}
+                  >
+                    <LinearGradient
+                      colors={preset.previewStops}
+                      end={{ x: 1, y: 1 }}
+                      start={{ x: 0, y: 0 }}
+                      style={styles.presetOrb}
+                    >
+                      {active ? <Ionicons color="#FFFFFF" name="checkmark" size={12} /> : null}
+                    </LinearGradient>
+                    <Text numberOfLines={1} style={[styles.presetLabel, { fontSize: rf(isNarrow ? 12 : 12.5) }]}>
+                      {preset.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={[styles.themeSubHeading, { marginTop: 10 }]}>2. Màu điểm nhấn nút 3D</Text>
+            <View style={styles.accentRow}>
+              {ACCENT_SWATCHES.map((swatch) => {
+                const selected = swatch.id === accentId;
+                return (
+                  <Pressable
+                    key={swatch.id}
+                    onPress={() => setAccentId(swatch.id)}
+                    style={[
+                      styles.accentPill,
+                      selected ? { backgroundColor: colors.primarySoft, borderColor: colors.primary } : null,
+                    ]}
+                  >
+                    {swatch.id === "preset" ? (
+                      <View style={[styles.accentDot, { backgroundColor: colors.text }]}>
+                        <Ionicons color={colors.surface} name="sparkles" size={10} />
+                      </View>
+                    ) : (
+                      <LinearGradient
+                        colors={[swatch.gradient[0], swatch.gradient[1]]}
+                        end={{ x: 1, y: 1 }}
+                        start={{ x: 0, y: 0 }}
+                        style={styles.accentDot}
+                      />
+                    )}
+                    <Text style={styles.accentLabel}>{swatch.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={styles.prismRow}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.prismTitle}>Hiệu ứng chiều sâu 3D</Text>
+              </View>
+              <LiquidSwitch
+                accessibilityLabel="Bật tắt hiệu ứng pastel"
+                onValueChange={setPrismaticGlow}
+                value={prismaticGlow}
+              />
+            </View>
+          </View>
+        ) : null}
       </SurfaceCard>
 
       <SectionTitle title="Giọng đọc Speechify AI" />
@@ -1267,6 +1376,85 @@ export default function ProfileScreen() {
           </LiquidCard>
         </View>
       </Modal>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setShowAllAchievementsModal(false)}
+        transparent
+        visible={showAllAchievementsModal}
+      >
+        <View style={[styles.modalBackdrop, { padding: screenPadding }]}>
+          <LiquidCard style={[styles.modalCard, { maxHeight: Math.round(height * 0.85) }]}>
+            <View style={styles.levelModalHeader}>
+              <Text style={styles.modalTitle}>
+                Thành tựu ({insights?.stats.totalAchievementsUnlocked ?? 0}/{insights?.achievements.length ?? 0})
+              </Text>
+              <Pressable hitSlop={8} onPress={() => setShowAllAchievementsModal(false)}>
+                <Ionicons color={colors.text} name="close" size={20} />
+              </Pressable>
+            </View>
+
+            <View style={styles.achFilterRow}>
+              {(
+                [
+                  { id: "ALL", label: "Tất cả" },
+                  { id: "UNLOCKED", label: "Đã đạt" },
+                  { id: "IN_PROGRESS", label: "Đang cày" },
+                ] as const
+              ).map((tab) => {
+                const active = achFilter === tab.id;
+                return (
+                  <Pressable
+                    key={tab.id}
+                    onPress={() => setAchFilter(tab.id)}
+                    style={[
+                      styles.achFilterChip,
+                      active ? { backgroundColor: colors.primary, borderColor: colors.primary } : null,
+                    ]}
+                  >
+                    <Text style={[styles.achFilterText, active ? { color: "#FFFFFF" } : null]}>
+                      {tab.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+              <View style={styles.achGridCol}>
+                {filteredAchievements.length === 0 ? (
+                  <Text style={styles.achEmptyText}>Chưa có thành tựu nào ở mục này.</Text>
+                ) : (
+                  filteredAchievements.map((a) => (
+                    <View key={a.code} style={[styles.achRowCard, !a.unlocked ? styles.achRowLocked : null]}>
+                      <View
+                        style={[
+                          styles.achBadgeIcon,
+                          { backgroundColor: a.unlocked ? a.accentColor : colors.surfaceMuted },
+                        ]}
+                      >
+                        <Ionicons
+                          color={a.unlocked ? "#FFFFFF" : colors.textMuted}
+                          name={(a.iconName as keyof typeof Ionicons.glyphMap) || "trophy"}
+                          size={18}
+                        />
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text numberOfLines={1} style={styles.achTitleText}>{a.title}</Text>
+                        <Text numberOfLines={2} style={styles.achDescText}>{a.description}</Text>
+                      </View>
+                      <View style={styles.achRightTag}>
+                        <Text style={[styles.achRewardTxt, a.unlocked ? { color: "#10B981" } : null]}>
+                          {a.unlocked ? `✓ +${a.rewardDiamonds}💎` : `${a.currentProgress}/${a.targetProgress}`}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            </ScrollView>
+          </LiquidCard>
+        </View>
+      </Modal>
     </UserScreen>
   );
 }
@@ -1381,6 +1569,38 @@ const createStyles = (colors: LiquidThemeColors) =>
     themeCard: {
       marginBottom: 18,
     },
+    themeCollapseHeader: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 10,
+    },
+    themePreviewOrb: {
+      borderRadius: 99,
+      height: 30,
+      width: 30,
+    },
+    themeCollapseTitle: {
+      color: colors.text,
+      fontSize: 13.5,
+      fontWeight: "900",
+    },
+    themeCollapseSub: {
+      color: colors.textMuted,
+      fontSize: 11.5,
+      fontWeight: "600",
+      marginTop: 1,
+    },
+    themeTogglePill: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 4,
+    },
+    themeExpandedBody: {
+      borderTopColor: colors.border,
+      borderTopWidth: 1,
+      marginTop: 12,
+      paddingTop: 12,
+    },
     themeTopHeader: {
       alignItems: "center",
       flexDirection: "row",
@@ -1392,10 +1612,15 @@ const createStyles = (colors: LiquidThemeColors) =>
       fontSize: 12,
       fontWeight: "800",
     },
+    themeHintCount: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontWeight: "700",
+    },
     currentThemeBadge: {
       borderRadius: radius.pill,
       paddingHorizontal: 10,
-      paddingVertical: 4,
+      paddingVertical: 5,
     },
     currentThemeText: {
       fontSize: 11.5,
@@ -1410,12 +1635,14 @@ const createStyles = (colors: LiquidThemeColors) =>
       alignItems: "center",
       backgroundColor: colors.glassFillStrong,
       borderColor: colors.glassBorder,
-      borderRadius: 16,
+      borderRadius: 14,
       borderWidth: 1,
+      flexBasis: "47%",
       flexDirection: "row",
+      flexGrow: 1,
       gap: 8,
       paddingHorizontal: 10,
-      paddingVertical: 10,
+      paddingVertical: 9,
     },
     presetCardActive: {
       backgroundColor: colors.primarySoft,
@@ -1425,9 +1652,9 @@ const createStyles = (colors: LiquidThemeColors) =>
     presetOrb: {
       alignItems: "center",
       borderRadius: 99,
-      height: 22,
+      height: 20,
       justifyContent: "center",
-      width: 22,
+      width: 20,
     },
     presetLabel: {
       color: colors.text,
@@ -1436,7 +1663,8 @@ const createStyles = (colors: LiquidThemeColors) =>
     },
     accentRow: {
       flexDirection: "row",
-      gap: 8,
+      flexWrap: "wrap",
+      gap: 6,
       paddingVertical: 8,
     },
     accentPill: {
@@ -1447,8 +1675,8 @@ const createStyles = (colors: LiquidThemeColors) =>
       borderWidth: 1,
       flexDirection: "row",
       gap: 6,
-      paddingHorizontal: 11,
-      paddingVertical: 7,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
     },
     accentDot: {
       alignItems: "center",
@@ -1765,7 +1993,22 @@ const createStyles = (colors: LiquidThemeColors) =>
     },
     statsMiniNum: { color: colors.text, fontSize: 14, fontWeight: "900" },
     statsMiniLbl: { color: colors.textMuted, fontSize: 11, fontWeight: "700", marginTop: 2 },
-    achContainerCard: { marginBottom: 16 },
+    achContainerCard: { gap: 8, marginBottom: 16 },
+    achSummaryRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      justifyContent: "space-between",
+    },
+    achSummaryText: { color: colors.textMuted, fontSize: 12, fontWeight: "700" },
+    achSummaryPct: { fontSize: 12, fontWeight: "900" },
+    achMiniTrack: {
+      backgroundColor: colors.glassFill,
+      borderRadius: 99,
+      height: 6,
+      overflow: "hidden",
+      width: "100%",
+    },
+    achMiniFill: { borderRadius: 99, height: "100%" },
     achGridCol: { gap: 8 },
     achRowCard: {
       alignItems: "center",
@@ -1775,14 +2018,46 @@ const createStyles = (colors: LiquidThemeColors) =>
       borderWidth: 1,
       flexDirection: "row",
       gap: 10,
-      padding: 10,
+      padding: 9,
     },
-    achRowLocked: { opacity: 0.56 },
-    achBadgeIcon: { alignItems: "center", borderRadius: 12, height: 36, justifyContent: "center", width: 36 },
+    achRowLocked: { opacity: 0.72 },
+    achBadgeIcon: { alignItems: "center", borderRadius: 11, height: 34, justifyContent: "center", width: 34 },
     achTitleText: { color: colors.text, fontSize: 13, fontWeight: "800" },
     achDescText: { color: colors.textMuted, fontSize: 11, marginTop: 1 },
+    achItemTrack: {
+      backgroundColor: colors.glassBorder,
+      borderRadius: 99,
+      height: 4,
+      marginTop: 5,
+      overflow: "hidden",
+      width: "100%",
+    },
+    achItemFill: { borderRadius: 99, height: "100%" },
     achRightTag: { alignItems: "flex-end" },
     achRewardTxt: { color: colors.textMuted, fontSize: 11.5, fontWeight: "900" },
+    achViewAllBtn: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 4,
+      justifyContent: "center",
+      paddingTop: 4,
+    },
+    achViewAllText: { fontSize: 12.5, fontWeight: "900" },
+    achFilterRow: {
+      flexDirection: "row",
+      gap: 8,
+      marginBottom: 10,
+    },
+    achFilterChip: {
+      backgroundColor: colors.glassFill,
+      borderColor: colors.glassBorder,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+    },
+    achFilterText: { color: colors.text, fontSize: 12, fontWeight: "800" },
+    achEmptyText: { color: colors.textMuted, fontSize: 13, paddingVertical: 18, textAlign: "center" },
     editAvatarPreviewRow: { alignItems: "center", flexDirection: "row", gap: 12, marginVertical: 10 },
     uploadAvatarBtn: {
       alignItems: "center",
