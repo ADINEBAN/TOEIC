@@ -61,6 +61,7 @@ public class ArenaRoomResponse {
         private String username;
         private String avatarUrl;
         private String equippedFrameId;
+        private boolean verified;
         private int level;
         private int score;
         private int roundWins;

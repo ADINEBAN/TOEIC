@@ -22,6 +22,7 @@ import AdminShell from "@/src/components/admin/AdminShell";
 import AdminSidebar from "@/src/components/admin/AdminSidebar";
 import AdminTopBar from "@/src/components/admin/AdminTopBar";
 import AdminVideoLibraryPanel from "@/src/components/admin/AdminVideoLibraryPanel";
+import VerifiedBadge from "@/src/components/common/VerifiedBadge";
 import { useAuth } from "@/src/hooks/use-auth";
 import { adminSidebarItems } from "@/src/pages/admin/dashboard/mock-data";
 import { hasAdminConsoleAccess } from "@/src/services/admin-auth.service";
@@ -1766,6 +1767,7 @@ export default function AdminDashboardScreen() {
                       <Text style={styles.userNameText}>
                         #{user.id} {user.fullName || user.email}
                       </Text>
+                      <VerifiedBadge size={16} verified={user.verified} />
                       <View
                         style={[
                           styles.statusPill,
@@ -1824,6 +1826,27 @@ export default function AdminDashboardScreen() {
                     >
                       <Text style={styles.userActionBtnText}>
                         {user.premium ? "Hủy Premium" : "Cấp Premium"}
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      disabled={working}
+                      onPress={() =>
+                        void runAction(
+                          () =>
+                            services!.analytics
+                              .updateUserVerified(user.id, !user.verified)
+                              .then(() => undefined),
+                          loadUsersAndAnalytics,
+                        )
+                      }
+                      style={[
+                        styles.userActionBtn,
+                        user.verified ? styles.userVerifiedRevokeBtn : styles.userVerifiedBtn,
+                      ]}
+                    >
+                      <Text style={styles.userActionBtnText}>
+                        {user.verified ? "Gỡ tích xanh" : "Cấp tích xanh"}
                       </Text>
                     </Pressable>
                   </View>
@@ -2998,6 +3021,12 @@ const styles = StyleSheet.create({
   },
   userPremiumBtn: {
     backgroundColor: colors.primary,
+  },
+  userVerifiedBtn: {
+    backgroundColor: "#1D9BF0",
+  },
+  userVerifiedRevokeBtn: {
+    backgroundColor: "#64748B",
   },
   userActionBtnText: {
     color: colors.onPrimary,

@@ -88,4 +88,15 @@ public class AdminAnalyticsService {
         user.setPremium(premium);
         return userMapper.toResponse(userRepository.save(user));
     }
+
+    @Transactional
+    public UserResponse updateUserVerified(Long userId, Boolean verified) {
+        if (userId == null || verified == null) {
+            throw new AppException(ErrorCode.INVALID_ACCOUNT_DATA);
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        user.setVerified(verified);
+        return userMapper.toResponse(userRepository.save(user));
+    }
 }

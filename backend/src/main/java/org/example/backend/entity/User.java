@@ -76,6 +76,9 @@ public class User extends BaseEntity {
     @Column(name = "is_premium", nullable = false)
     private Boolean premium = false;
 
+    @Column(name = "is_verified", nullable = false)
+    private Boolean verified = false;
+
     @Column(name = "diamonds", nullable = false)
     private Integer diamonds = 50;
 

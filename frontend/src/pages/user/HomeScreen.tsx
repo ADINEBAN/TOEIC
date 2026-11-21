@@ -15,6 +15,7 @@ import {
 } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
+import VerifiedBadge from "@/src/components/common/VerifiedBadge";
 import { LiquidCard } from "@/src/components/ui/LiquidGlass";
 import AppHeader from "@/src/components/user/AppHeader";
 import ClayIcon3D from "@/src/components/user/ClayIcon3D";
@@ -308,9 +309,13 @@ export default function HomeScreen() {
 
       <View style={styles.welcomeRow}>
         <View style={styles.welcomeTextCol}>
-          <Text style={[styles.welcomeHello, { fontSize: rf(14) }]}>
-            Chào, {greetingName}! 👋
-          </Text>
+          <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 5 }}>
+            <Text style={[styles.welcomeHello, { fontSize: rf(14) }]}>
+              Chào, {greetingName}!
+            </Text>
+            <VerifiedBadge size={15} verified={auth.user?.verified} />
+            <Text style={[styles.welcomeHello, { fontSize: rf(14) }]}>👋</Text>
+          </View>
           <Text style={[styles.welcomeHeadline, { fontSize: rf(isNarrow ? 19 : 21) }]}>
             Sẵn sàng chinh phục TOEIC hôm nay!
           </Text>
@@ -593,9 +598,12 @@ export default function HomeScreen() {
                 size={36}
               />
               <View style={styles.rankInfo}>
-                <Text numberOfLines={1} style={[styles.rankName, { fontSize: rf(13.5) }]}>
-                  {entry.fullName} <Text style={styles.rankHandle}>@{entry.username}</Text>
-                </Text>
+                <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                  <Text numberOfLines={1} style={[styles.rankName, { flexShrink: 1, fontSize: rf(13.5) }]}>
+                    {entry.fullName} <Text style={styles.rankHandle}>@{entry.username}</Text>
+                  </Text>
+                  <VerifiedBadge size={14} verified={entry.verified} />
+                </View>
                 <Text numberOfLines={1} style={styles.rankMeta}>
                   {entry.activitiesCount} bài học • 🔥 {entry.currentStreak} ngày
                 </Text>

@@ -413,6 +413,7 @@ export type AdminUserApiItem = {
   currentLevel: string | null;
   targetScore: number | null;
   premium: boolean;
+  verified?: boolean;
   role: string;
   status: 'ACTIVE' | 'BLOCKED' | 'DELETED' | string;
   createdAt: string;

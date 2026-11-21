@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import AppHeader from "@/src/components/user/AppHeader";
+import VerifiedBadge from "@/src/components/common/VerifiedBadge";
 import { useFloatingChat } from "@/src/components/user/FloatingChatOverlay";
 import PublicProfileModal from "@/src/components/user/PublicProfileModal";
 import SurfaceCard from "@/src/components/user/SurfaceCard";
@@ -194,10 +195,13 @@ export default function LeaderboardScreen() {
               size={44}
             />
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text numberOfLines={1} style={styles.rowName}>
-                {data.myEntry.fullName}{" "}
-                <Text style={styles.rowHandle}>@{data.myEntry.username}</Text>
-              </Text>
+              <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
+                <Text numberOfLines={1} style={[styles.rowName, { flexShrink: 1 }]}>
+                  {data.myEntry.fullName}{" "}
+                  <Text style={styles.rowHandle}>@{data.myEntry.username}</Text>
+                </Text>
+                <VerifiedBadge size={14} verified={data.myEntry.verified} />
+              </View>
               <Text style={styles.rowMeta}>
                 {data.myEntry.activitiesCount} hoạt động • 🔥 {data.myEntry.currentStreak} ngày
               </Text>
@@ -264,10 +268,13 @@ export default function LeaderboardScreen() {
                   />
 
                   <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text numberOfLines={1} style={styles.rowName}>
-                      {entry.fullName}{" "}
-                      <Text style={styles.rowHandle}>@{entry.username}</Text>
-                    </Text>
+                    <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
+                      <Text numberOfLines={1} style={[styles.rowName, { flexShrink: 1 }]}>
+                        {entry.fullName}{" "}
+                        <Text style={styles.rowHandle}>@{entry.username}</Text>
+                      </Text>
+                      <VerifiedBadge size={14} verified={entry.verified} />
+                    </View>
                     <View style={styles.subStatsRow}>
                       <Text style={styles.rowMeta}>{entry.activitiesCount} bài học</Text>
                       {entry.currentStreak > 0 ? (

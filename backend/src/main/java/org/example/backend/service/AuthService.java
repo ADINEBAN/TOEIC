@@ -61,6 +61,7 @@ public class AuthService {
         user.setAuthProvider(AuthProvider.EMAIL);
         user.setRole(UserRole.USER);
         user.setPremium(false);
+        user.setVerified(false);
         user.setStatus(UserStatus.ACTIVE);
 
         UserProfile profile = new UserProfile();
@@ -92,8 +93,7 @@ public class AuthService {
         }
         try {
             authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(email, request.getPassword())
-            );
+                    new UsernamePasswordAuthenticationToken(email, request.getPassword()));
         } catch (AuthenticationException ex) {
             throw new AppException(ErrorCode.LOGIN_FAIL);
         }
@@ -281,4 +281,3 @@ public class AuthService {
         return token;
     }
 }
-

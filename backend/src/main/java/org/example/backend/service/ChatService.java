@@ -379,6 +379,7 @@ public class ChatService {
         dto.setUsername(DiamondRewardService.resolveUsername(other));
         dto.setAvatarUrl(other.getAvatarUrl());
         dto.setEquippedFrameId(other.getEquippedFrameId());
+        dto.setVerified(Boolean.TRUE.equals(other.getVerified()));
         int xp = other.getLearningXp() != null ? other.getLearningXp() : 0;
         dto.setLevel(LevelCalculator.fromXp(xp).level());
         dto.setDiamonds(other.getDiamonds() != null ? other.getDiamonds() : 50);
@@ -415,6 +416,7 @@ public class ChatService {
             dto.setSenderUsername(DiamondRewardService.resolveUsername(sender));
             dto.setSenderAvatarUrl(sender.getAvatarUrl());
             dto.setSenderEquippedFrameId(sender.getEquippedFrameId());
+            dto.setSenderVerified(Boolean.TRUE.equals(sender.getVerified()));
             int xp = sender.getLearningXp() != null ? sender.getLearningXp() : 0;
             dto.setSenderLevel(LevelCalculator.fromXp(xp).level());
             dto.setMine(sender.getId().equals(viewerId));

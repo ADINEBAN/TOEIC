@@ -47,6 +47,7 @@ export type UserProfile = {
   currentLevel: string;
   targetScore: number;
   premium: boolean;
+  verified?: boolean;
   diamonds?: number;
   arenaWins?: number;
   arenaLosses?: number;
@@ -546,6 +547,7 @@ export type ArenaPlayerState = {
   username?: string | null;
   avatarUrl?: string | null;
   equippedFrameId?: string | null;
+  verified?: boolean;
   level?: number;
   score: number;
   roundWins: number;
@@ -633,6 +635,7 @@ export type ArenaLeaderboardEntry = {
   username?: string | null;
   avatarUrl?: string | null;
   equippedFrameId?: string | null;
+  verified?: boolean;
   level?: number;
   elo: number;
   wins: number;
@@ -1088,6 +1091,7 @@ export type WeeklyLeaderboardEntry = {
   username: string;
   avatarUrl?: string | null;
   equippedFrameId?: string | null;
+  verified?: boolean;
   level: number;
   weeklyStudyDiamonds: number;
   totalDiamonds: number;
@@ -1185,6 +1189,7 @@ export type ProfileInsightsData = {
   currentLevel?: string | null;
   targetScore?: number | null;
   premium?: boolean | null;
+  verified?: boolean;
   diamonds: number;
   weeklyStudyDiamonds: number;
   level: number;
@@ -1221,6 +1226,7 @@ export type ChatMessageItem = {
   senderUsername: string;
   senderAvatarUrl?: string | null;
   senderEquippedFrameId?: string | null;
+  senderVerified?: boolean;
   senderLevel: number;
   recipientId?: number | null;
   content: string;
@@ -1235,6 +1241,7 @@ export type FriendPerson = {
   username: string;
   avatarUrl?: string | null;
   equippedFrameId?: string | null;
+  verified?: boolean;
   level: number;
   diamonds: number;
   relationStatus: "ACCEPTED" | "PENDING_INCOMING" | "PENDING_OUTGOING" | "BLOCKED" | "NONE" | string;

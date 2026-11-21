@@ -26,7 +26,7 @@ public class JwtService {
     private static final String TYPE_CLAIM = "typ_kind";
     private static final String TYPE_ACCESS = "access";
     private static final String TYPE_REFRESH = "refresh";
-    private static final long REFRESH_EXPIRATION_SECONDS = 7L * 24L * 60L * 60L;
+    private static final long REFRESH_EXPIRATION_SECONDS = 90L * 24L * 60L * 60L;
     private static final String DEFAULT_ROLE = "ROLE_USER";
     private static final String HMAC_ALGORITHM = "HmacSHA256";
     private static final Base64.Encoder URL_ENCODER = Base64.getUrlEncoder().withoutPadding();

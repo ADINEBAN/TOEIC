@@ -606,6 +606,16 @@ class Sprint6CoreServicesTest {
             assertEquals(1, overview.getPremiumUsers());
             assertEquals(25, overview.getTotalQuestions());
             assertEquals(780, overview.getAverageToeicScore());
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(activeUser));
+            when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+            UserResponse mapped = new UserResponse();
+            mapped.setVerified(true);
+            when(userMapper.toResponse(any(User.class))).thenReturn(mapped);
+
+            UserResponse verifiedRes = adminAnalyticsService.updateUserVerified(1L, true);
+            assertTrue(Boolean.TRUE.equals(verifiedRes.getVerified()));
+            assertTrue(Boolean.TRUE.equals(activeUser.getVerified()));
         }
     }
 

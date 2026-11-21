@@ -16,6 +16,7 @@ import {
 } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
+import VerifiedBadge from "@/src/components/common/VerifiedBadge";
 import { LiquidButton, LiquidCard } from "@/src/components/ui/LiquidGlass";
 import AppHeader from "@/src/components/user/AppHeader";
 import { useFloatingChat } from "@/src/components/user/FloatingChatOverlay";
@@ -672,7 +673,10 @@ export default function ArenaScreen() {
                 <View style={styles.avatarCirclePrimary}>
                   <Text style={styles.avatarInitial}>{(player1?.fullName?.[0] || "B").toUpperCase()}</Text>
                 </View>
-                <Text numberOfLines={1} style={styles.slotName}>{player1?.fullName || "Bạn"}</Text>
+                <View style={{ alignItems: "center", flexDirection: "row", gap: 4, justifyContent: "center" }}>
+                  <Text numberOfLines={1} style={[styles.slotName, { flexShrink: 1 }]}>{player1?.fullName || "Bạn"}</Text>
+                  <VerifiedBadge size={14} verified={player1?.verified} />
+                </View>
                 <Text style={styles.slotSub}>💎 {player1?.diamonds ?? myDiamonds}</Text>
               </View>
 
@@ -751,7 +755,10 @@ export default function ArenaScreen() {
                       </Text>
                     </Animated.View>
                   ) : null}
-                  <Text numberOfLines={1} style={styles.finishPlayerName}>{p.fullName}</Text>
+                  <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                    <Text numberOfLines={1} style={[styles.finishPlayerName, { flexShrink: 1 }]}>{p.fullName}</Text>
+                    <VerifiedBadge size={14} verified={p.verified} />
+                  </View>
                   <Text style={styles.finishStatText}>Đúng: {p.correctCount}/{totalQ} câu</Text>
                   <Text style={styles.finishStatText}>Tốc độ: {formatReactionSeconds(p.totalResponseMs)}</Text>
                   <Text
@@ -874,9 +881,12 @@ export default function ArenaScreen() {
                 size={36}
               />
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text numberOfLines={1} style={styles.hudPlayerName}>
-                  {player1?.fullName || "Bạn"}
-                </Text>
+                <View style={{ alignItems: "center", flexDirection: "row", gap: 3 }}>
+                  <Text numberOfLines={1} style={[styles.hudPlayerName, { flexShrink: 1 }]}>
+                    {player1?.fullName || "Bạn"}
+                  </Text>
+                  <VerifiedBadge size={13} verified={player1?.verified} />
+                </View>
                 <View style={styles.hudDiamondRow}>
                   <Ionicons color="#0EA5E9" name="diamond" size={12} />
                   <Text style={styles.hudDiamondNum}>{player1?.diamonds ?? 50}</Text>
@@ -895,9 +905,12 @@ export default function ArenaScreen() {
 
             <View style={[styles.hudPlayerCol, { justifyContent: "flex-end" }]}>
               <View style={{ flex: 1, minWidth: 0, alignItems: "flex-end" }}>
-                <Text numberOfLines={1} style={styles.hudPlayerName}>
-                  {player2?.fullName || "Đối thủ"}
-                </Text>
+                <View style={{ alignItems: "center", flexDirection: "row", gap: 3, justifyContent: "flex-end" }}>
+                  <VerifiedBadge size={13} verified={player2?.verified} />
+                  <Text numberOfLines={1} style={[styles.hudPlayerName, { flexShrink: 1 }]}>
+                    {player2?.fullName || "Đối thủ"}
+                  </Text>
+                </View>
                 <View style={styles.hudDiamondRow}>
                   <Text style={styles.hudDiamondNum}>{player2?.diamonds ?? 50}</Text>
                   <Ionicons color="#0EA5E9" name="diamond" size={12} />
@@ -1475,10 +1488,13 @@ export default function ArenaScreen() {
                   size={34}
                 />
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} style={styles.lbName}>
-                    {item.fullName}
-                    {item.username ? <Text style={{ color: colors.primary, fontSize: 11.5 }}> @{item.username}</Text> : null}
-                  </Text>
+                  <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                    <Text numberOfLines={1} style={[styles.lbName, { flexShrink: 1 }]}>
+                      {item.fullName}
+                      {item.username ? <Text style={{ color: colors.primary, fontSize: 11.5 }}> @{item.username}</Text> : null}
+                    </Text>
+                    <VerifiedBadge size={14} verified={item.verified} />
+                  </View>
                   <Text style={styles.lbMeta}>
                     {item.wins}W - {item.losses}L • {item.winRate}% • 💎 {item.diamonds}
                   </Text>

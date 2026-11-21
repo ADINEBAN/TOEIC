@@ -20,6 +20,7 @@ public class UserResponse {
     private String currentLevel;
     private Integer targetScore;
     private Boolean premium;
+    private Boolean verified;
     private Integer diamonds;
     private Integer arenaWins;
     private Integer arenaLosses;

@@ -42,6 +42,7 @@ export type AuthUser = {
   levelProgressPercent?: number;
   levelTitle?: string;
   premium: boolean;
+  verified?: boolean;
   profileId: number;
   providerUserId: string | null;
   role: string;

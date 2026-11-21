@@ -152,6 +152,7 @@ public enum SuccessCode {
     ANALYTICS_RETRIEVED(1137, "Admin analytics retrieved successfully", HttpStatus.OK),
     USER_STATUS_UPDATED(1138, "User status updated successfully", HttpStatus.OK),
     USER_PREMIUM_UPDATED(1139, "User premium flag updated successfully", HttpStatus.OK),
+    USER_VERIFIED_UPDATED(1165, "User verified badge updated successfully", HttpStatus.OK),
     ARENA_ROOM_SUCCESS(1140, "Arena room operation succeeded", HttpStatus.OK),
     TTS_VOICES_LISTED(1141, "TTS voices listed successfully", HttpStatus.OK),
     TTS_SYNTHESIZED(1142, "TTS audio synthesized successfully", HttpStatus.OK),

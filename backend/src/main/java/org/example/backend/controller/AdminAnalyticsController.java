@@ -53,6 +53,17 @@ public class AdminAnalyticsController {
         );
     }
 
+    @PatchMapping("/users/{userId}/verified")
+    public ResponseEntity<ApiResponse<UserResponse>> updateUserVerified(
+            @PathVariable Long userId,
+            @RequestBody VerifiedPatchRequest request
+    ) {
+        return ApiResponseUtil.success(
+                adminAnalyticsService.updateUserVerified(userId, request != null ? request.getVerified() : null),
+                SuccessCode.USER_VERIFIED_UPDATED
+        );
+    }
+
     @Data
     public static class StatusPatchRequest {
         private UserStatus status;
@@ -61,5 +72,10 @@ public class AdminAnalyticsController {
     @Data
     public static class PremiumPatchRequest {
         private Boolean premium;
+    }
+
+    @Data
+    public static class VerifiedPatchRequest {
+        private Boolean verified;
     }
 }

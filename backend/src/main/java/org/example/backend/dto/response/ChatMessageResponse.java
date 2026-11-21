@@ -14,6 +14,7 @@ public class ChatMessageResponse {
     private String senderUsername;
     private String senderAvatarUrl;
     private String senderEquippedFrameId;
+    private boolean senderVerified;
     private int senderLevel;
     private Long recipientId;
     private String content;
