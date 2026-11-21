@@ -11,6 +11,7 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import org.example.backend.dto.response.DictionaryHistoryItemResponse;
+import org.example.backend.dto.response.FlashcardAiSuggestResponse;
 import org.example.backend.dto.response.ImageObjectRecognitionResponse;
 import org.example.backend.dto.response.SemanticDictionaryResponse;
 import org.example.backend.dto.response.SemanticDictionaryResponse.CollocationEntry;
@@ -603,13 +604,17 @@ public class SmartDictionaryService {
     }
 
     protected String callOpenAiChat(String systemPrompt, String userPrompt) throws Exception {
+        return callOpenAiChat(systemPrompt, userPrompt, 480);
+    }
+
+    protected String callOpenAiChat(String systemPrompt, String userPrompt, int maxTokens) throws Exception {
         String endpoint = isBlank(openAiBaseUrl)
                 ? "https://api.openai.com/v1/chat/completions"
                 : openAiBaseUrl.trim();
         Map<String, Object> payload = Map.of(
                 "model", isBlank(openAiModel) ? "gpt-4o-mini" : openAiModel.trim(),
                 "temperature", 0.2,
-                "max_tokens", 480,
+                "max_tokens", maxTokens,
                 "response_format", Map.of("type", "json_object"),
                 "messages", List.of(
                         Map.of("role", "system", "content", systemPrompt),
@@ -1244,5 +1249,218 @@ public class SmartDictionaryService {
 
     private boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
+    }
+
+    /**
+     * Generates Vietnamese meaning, IPA pronunciation, and a TOEIC-ready example sentence
+     * for a single English word or short phrase using local catalog, cache, OpenAI, or dictionary fallback.
+     */
+    public FlashcardAiSuggestResponse suggestFlashcard(String rawWord) {
+        String cleanWord = rawWord == null ? "" : rawWord.trim();
+        if (cleanWord.isEmpty() || cleanWord.length() > 120) {
+            throw new AppException(ErrorCode.INVALID_DICTIONARY_QUERY);
+        }
+
+        String lower = cleanWord.toLowerCase(Locale.ROOT);
+        List<Vocabulary> dbMatches = vocabularyRepository.findByWordIgnoreCaseOrderByIdAsc(lower);
+        Vocabulary primaryDb = dbMatches.isEmpty() ? null : dbMatches.get(0);
+        if (primaryDb != null
+                && !isBlank(primaryDb.getMeaningVi())
+                && !isBlank(primaryDb.getIpa())
+                && !isBlank(primaryDb.getExampleSentence())) {
+            return FlashcardAiSuggestResponse.builder()
+                    .englishWord(primaryDb.getWord())
+                    .meaningVi(primaryDb.getMeaningVi().trim())
+                    .pronunciation(primaryDb.getIpa().trim())
+                    .exampleSentence(primaryDb.getExampleSentence().trim())
+                    .source("LOCAL_CATALOG")
+                    .build();
+        }
+
+        String meaningVi = primaryDb != null ? trimOrNull(primaryDb.getMeaningVi()) : null;
+        String pronunciation = primaryDb != null ? trimOrNull(primaryDb.getIpa()) : null;
+        String exampleSentence = primaryDb != null ? trimOrNull(primaryDb.getExampleSentence()) : null;
+        String source = "LOCAL_FALLBACK";
+
+        if (cleanWord.length() <= 80) {
+            try {
+                SemanticDictionaryResponse semantic = lookupSemanticDictionary(cleanWord, null, false);
+                if (semantic != null) {
+                    if (!isBlank(semantic.getMeaningVi()) && !semantic.getMeaningVi().trim().equalsIgnoreCase(cleanWord)) {
+                        meaningVi = firstNonBlank(meaningVi, semantic.getMeaningVi());
+                    }
+                    pronunciation = firstNonBlank(pronunciation, semantic.getIpa());
+                    if (isBlank(exampleSentence) && semantic.getExamples() != null && !semantic.getExamples().isEmpty()) {
+                        exampleSentence = trimOrNull(semantic.getExamples().get(0).getEnglish());
+                    }
+                    source = firstNonBlank(semantic.getSource(), source);
+                }
+            } catch (Exception ex) {
+                logger.debug("Semantic lookup fallback for flashcard '{}': {}", cleanWord, ex.getMessage());
+            }
+        }
+
+        if (!isBlank(openAiApiKey) && (isBlank(meaningVi) || isBlank(pronunciation) || isBlank(exampleSentence))) {
+            try {
+                String systemPrompt = """
+                        TOEIC English-Vietnamese flashcard assistant.
+                        Return ONLY strict JSON:
+                        {"meaningVi":"natural concise Vietnamese meaning","pronunciation":"/IPA/","exampleSentence":"one practical TOEIC-style English sentence using the word"}
+                        """;
+                String userPrompt = "English word or phrase: \"" + cleanWord + "\"";
+                JsonNode root = objectMapper.readTree(callOpenAiChat(systemPrompt, userPrompt, 260));
+                meaningVi = firstNonBlank(meaningVi, textOrNull(root, "meaningVi"));
+                pronunciation = firstNonBlank(pronunciation, textOrNull(root, "pronunciation"));
+                exampleSentence = firstNonBlank(exampleSentence, textOrNull(root, "exampleSentence"));
+                source = "OPENAI_FLASHCARD";
+            } catch (Exception ex) {
+                logger.debug("Targeted OpenAI flashcard suggest failed for '{}': {}", cleanWord, ex.getMessage());
+            }
+        }
+
+        return FlashcardAiSuggestResponse.builder()
+                .englishWord(cleanWord)
+                .meaningVi(firstNonBlank(meaningVi, cleanWord))
+                .pronunciation(firstNonBlank(pronunciation, "/" + lower + "/"))
+                .exampleSentence(exampleSentence)
+                .source(source)
+                .build();
+    }
+
+    /**
+     * Batch-enriches missing meaningVi, pronunciation, and exampleSentence for imported flashcards.
+     */
+    public Map<String, FlashcardAiSuggestResponse> batchSuggestFlashcards(List<String> englishWords) {
+        if (englishWords == null || englishWords.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, String> canonicalByLower = new LinkedHashMap<>();
+        for (String w : englishWords) {
+            if (!isBlank(w)) {
+                String trimmed = w.trim();
+                canonicalByLower.putIfAbsent(trimmed.toLowerCase(Locale.ROOT), trimmed);
+            }
+        }
+        if (canonicalByLower.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, FlashcardAiSuggestResponse> resolved = new LinkedHashMap<>();
+        Map<String, Vocabulary> catalogMap = loadCatalogMap(canonicalByLower.keySet());
+
+        List<String> missingForAi = new ArrayList<>();
+        for (Map.Entry<String, String> entry : canonicalByLower.entrySet()) {
+            String lower = entry.getKey();
+            String word = entry.getValue();
+            Vocabulary v = catalogMap.get(lower);
+
+            String meaning = v != null ? trimOrNull(v.getMeaningVi()) : null;
+            String ipa = v != null ? trimOrNull(v.getIpa()) : null;
+            String example = v != null ? trimOrNull(v.getExampleSentence()) : null;
+            String source = v != null ? "LOCAL_CATALOG" : null;
+
+            SemanticDictionaryResponse cached = findCachedResponse(lower, true);
+            if (cached != null) {
+                if (!isBlank(cached.getMeaningVi()) && !cached.getMeaningVi().trim().equalsIgnoreCase(word)) {
+                    meaning = firstNonBlank(meaning, cached.getMeaningVi());
+                }
+                ipa = firstNonBlank(ipa, cached.getIpa());
+                if (isBlank(example) && cached.getExamples() != null && !cached.getExamples().isEmpty()) {
+                    example = trimOrNull(cached.getExamples().get(0).getEnglish());
+                }
+                source = firstNonBlank(source, cached.getSource());
+            }
+
+            if (!isBlank(meaning) && !isBlank(ipa) && !isBlank(example)) {
+                resolved.put(lower, FlashcardAiSuggestResponse.builder()
+                        .englishWord(word)
+                        .meaningVi(meaning)
+                        .pronunciation(ipa)
+                        .exampleSentence(example)
+                        .source(source)
+                        .build());
+            } else {
+                if (v != null || cached != null) {
+                    resolved.put(lower, FlashcardAiSuggestResponse.builder()
+                            .englishWord(word)
+                            .meaningVi(meaning)
+                            .pronunciation(ipa)
+                            .exampleSentence(example)
+                            .source(firstNonBlank(source, "PARTIAL"))
+                            .build());
+                }
+                missingForAi.add(word);
+            }
+        }
+
+        if (!missingForAi.isEmpty() && !isBlank(openAiApiKey)) {
+            int chunkSize = 20;
+            for (int i = 0; i < missingForAi.size(); i += chunkSize) {
+                List<String> chunk = missingForAi.subList(i, Math.min(i + chunkSize, missingForAi.size()));
+                enrichChunkViaOpenAi(chunk, resolved);
+            }
+        }
+
+        for (Map.Entry<String, String> entry : canonicalByLower.entrySet()) {
+            FlashcardAiSuggestResponse item = resolved.get(entry.getKey());
+            if (item == null || isBlank(item.getMeaningVi()) || isBlank(item.getExampleSentence())) {
+                try {
+                    FlashcardAiSuggestResponse fallback = suggestFlashcard(entry.getValue());
+                    if (item == null) {
+                        resolved.put(entry.getKey(), fallback);
+                    } else {
+                        item.setMeaningVi(firstNonBlank(item.getMeaningVi(), fallback.getMeaningVi()));
+                        item.setPronunciation(firstNonBlank(item.getPronunciation(), fallback.getPronunciation()));
+                        item.setExampleSentence(firstNonBlank(item.getExampleSentence(), fallback.getExampleSentence()));
+                    }
+                } catch (Exception ex) {
+                    logger.debug("Fallback batch suggest skipped for '{}': {}", entry.getValue(), ex.getMessage());
+                }
+            }
+        }
+
+        return resolved;
+    }
+
+    private void enrichChunkViaOpenAi(List<String> words, Map<String, FlashcardAiSuggestResponse> resolved) {
+        try {
+            String systemPrompt = """
+                    TOEIC English-Vietnamese vocabulary flashcard generator.
+                    For every word/phrase given, return ONLY strict JSON:
+                    {"items":[{"englishWord":"exact input word","meaningVi":"concise Vietnamese meaning","pronunciation":"/IPA/","exampleSentence":"short natural TOEIC example sentence"}]}
+                    """;
+            String userPrompt = "Generate flashcard fields for these English entries JSON array: "
+                    + objectMapper.writeValueAsString(words);
+            JsonNode root = objectMapper.readTree(callOpenAiChat(systemPrompt, userPrompt, 1800));
+            JsonNode items = root.path("items");
+            if (!items.isArray()) {
+                return;
+            }
+            for (JsonNode node : items) {
+                String rawWord = textOrNull(node, "englishWord");
+                if (isBlank(rawWord)) continue;
+                String lower = rawWord.toLowerCase(Locale.ROOT);
+                FlashcardAiSuggestResponse existing = resolved.get(lower);
+                String meaning = firstNonBlank(existing != null ? existing.getMeaningVi() : null, textOrNull(node, "meaningVi"));
+                String ipa = firstNonBlank(existing != null ? existing.getPronunciation() : null, textOrNull(node, "pronunciation"));
+                String example = firstNonBlank(existing != null ? existing.getExampleSentence() : null, textOrNull(node, "exampleSentence"));
+                resolved.put(lower, FlashcardAiSuggestResponse.builder()
+                        .englishWord(existing != null ? existing.getEnglishWord() : rawWord)
+                        .meaningVi(meaning)
+                        .pronunciation(ipa)
+                        .exampleSentence(example)
+                        .source("OPENAI_BATCH")
+                        .build());
+            }
+        } catch (Exception ex) {
+            logger.debug("Batch OpenAI flashcard enrichment failed: {}", ex.getMessage());
+        }
+    }
+
+    private String trimOrNull(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
     }
 }

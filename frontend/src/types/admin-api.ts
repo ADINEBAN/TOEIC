@@ -384,6 +384,26 @@ export type QuestionListResponse = ApiResponse<QuestionApiItem[]>;
 export type PracticeSetQuestionListResponse = ApiResponse<PracticeSetQuestionApiItem[]>;
 
 export type FlashcardResponse = ApiResponse<AdminFlashcardApiItem>;
+
+export type FlashcardAiSuggestApiItem = {
+  englishWord: string;
+  meaningVi: string | null;
+  pronunciation: string | null;
+  exampleSentence: string | null;
+  source: string | null;
+};
+
+export type FlashcardAiSuggestResponse = ApiResponse<FlashcardAiSuggestApiItem>;
+
+export type FlashcardImportApiResult = {
+  totalParsed: number;
+  importedCount: number;
+  skippedDuplicateCount: number;
+  aiEnrichedCount: number;
+  items: AdminFlashcardApiItem[];
+};
+
+export type FlashcardImportResponse = ApiResponse<FlashcardImportApiResult>;
 export type LearningPathResponse = ApiResponse<LearningPathApiItem>;
 export type LearningPathMilestoneResponse = ApiResponse<LearningPathMilestoneApiItem>;
 export type MilestoneModuleResponse = ApiResponse<MilestoneModuleApiItem>;
