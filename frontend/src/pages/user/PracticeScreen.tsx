@@ -181,7 +181,6 @@ export default function PracticeScreen() {
     <UserScreen>
       <AppHeader
         rightSlot={<AvatarBadge label={(auth.user?.fullName ?? "A").charAt(0).toUpperCase()} />}
-        subtitle="Hành trình học tập"
         title="Lộ trình TOEIC"
       />
 

@@ -172,8 +172,7 @@ export default function RoadmapScreen() {
         leftIcon="chevron-back-outline"
         onLeftPress={() => safeBack("/user/practice")}
         rightSlot={<AvatarBadge label={auth.user?.fullName?.[0]?.toUpperCase() || "A"} />}
-        subtitle={moduleContent?.moduleType ?? moduleInfo?.moduleType ?? "MODULE"}
-        title={moduleContent?.title ?? moduleInfo?.title ?? "Chi tiết Module"}
+        title={moduleContent?.title ?? moduleInfo?.title ?? "Chi tiết bài học"}
       />
 
       {loading ? (
@@ -186,8 +185,8 @@ export default function RoadmapScreen() {
       {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
       {!loading &&
-      (errorMessage?.toLowerCase().includes("chưa có roadmap") ||
-        errorMessage?.toLowerCase().includes("chua co roadmap")) ? (
+        (errorMessage?.toLowerCase().includes("chưa có roadmap") ||
+          errorMessage?.toLowerCase().includes("chua co roadmap")) ? (
         <LiquidButton
           label="Bắt đầu Onboarding"
           onPress={() => pushRoute("/user/onboarding")}

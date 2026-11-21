@@ -130,7 +130,6 @@ export default function ShopScreen() {
     <UserScreen>
       <AppHeader
         onLeftPress={() => safeBack("/user/profile")}
-        subtitle="Kim cương & Trang bị"
         title="Cửa hàng"
         rightSlot={
           <View style={styles.diamondPill}>

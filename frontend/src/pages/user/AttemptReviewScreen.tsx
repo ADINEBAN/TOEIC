@@ -151,14 +151,12 @@ export default function AttemptReviewScreen() {
         leftIcon="chevron-back-outline"
         onLeftPress={() => safeBack("/user/test")}
         rightSlot={<AvatarBadge label={auth.user?.fullName?.[0] || "U"} />}
-        subtitle="Kết quả & AI Coach"
         title="Xem lại bài thi"
       />
 
       <LiquidCard hero style={styles.heroCard}>
         <View style={styles.heroTopRow}>
           <View style={styles.heroCopy}>
-            <Text style={styles.heroEyebrow}>ĐÁNH GIÁ TOEIC</Text>
             <Text numberOfLines={2} style={[styles.heroTitle, { fontSize: rf(19) }]}>
               {attempt.testTitle}
             </Text>

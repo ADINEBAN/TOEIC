@@ -80,7 +80,6 @@ export default function MistakeBankScreen() {
         leftIcon="chevron-back-outline"
         onLeftPress={() => safeBack("/user/home")}
         rightSlot={<AvatarBadge label={auth.user?.fullName?.[0] || "U"} />}
-        subtitle="Tổng hợp tự động"
         title="Sổ tay câu hay sai"
       />
 

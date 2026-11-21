@@ -205,7 +205,6 @@ export default function OnboardingScreen() {
         leftIcon="chevron-back-outline"
         onLeftPress={() => safeBack("/user/home")}
         rightSlot={<AvatarBadge label={auth.user?.fullName?.[0]?.toUpperCase() || "A"} />}
-        subtitle="Thiết lập lộ trình"
         title="Mục tiêu TOEIC"
       />
 
@@ -218,7 +217,6 @@ export default function OnboardingScreen() {
         {step === "catalog" ? (
           <>
             <LiquidCard hero style={styles.heroBanner}>
-              <Text style={styles.heroEyebrow}>CÁ NHÂN HÓA LỘ TRÌNH</Text>
               <Text style={[styles.heroTitle, { fontSize: rf(isNarrow ? 19 : 21) }]}>
                 Chọn lộ trình khớp mục tiêu điểm TOEIC của bạn
               </Text>
@@ -364,7 +362,6 @@ export default function OnboardingScreen() {
         ) : step === "result" && evalResult ? (
           <View style={styles.quizWrap}>
             <LiquidCard hero style={styles.heroBanner}>
-              <Text style={styles.heroEyebrow}>KẾT QUẢ ĐÁNH GIÁ NHANH</Text>
               <Text style={[styles.heroTitle, { fontSize: rf(20) }]}>
                 Ước lượng ~{evalResult.estimatedScore} điểm · Trình độ {evalResult.levelLabel}
               </Text>

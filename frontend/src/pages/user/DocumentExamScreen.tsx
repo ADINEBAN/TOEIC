@@ -41,6 +41,36 @@ type PartFilter = "ALL" | 5 | 6 | 7 | "ISSUES";
 
 const PART_CHOICES = [5, 6, 7] as const;
 
+function formatDocFileName(raw?: string | null): string {
+  if (!raw) return "Tài liệu TOEIC";
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw.replace(/%20/g, " ");
+  }
+}
+
+function formatDocStatus(status?: string | null): string {
+  if (status === "CONFIRMED") return "Đã tạo đề";
+  if (status === "ANALYZED") return "Đã gợi ý AI";
+  return "Sẵn sàng";
+}
+
+function translateIssueNote(issue: string): string {
+  if (issue.includes("No official answer key detected")) {
+    return "Tài liệu chưa kèm đáp án gốc — bạn có thể bấm “Gợi ý đáp án bằng AI” bên dưới.";
+  }
+  const unlinkedMatch = issue.match(/Passage\s+(\S+)\s+\(Part\s+(\d+)\)\s+has no linked questions/i);
+  if (unlinkedMatch) {
+    return `Có 1 đoạn văn Part ${unlinkedMatch[2]} (${unlinkedMatch[1]}) chưa gắn với câu hỏi nào.`;
+  }
+  const missingMatch = issue.match(/Potential missing question numbers in sequence:\s*(.+)/i);
+  if (missingMatch) {
+    return `Một số số thứ tự câu hỏi bị gián đoạn: ${missingMatch[1]}.`;
+  }
+  return issue;
+}
+
 export default function DocumentExamScreen() {
   const { auth } = useAuth();
   const { theme } = useAppTheme();
@@ -57,6 +87,7 @@ export default function DocumentExamScreen() {
   const [generatedExams, setGeneratedExams] = useState<UserTestResponse[]>([]);
   const [activeDoc, setActiveDoc] = useState<ImportedDocumentItem | null>(null);
   const [partFilter, setPartFilter] = useState<PartFilter>("ALL");
+  const [showIssueDetails, setShowIssueDetails] = useState(false);
 
   // Confirm Exam configuration
   const [examTitleInput, setExamTitleInput] = useState("");
@@ -110,12 +141,13 @@ export default function DocumentExamScreen() {
 
   const openDocumentInReview = (doc: ImportedDocumentItem) => {
     setActiveDoc(doc);
-    setExamTitleInput(doc.fileName.replace(/\.[^.]+$/, "") + " (Extracted TOEIC)");
+    setExamTitleInput(formatDocFileName(doc.fileName).replace(/\.[^.]+$/, ""));
     const presentParts = Array.from(new Set((doc.questions || []).map((q) => q.partNo))).filter(
       (p) => p >= 5 && p <= 7,
     );
     setSelectedPartsForExam(presentParts.length > 0 ? presentParts : [5, 6, 7]);
     setPartFilter("ALL");
+    setShowIssueDetails(false);
     setViewMode("review");
   };
 
@@ -373,8 +405,7 @@ export default function DocumentExamScreen() {
       <AppHeader
         leftIcon="chevron-back-outline"
         onLeftPress={() => safeBack("/user/test")}
-        subtitle="PDF · DOCX · DOC · TXT · OCR (Part 5–7)"
-        title="Document-to-Test AI"
+        title="Tạo đề từ Tài liệu"
       />
 
       {viewMode === "hub" ? (
@@ -386,9 +417,9 @@ export default function DocumentExamScreen() {
                 <Ionicons color="#FFFFFF" name="document-text" size={24} />
               </View>
               <View style={{ flex: 1, gap: 4 }}>
-                <Text style={styles.heroTitle}>Nhập đề thi TOEIC từ Tài liệu</Text>
+                <Text style={styles.heroTitle}>Nhập đề thi TOEIC</Text>
                 <Text style={styles.heroSubtitle}>
-                  Hỗ trợ PDF, Word (.docx/.doc), TXT & Ảnh scan (OCR). Chỉ trích xuất Part 5, 6, 7 nguyên bản — không tự bịa câu hỏi hay đáp án.
+                  Chọn tệp Word, PDF hoặc ảnh chụp đề thi để chuyển thành bài luyện tập tương tác.
                 </Text>
               </View>
             </View>
@@ -404,7 +435,7 @@ export default function DocumentExamScreen() {
                 <Ionicons color="#FFFFFF" name="cloud-upload-outline" size={20} />
               )}
               <Text style={styles.primaryCtaText}>
-                {uploading ? "Đang trích xuất & kiểm tra tính trung thực..." : "Chọn tệp PDF / DOCX / DOC / TXT / Ảnh"}
+                {uploading ? "Đang xử lý tài liệu..." : "Chọn tệp tài liệu (Word, PDF, Ảnh)"}
               </Text>
             </Pressable>
           </SurfaceCard>
@@ -425,9 +456,9 @@ export default function DocumentExamScreen() {
                 <SurfaceCard key={exam.id} padding="sm" style={styles.itemCard}>
                   <View style={styles.itemRowBetween}>
                     <View style={{ flex: 1, gap: 3 }}>
-                      <Text numberOfLines={2} style={styles.itemTitle}>{exam.title}</Text>
+                      <Text numberOfLines={2} style={styles.itemTitle}>{formatDocFileName(exam.title)}</Text>
                       <Text style={styles.itemMeta}>
-                        {exam.questionCount ?? 0} câu • {exam.totalDurationMinutes} phút • {exam.testType}
+                        {exam.questionCount ?? 0} câu • {exam.totalDurationMinutes} phút
                       </Text>
                     </View>
                     <Pressable
@@ -457,21 +488,21 @@ export default function DocumentExamScreen() {
 
           {/* Imported Document History */}
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Tài liệu gốc đã tải lên ({documents.length})</Text>
+            <Text style={styles.sectionTitle}>Tài liệu đã tải lên ({documents.length})</Text>
           </View>
           {documents.map((doc) => (
             <Pressable key={doc.id} onPress={() => void handleOpenSavedDocument(doc.id)}>
               <SurfaceCard padding="sm" style={styles.itemCard}>
                 <View style={styles.itemRowBetween}>
                   <View style={{ flex: 1, gap: 3 }}>
-                    <Text numberOfLines={1} style={styles.itemTitle}>{doc.fileName}</Text>
+                    <Text numberOfLines={1} style={styles.itemTitle}>{formatDocFileName(doc.fileName)}</Text>
                     <Text style={styles.itemMeta}>
-                      {doc.fileFormat} • {doc.pageCount} trang{doc.ocrUsed ? ` • OCR (${doc.ocrEngine})` : ""} •{" "}
+                      {doc.fileFormat} • {doc.pageCount} trang •{" "}
                       {doc.validationSummary?.totalQuestions ?? doc.questions?.length ?? 0} câu
                     </Text>
                   </View>
                   <View style={[styles.statusBadge, doc.status === "CONFIRMED" && styles.statusBadgeOk]}>
-                    <Text style={styles.statusBadgeText}>{doc.status}</Text>
+                    <Text style={styles.statusBadgeText}>{formatDocStatus(doc.status)}</Text>
                   </View>
                 </View>
               </SurfaceCard>
@@ -488,40 +519,55 @@ export default function DocumentExamScreen() {
             <Text style={styles.backToListText}>Quay lại danh sách tài liệu</Text>
           </Pressable>
 
-          {/* Source Metadata & Validation Summary */}
+          {/* Source Metadata & Clean Summary */}
           <SurfaceCard style={styles.validationCard}>
-            <Text style={styles.itemTitle}>{activeDoc.fileName}</Text>
+            <Text style={styles.itemTitle}>{formatDocFileName(activeDoc.fileName)}</Text>
             <Text style={styles.itemMeta}>
-              Định dạng: {activeDoc.fileFormat} • {activeDoc.pageCount} trang
-              {activeDoc.ocrUsed ? ` • OCR: ${activeDoc.ocrEngine}` : ""}
+              {activeDoc.fileFormat} • {activeDoc.pageCount} trang • {activeDoc.questions.length} câu hỏi
             </Text>
 
             <View style={styles.metricsWrap}>
+              <View style={[styles.metricPill, { borderColor: colors.primary }]}>
+                <Text style={[styles.metricPillText, { color: colors.primary }]}>
+                  Tổng: {activeDoc.questions.length} câu
+                </Text>
+              </View>
               <View style={[styles.metricPill, { borderColor: "#10B981" }]}>
                 <Text style={[styles.metricPillText, { color: "#10B981" }]}>
-                  Hợp lệ: {activeDoc.validationSummary?.validCount ?? 0}
+                  Có đáp án:{" "}
+                  {(activeDoc.questions || []).filter((q) => q.answerKeyVerified || Boolean(q.aiSuggestedLabel)).length}
                 </Text>
               </View>
-              <View style={[styles.metricPill, { borderColor: "#F59E0B" }]}>
-                <Text style={[styles.metricPillText, { color: "#F59E0B" }]}>
-                  Cảnh báo: {activeDoc.validationSummary?.warningCount ?? 0}
-                </Text>
-              </View>
-              <View style={[styles.metricPill, { borderColor: "#EF4444" }]}>
-                <Text style={[styles.metricPillText, { color: "#EF4444" }]}>
-                  Lỗi: {activeDoc.validationSummary?.invalidCount ?? 0}
-                </Text>
-              </View>
-              <View style={[styles.metricPill, { borderColor: "#6366F1" }]}>
-                <Text style={[styles.metricPillText, { color: "#818CF8" }]}>
-                  Chưa có Đáp án gốc: {activeDoc.validationSummary?.unverifiedAnswerCount ?? 0}
-                </Text>
-              </View>
+              {(activeDoc.validationSummary?.invalidCount ?? 0) > 0 ? (
+                <View style={[styles.metricPill, { borderColor: "#EF4444" }]}>
+                  <Text style={[styles.metricPillText, { color: "#EF4444" }]}>
+                    Lỗi định dạng: {activeDoc.validationSummary?.invalidCount ?? 0}
+                  </Text>
+                </View>
+              ) : null}
             </View>
 
-            {(activeDoc.validationSummary?.issues || []).map((issue, idx) => (
-              <Text key={idx} style={styles.issueLineText}>• {issue}</Text>
-            ))}
+            {(activeDoc.validationSummary?.issues || []).length > 0 ? (
+              <View style={{ gap: 6 }}>
+                <Pressable
+                  onPress={() => setShowIssueDetails((prev) => !prev)}
+                  style={styles.issueToggleRow}
+                >
+                  <Text style={styles.issueToggleText}>
+                    {showIssueDetails
+                      ? "Ẩn chi tiết ghi chú ▴"
+                      : `Xem ghi chú tài liệu (${(activeDoc.validationSummary?.issues || []).length}) ▾`}
+                  </Text>
+                </Pressable>
+                {showIssueDetails
+                  ? (activeDoc.validationSummary?.issues || []).map((issue, idx) => (
+                      <Text key={idx} style={styles.issueLineText}>
+                        • {translateIssueNote(issue)}
+                      </Text>
+                    ))
+                  : null}
+              </View>
+            ) : null}
 
             <Pressable
               disabled={analyzingAi}
@@ -529,19 +575,19 @@ export default function DocumentExamScreen() {
               style={styles.aiAnalyzeBtn}
             >
               {analyzingAi ? (
-                <ActivityIndicator color="#38BDF8" size="small" />
+                <ActivityIndicator color={colors.primary} size="small" />
               ) : (
-                <Ionicons color="#38BDF8" name="sparkles-outline" size={17} />
+                <Ionicons color={colors.primary} name="sparkles-outline" size={17} />
               )}
               <Text style={styles.aiAnalyzeBtnText}>
-                Phân tích đáp án gợi ý AI (Tách biệt, Chưa xác minh)
+                {analyzingAi ? "Đang phân tích đáp án..." : "Gợi ý đáp án bằng AI"}
               </Text>
             </Pressable>
           </SurfaceCard>
 
           {/* Confirm & Create Exam Configuration Card */}
           <SurfaceCard style={styles.confirmCard}>
-            <Text style={styles.sectionTitle}>Xác nhận & Tạo đề thi tương tác</Text>
+            <Text style={styles.sectionTitle}>Xác nhận & Tạo đề thi</Text>
             <TextInput
               onChangeText={setExamTitleInput}
               placeholder="Tên đề thi..."
@@ -609,42 +655,43 @@ export default function DocumentExamScreen() {
             })}
           </ScrollView>
 
-          {/* Question Cards with Source Fidelity Metadata & Linked Passage */}
+          {/* Question Cards */}
           {filteredQuestions.map((q) => {
             const linkedPassage = q.passageId ? passageById[q.passageId] : null;
+            const visibleIssues = (q.validationIssues || []).filter(
+              (iss) => !iss.includes("UNVERIFIED_ANSWER_KEY"),
+            );
+            const hasOfficial = Boolean(q.answerKeyVerified && q.officialCorrectLabel);
+            const hasAi = Boolean(q.aiSuggestedLabel);
             return (
               <SurfaceCard key={q.id} style={[styles.questionReviewCard, !q.included && { opacity: 0.55 }]}>
                 <View style={styles.itemRowBetween}>
                   <View style={styles.tagCluster}>
                     <View style={styles.partTag}>
                       <Text style={styles.partTagText}>
-                        Part {q.partNo} • #{q.originalQuestionNumber ?? q.sortOrder}
+                        Part {q.partNo} • Câu #{q.originalQuestionNumber ?? q.sortOrder}
                       </Text>
                     </View>
-                    <Text style={styles.pageMetaText}>
-                      Trang {q.pageNumber} • {Math.round((q.extractionConfidence ?? 0.9) * 100)}%
-                    </Text>
                   </View>
 
-                  <View
-                    style={[
-                      styles.validationTag,
-                      q.validationStatus === "VALID"
-                        ? styles.valValid
-                        : q.validationStatus === "WARNING"
-                          ? styles.valWarn
-                          : styles.valErr,
-                    ]}
-                  >
-                    <Text style={styles.validationTagText}>{q.validationStatus}</Text>
-                  </View>
+                  {hasOfficial ? (
+                    <View style={[styles.validationTag, styles.valValid]}>
+                      <Text style={[styles.validationTagText, { color: "#15803D" }]}>Có đáp án</Text>
+                    </View>
+                  ) : hasAi ? (
+                    <View style={[styles.validationTag, styles.valAi]}>
+                      <Text style={[styles.validationTagText, { color: colors.primary }]}>Gợi ý AI</Text>
+                    </View>
+                  ) : q.validationStatus === "INVALID" ? (
+                    <View style={[styles.validationTag, styles.valErr]}>
+                      <Text style={[styles.validationTagText, { color: "#DC2626" }]}>Cần sửa</Text>
+                    </View>
+                  ) : null}
                 </View>
 
                 {linkedPassage ? (
                   <View style={styles.passagePreviewBox}>
-                    <Text style={styles.passageHeaderTag}>
-                      📄 {linkedPassage.type} ({linkedPassage.kind || "PASSAGE"} • {linkedPassage.code} • Trang {linkedPassage.page})
-                    </Text>
+                    <Text style={styles.passageHeaderTag}>Đoạn văn kèm theo</Text>
                     <Text numberOfLines={6} style={styles.passageBodyText}>{linkedPassage.content}</Text>
                   </View>
                 ) : null}
@@ -667,9 +714,9 @@ export default function DocumentExamScreen() {
                         <Text style={styles.optionPreviewLabel}>({opt.optionLabel})</Text>
                         <Text style={styles.optionPreviewText}>{opt.optionText}</Text>
                         {isOfficial ? (
-                          <Text style={styles.officialBadgeText}>Đáp án gốc ✓</Text>
+                          <Text style={styles.officialBadgeText}>Đáp án ✓</Text>
                         ) : isAi ? (
-                          <Text style={styles.aiBadgeText}>Gợi ý AI (Chưa xác minh)</Text>
+                          <Text style={styles.aiBadgeText}>Gợi ý AI</Text>
                         ) : null}
                       </View>
                     );
@@ -677,13 +724,13 @@ export default function DocumentExamScreen() {
                 </View>
 
                 {q.aiSuggestedExplanation ? (
-                  <Text style={styles.aiExplainNote}>🤖 {q.aiSuggestedExplanation}</Text>
+                  <Text style={styles.aiExplainNote}>{q.aiSuggestedExplanation}</Text>
                 ) : null}
 
-                {(q.validationIssues || []).length > 0 ? (
+                {visibleIssues.length > 0 ? (
                   <View style={styles.qIssueBox}>
-                    {q.validationIssues.map((iss, i) => (
-                      <Text key={i} style={styles.qIssueText}>⚠ {iss}</Text>
+                    {visibleIssues.map((iss, i) => (
+                      <Text key={i} style={styles.qIssueText}>{iss}</Text>
                     ))}
                   </View>
                 ) : null}
@@ -701,10 +748,10 @@ export default function DocumentExamScreen() {
                   ))}
 
                   <Pressable onPress={() => openEditModal(q)} style={styles.miniBtn}>
-                    <Text style={styles.miniBtnText}>✏️ Sửa</Text>
+                    <Text style={styles.miniBtnText}>Sửa</Text>
                   </Pressable>
                   <Pressable onPress={() => void handleToggleInclude(q)} style={styles.miniBtn}>
-                    <Text style={styles.miniBtnText}>{q.included ? "✓ Dùng" : "Đã bỏ"}</Text>
+                    <Text style={styles.miniBtnText}>{q.included ? "Dùng" : "Đã bỏ"}</Text>
                   </Pressable>
                   <Pressable onPress={() => void handleDeleteQuestion(q)} style={styles.miniBtn}>
                     <Text style={[styles.miniBtnText, { color: "#EF4444" }]}>Xóa</Text>
@@ -868,7 +915,9 @@ const createStyles = (colors: LiquidThemeColors) =>
     metricsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
     metricPill: { borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4 },
     metricPillText: { fontSize: 11.5, fontWeight: "800" },
-    issueLineText: { color: "#F59E0B", fontSize: 12, lineHeight: 17 },
+    issueLineText: { color: "#D97706", fontSize: 12, lineHeight: 17 },
+    issueToggleRow: { alignSelf: "flex-start", paddingVertical: 2 },
+    issueToggleText: { color: colors.primary, fontSize: 12, fontWeight: "800" },
     aiAnalyzeBtn: {
       alignItems: "center",
       backgroundColor: "rgba(56,189,248,0.14)",
@@ -923,9 +972,9 @@ const createStyles = (colors: LiquidThemeColors) =>
     partTagText: { color: "#FFFFFF", fontSize: 11.5, fontWeight: "900" },
     pageMetaText: { color: colors.textMuted, fontSize: 11.5, fontWeight: "700" },
     validationTag: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-    valValid: { backgroundColor: "rgba(16,185,129,0.2)" },
-    valWarn: { backgroundColor: "rgba(245,158,11,0.2)" },
-    valErr: { backgroundColor: "rgba(239,68,68,0.2)" },
+    valValid: { backgroundColor: "rgba(16,185,129,0.16)" },
+    valAi: { backgroundColor: colors.primarySoft },
+    valErr: { backgroundColor: "rgba(239,68,68,0.16)" },
     validationTagText: { color: colors.text, fontSize: 11, fontWeight: "900" },
     passagePreviewBox: {
       backgroundColor: colors.surface,

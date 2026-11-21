@@ -827,7 +827,7 @@ export default function ArenaScreen() {
               </Text>
             </View>
           }
-          subtitle={`${isVocabMode ? "Vocab Battle" : "TOEIC Part 5"} • Tổng ${activeRoom.elapsedMatchSeconds}s`}
+          subtitle={`${isVocabMode ? "Từ vựng 1v1" : "TOEIC Part 5"} • Tổng ${activeRoom.elapsedMatchSeconds}s`}
           title={`Phòng ${activeRoom.roomCode}`}
         />
 
@@ -1268,7 +1268,6 @@ export default function ArenaScreen() {
             <Text style={styles.diamondHeaderText}>{myDiamonds}</Text>
           </View>
         }
-        subtitle="Part 5 & Từ vựng • Tính giây & Kim cương"
         title="Đấu trường 1v1"
       />
 
@@ -1327,7 +1326,6 @@ export default function ArenaScreen() {
       <LiquidCard hero style={styles.findMatchCard}>
         <View style={styles.findMatchTop}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.lobbyEyebrow}>CÁCH 2 • GHÉP NGẪU NHIÊN</Text>
             <Text style={[styles.lobbyTitle, { fontSize: rf(18) }]}>
               Tìm đối thủ trực tuyến
             </Text>
@@ -1337,7 +1335,7 @@ export default function ArenaScreen() {
           </View>
         </View>
         <LiquidButton
-          label="Tìm trận ngẫu nhiên (Find Match)"
+          label="Tìm trận ngẫu nhiên"
           leftIcon={<Ionicons color={colors.onPrimary} name="flash" size={16} />}
           onPress={() => void handleFindRandomMatch()}
           style={{ marginTop: 12 }}

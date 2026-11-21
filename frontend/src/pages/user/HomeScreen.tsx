@@ -239,55 +239,55 @@ export default function HomeScreen() {
   const exploreCards = [
     {
       title: "Thư viện Video",
-      icon: "logo-youtube" as const,
-      artColors: ["#FF7074", "#E53935"] as const,
+      image: require("@/assets/images/cards/card-video.jpg"),
+      accent: "#E53935",
       route: "/user/youtube-studio",
     },
     {
       title: "Đấu trường 1v1",
-      icon: "flash" as const,
-      artColors: ["#8F80FF", "#5948DB"] as const,
+      image: require("@/assets/images/cards/card-arena.jpg"),
+      accent: "#5948DB",
       route: "/user/arena",
     },
     {
       title: "Ngân hàng câu sai",
-      icon: "sparkles" as const,
-      artColors: ["#FF987A", "#EB5440"] as const,
+      image: require("@/assets/images/cards/card-mistakes.jpg"),
+      accent: "#EB5440",
       route: "/user/mistakes",
     },
     {
-      title: "Đề PDF / AI",
-      icon: "document-text" as const,
-      artColors: ["#5BE0D1", "#20A698"] as const,
+      title: "Đề từ Tài liệu",
+      image: require("@/assets/images/cards/card-document.jpg"),
+      accent: "#20A698",
       route: "/user/document-exam",
     },
     {
       title: "Tra từ Ngữ nghĩa",
-      icon: "git-network-outline" as const,
-      artColors: ["#60A5FA", "#2563EB"] as const,
+      image: require("@/assets/images/cards/card-dictionary.jpg"),
+      accent: "#2563EB",
       route: "/user/dictionary?mode=lookup",
     },
     {
       title: "Bảng Xếp Hạng",
-      icon: "trophy" as const,
-      artColors: ["#FBBF24", "#D97706"] as const,
+      image: require("@/assets/images/cards/card-leaderboard.jpg"),
+      accent: "#D97706",
       route: "/user/leaderboard",
     },
     {
       title: "Cửa hàng Avatar",
-      icon: "diamond" as const,
-      artColors: ["#38BDF8", "#2563EB"] as const,
+      image: require("@/assets/images/cards/card-shop.jpg"),
+      accent: "#0284C7",
       route: "/user/shop",
     },
     {
       title: "Chụp ảnh đồ vật",
-      icon: "camera" as const,
-      artColors: ["#F59E0B", "#EA580C"] as const,
+      image: require("@/assets/images/cards/card-camera.jpg"),
+      accent: "#EA580C",
       route: "/user/dictionary?mode=camera",
     },
   ];
 
-  const mascotSize = isNarrow ? 104 : 118;
+  const mascotSize = isNarrow ? 98 : 112;
 
   return (
     <UserScreen>
@@ -309,27 +309,38 @@ export default function HomeScreen() {
             </Pressable>
           </View>
         }
-        subtitle="Toeic Trainer"
-        title="Trang chủ"
+        title=""
+        titleSlot={
+          <View style={styles.headerGreetingRow}>
+            <Text numberOfLines={1} style={[styles.headerGreetingText, { fontSize: rf(17.5) }]}>
+              Chào, {greetingName}!
+            </Text>
+            <VerifiedBadge size={16} verified={auth.user?.verified} />
+            <Text style={{ fontSize: rf(16) }}>👋</Text>
+          </View>
+        }
       />
 
       <View style={styles.welcomeRow}>
         <View style={styles.welcomeTextCol}>
-          <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 5 }}>
-            <Text style={[styles.welcomeHello, { fontSize: rf(14) }]}>
-              Chào, {greetingName}!
-            </Text>
-            <VerifiedBadge size={15} verified={auth.user?.verified} />
-            <Text style={[styles.welcomeHello, { fontSize: rf(14) }]}>👋</Text>
-          </View>
           <Text style={[styles.welcomeHeadline, { fontSize: rf(isNarrow ? 19 : 21) }]}>
             Sẵn sàng chinh phục TOEIC hôm nay!
           </Text>
+          <View style={styles.welcomeChipsRow}>
+            <View style={styles.welcomeStatChip}>
+              <Ionicons color={colors.primary} name="flag" size={12} />
+              <Text style={styles.welcomeStatText}>Mục tiêu {targetScore || "---"}+</Text>
+            </View>
+            <View style={styles.welcomeStatChip}>
+              <Ionicons color="#F59E0B" name="flame" size={12} />
+              <Text style={styles.welcomeStatText}>{streakDays} ngày</Text>
+            </View>
+          </View>
         </View>
         <Image
           resizeMode="contain"
           source={require("@/assets/images/mascot-home.png")}
-          style={{ height: mascotSize, marginBottom: -14, width: mascotSize }}
+          style={{ height: mascotSize, marginBottom: -12, width: mascotSize }}
         />
       </View>
 
@@ -448,7 +459,6 @@ export default function HomeScreen() {
         <SurfaceCard style={styles.adaptiveCard}>
           <View style={styles.adaptiveHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.adaptiveEyebrow}>GỢI Ý CÁ NHÂN HÓA</Text>
               <Text style={[styles.adaptiveTitle, { fontSize: rf(15.5) }]}>
                 Kế hoạch học hôm nay
               </Text>
@@ -528,21 +538,10 @@ export default function HomeScreen() {
               padding="none"
               style={[
                 styles.exploreCard,
-                { shadowColor: card.artColors[1] },
+                { shadowColor: card.accent },
               ]}
             >
-              <LinearGradient
-                colors={[card.artColors[0], card.artColors[1]]}
-                end={{ x: 1, y: 1 }}
-                start={{ x: 0, y: 0 }}
-                style={styles.exploreArt}
-              >
-                <View style={styles.exploreOrb} />
-                <View style={styles.exploreOrbSmall} />
-                <View style={styles.exploreIconPill}>
-                  <Ionicons color="#FFFFFF" name={card.icon} size={28} />
-                </View>
-              </LinearGradient>
+              <Image resizeMode="cover" source={card.image} style={styles.exploreArtImg} />
               <View style={styles.exploreBody}>
                 <Text numberOfLines={1} style={[styles.exploreTitle, { fontSize: rf(13.5) }]}>
                   {card.title}
@@ -554,7 +553,7 @@ export default function HomeScreen() {
       </View>
 
       <SectionTitle
-        actionLabel="Onboarding"
+        actionLabel="Đổi mục tiêu"
         onActionPress={() => pushRoute("/user/onboarding")}
         title="Mục tiêu điểm TOEIC"
       />
@@ -612,15 +611,16 @@ export default function HomeScreen() {
             <SurfaceCard style={styles.selectedPathCard}>
               <View style={styles.selectedPathTop}>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <View style={styles.tagRow}>
-                    <Text style={styles.pathCodeBadge}>{selectedPath.code}</Text>
-                    {recommendedPathId === selectedPath.id ? (
-                      <Text style={styles.tagRecommend}>Đề xuất</Text>
-                    ) : null}
-                    {roadmap?.learningPathId === selectedPath.id ? (
-                      <Text style={styles.tagCurrent}>Đang học</Text>
-                    ) : null}
-                  </View>
+                  {(recommendedPathId === selectedPath.id || roadmap?.learningPathId === selectedPath.id) ? (
+                    <View style={styles.tagRow}>
+                      {recommendedPathId === selectedPath.id ? (
+                        <Text style={styles.tagRecommend}>Đề xuất</Text>
+                      ) : null}
+                      {roadmap?.learningPathId === selectedPath.id ? (
+                        <Text style={styles.tagCurrent}>Đang học</Text>
+                      ) : null}
+                    </View>
+                  ) : null}
                   <Text numberOfLines={1} style={[styles.pathTitle, { fontSize: rf(16) }]}>
                     {selectedPath.title}
                   </Text>
@@ -710,27 +710,51 @@ export default function HomeScreen() {
 
 const createStyles = (colors: LiquidThemeColors) =>
   StyleSheet.create({
-    welcomeRow: {
-      alignItems: "flex-end",
+    headerGreetingRow: {
+      alignItems: "center",
       flexDirection: "row",
-      gap: 8,
+      gap: 5,
+    },
+    headerGreetingText: {
+      color: colors.text,
+      fontWeight: "900",
+    },
+    welcomeRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 10,
       justifyContent: "space-between",
-      marginBottom: 4,
+      marginBottom: 8,
     },
     welcomeTextCol: {
       flex: 1,
+      gap: 8,
       minWidth: 0,
-      paddingBottom: 14,
-    },
-    welcomeHello: {
-      color: colors.textMuted,
-      fontWeight: "800",
-      marginBottom: 4,
+      paddingVertical: 4,
     },
     welcomeHeadline: {
       color: colors.text,
       fontWeight: "900",
-      lineHeight: 27,
+      lineHeight: 26,
+    },
+    welcomeChipsRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+    },
+    welcomeStatChip: {
+      alignItems: "center",
+      backgroundColor: colors.primarySoft,
+      borderRadius: radius.pill,
+      flexDirection: "row",
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+    },
+    welcomeStatText: {
+      color: colors.primary,
+      fontSize: 11.5,
+      fontWeight: "800",
     },
     categoryDock: {
       marginBottom: 14,
@@ -881,40 +905,9 @@ const createStyles = (colors: LiquidThemeColors) =>
       borderRadius: 22,
       overflow: "hidden",
     },
-    exploreArt: {
-      alignItems: "center",
-      height: 80,
-      justifyContent: "center",
-      overflow: "hidden",
-      position: "relative",
-    },
-    exploreOrb: {
-      backgroundColor: "rgba(255,255,255,0.20)",
-      borderRadius: 99,
-      height: 76,
-      position: "absolute",
-      right: -18,
-      top: -20,
-      width: 76,
-    },
-    exploreOrbSmall: {
-      backgroundColor: "rgba(255,255,255,0.14)",
-      borderRadius: 99,
-      bottom: -24,
-      height: 54,
-      left: -14,
-      position: "absolute",
-      width: 54,
-    },
-    exploreIconPill: {
-      alignItems: "center",
-      backgroundColor: "rgba(255,255,255,0.24)",
-      borderColor: "rgba(255,255,255,0.45)",
-      borderRadius: 18,
-      borderWidth: 1,
-      height: 52,
-      justifyContent: "center",
-      width: 52,
+    exploreArtImg: {
+      height: 100,
+      width: "100%",
     },
     exploreBody: {
       alignItems: "center",
