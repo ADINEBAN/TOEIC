@@ -58,6 +58,12 @@ export class AdminTestService extends BaseAdminService {
     });
   }
 
+  initStandardParts(testId: number) {
+    return this.request<TestPartListResponse>(`/api/admin/tests/${testId}/init-standard-parts`, {
+      method: 'POST',
+    });
+  }
+
   updatePart(testPartId: number, request: UpdateTestPartRequest) {
     return this.request<TestPartResponse>(`/api/admin/tests/parts/${testPartId}`, {
       method: 'PUT',
@@ -80,6 +86,13 @@ export class AdminTestService extends BaseAdminService {
     return this.request<TestPartQuestionListResponse>(`/api/admin/tests/parts/${testPartId}/questions`, {
       method: 'POST',
       body: JSON.stringify(request),
+    });
+  }
+
+  syncPartQuestions(testPartId: number, questionIds: number[]) {
+    return this.request<TestPartQuestionListResponse>(`/api/admin/tests/parts/${testPartId}/questions`, {
+      method: 'PUT',
+      body: JSON.stringify({ questionIds }),
     });
   }
 

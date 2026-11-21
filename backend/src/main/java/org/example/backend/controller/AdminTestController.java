@@ -86,6 +86,14 @@ public class AdminTestController {
         return ApiResponseUtil.success(response, SuccessCode.TEST_PART_CREATED);
     }
 
+    @PostMapping("/{testId}/init-standard-parts")
+    public ResponseEntity<ApiResponse<List<TestPartResponse>>> initStandardToeicParts(
+            @PathVariable Long testId
+    ) {
+        List<TestPartResponse> response = adminTestService.initStandardToeicParts(testId);
+        return ApiResponseUtil.success(response, SuccessCode.TEST_PART_CREATED);
+    }
+
     @GetMapping("/{testId}/parts")
     public ResponseEntity<ApiResponse<List<TestPartResponse>>> getTestParts(@PathVariable Long testId) {
         List<TestPartResponse> response = adminTestService.getTestParts(testId);
@@ -115,6 +123,15 @@ public class AdminTestController {
             @RequestBody AssignTestPartQuestionsRequest request
     ) {
         List<TestPartQuestionResponse> response = adminTestService.assignQuestionsToTestPart(testPartId, request);
+        return ApiResponseUtil.success(response, SuccessCode.TEST_PART_QUESTION_ASSIGNED);
+    }
+
+    @PutMapping("/parts/{testPartId}/questions")
+    public ResponseEntity<ApiResponse<List<TestPartQuestionResponse>>> syncQuestionsInTestPart(
+            @PathVariable Long testPartId,
+            @RequestBody AssignTestPartQuestionsRequest request
+    ) {
+        List<TestPartQuestionResponse> response = adminTestService.syncTestPartQuestions(testPartId, request);
         return ApiResponseUtil.success(response, SuccessCode.TEST_PART_QUESTION_ASSIGNED);
     }
 
