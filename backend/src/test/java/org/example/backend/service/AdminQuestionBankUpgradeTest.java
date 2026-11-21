@@ -223,4 +223,85 @@ class AdminQuestionBankUpgradeTest {
         assertNotNull(res);
         assertTrue(res.getExplanation().contains("Đáp án đúng là A"));
     }
+
+    @Test
+    void parsesMixedPart5Part6InlineAndUnnumberedPart7FromMsHoaExamDoc() {
+        String sampleExam = """
+                ĐỀ THI TOEIC READING ( PART 5, 6, 7 )
+                 MS HOA TOEIC BIÊN SOẠN
+                ĐỀ 1
+                Its…………into Brazil has given Darrow Textiles Ltd. an advantage over much of its competition.
+                expansion
+                process
+                creation
+                action
+                Employees at NC media co., Ltd…………donate to local charities by hosting Fund-raising parties.
+                A. regularity
+                B. regularize
+                C. regularities
+                D. regularly
+                PART 6:
+                Questions 41-43 refer to the following article.
+                [TABLE]
+                Although this was ….(41)... a shelter for people to escape, it has now  (A) just  (B) once  (C) such  (D) likely  become a chaotic market area. Most of them….(42)…  (A) would have agreed  (B) would agree  (C) has agree  (D) were agreeing  that it has gotten out of control. .…(43)…., it might have already gotten too far out of control. What we need is not a  (A) In fact  (B) In spite of  (C) On the other hand  (D) Even though  mere intervention.
+                [/TABLE]
+                Part 7Directions: In this part, you will read a selection of texts.
+                Question 53-54 refer to the following announcement.
+                RICH TO APPEAR AS THE FIRST GUEST
+                Adrienne Rich will appear on Saturday night.
+                53. What is the purpose of the announcement?
+                (A) To criticize a novel
+                (B) To describe a guest
+                (C) To introduce a program
+                (D) To raise sales
+                Question 68-70 refer to the following notice.
+                RESERVATIONS To ensure a table at SkyCity, reservations are recommended.
+                What kind of place is SkyCity?
+                A restaurant
+                A ship
+                A museum
+                A theme park
+                Question 81- 85 refer to the following announcement and schedule.
+                AGP8X Corporation fitness center announcement.
+                Reminders
+                1. Please do not use equipment for more than 30 minutes.
+                2. Members may bring a guest per visit.
+                What is the purpose of this message?
+                To notify employees of closure
+                To inform employees of changes
+                To ask for suggestions
+                To complain about a trainer
+                Question 91-95 refer to the following catalog page.
+                Business Fashions Fall Catalog.
+                Which item is available in only three colors?
+                (A) Solid color men’s dress shirts
+                (C) Striped sweaters
+                (B) Striped men’s dress shirts
+                (D) Sweaters
+                """;
+
+        DocumentTextExtractionService.DocumentExtractionResult extraction =
+                new DocumentTextExtractionService.DocumentExtractionResult(
+                        "DOCX", 1, false, "NONE", sampleExam,
+                        List.of(new DocumentTextExtractionService.ExtractedPage(1, sampleExam, false, 1.0, "POI_DOCX", List.of()))
+                );
+        ToeicDocumentParserService parserService = new ToeicDocumentParserService();
+        ToeicDocumentParserService.ParsedDocumentResult parsed = parserService.parse(extraction);
+
+        long part5Count = parsed.questions().stream().filter(q -> q.partNo() == 5).count();
+        long part6Count = parsed.questions().stream().filter(q -> q.partNo() == 6).count();
+        long part7Count = parsed.questions().stream().filter(q -> q.partNo() == 7).count();
+
+        assertEquals(2, part5Count, "Expected 2 Part 5 questions");
+        assertEquals(3, part6Count, "Expected 3 inline Part 6 questions (41-43)");
+        assertEquals(4, part7Count, "Expected 4 Part 7 questions (53, 68, 81, 91)");
+
+        var q42 = parsed.questions().stream()
+                .filter(q -> Integer.valueOf(42).equals(q.originalQuestionNumber()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(4, q42.options().size());
+        assertEquals("would agree", q42.options().get(1).optionText());
+        assertEquals("were agreeing", q42.options().get(3).optionText());
+    }
 }
