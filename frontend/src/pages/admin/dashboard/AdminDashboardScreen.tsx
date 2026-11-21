@@ -24,6 +24,7 @@ import AdminShell from "@/src/components/admin/AdminShell";
 import AdminSidebar from "@/src/components/admin/AdminSidebar";
 import AdminTopBar from "@/src/components/admin/AdminTopBar";
 import AdminVideoLibraryPanel from "@/src/components/admin/AdminVideoLibraryPanel";
+import QuestionPickerModal from "@/src/components/admin/QuestionPickerModal";
 import VerifiedBadge from "@/src/components/common/VerifiedBadge";
 import { useAuth } from "@/src/hooks/use-auth";
 import { adminSidebarItems } from "@/src/pages/admin/dashboard/mock-data";
@@ -310,46 +311,34 @@ const buildQuestionFields = (
 ];
 
 const testTypeOptions = [
-  { label: "Full Test", value: "FULL_TEST" },
-  { label: "Reading Only", value: "READING_ONLY" },
-  { label: "Listening Only", value: "LISTENING_ONLY" },
-  { label: "Practice", value: "PRACTICE" },
+  { label: "Full Test (200 câu · 120p)", value: "FULL_TEST" },
+  { label: "Mini Test", value: "MINI_TEST" },
+  { label: "Reading Only (Part 5–7)", value: "READING_ONLY" },
+  { label: "Listening Only (Part 1–4)", value: "LISTENING_ONLY" },
+  { label: "Practice / Tùy chỉnh", value: "PRACTICE" },
 ];
 
 const testFields: AdminField[] = [
   { name: "title", label: "Title", type: "text", required: true },
   { name: "testType", label: "Test type", type: "select", options: testTypeOptions, required: true },
-  { name: "totalDurationMinutes", label: "Duration", type: "number", required: true },
+  { name: "totalDurationMinutes", label: "Duration (minutes)", type: "number", required: true },
   { name: "targetScore", label: "Target score", type: "number", required: true },
   { name: "description", label: "Description", type: "textarea" },
   { name: "published", label: "Published", type: "switch" },
 ];
 
 const partSectionOptions = [
-  { label: "Listening", value: "LISTENING" },
-  { label: "Reading", value: "READING" },
+  { label: "Listening (Part 1–4)", value: "LISTENING" },
+  { label: "Reading (Part 5–7)", value: "READING" },
 ];
 
 const testPartFields: AdminField[] = [
-  { name: "partName", label: "Part name", type: "text", required: true },
-  { name: "partNumber", label: "Part number", type: "number", required: true },
+  { name: "partNumber", label: "TOEIC Part", type: "select", options: partNoOptions, required: true },
+  { name: "partName", label: "Part name (tự gợi ý nếu để trống)", type: "text" },
   { name: "partSection", label: "Section", type: "select", options: partSectionOptions, required: true },
   { name: "sortOrder", label: "Sort order", type: "number", required: true },
-  { name: "durationMinutes", label: "Duration", type: "number", required: true },
+  { name: "durationMinutes", label: "Duration (minutes)", type: "number", required: true },
   { name: "description", label: "Description", type: "textarea" },
-];
-const testPartQuestionFields = (questions: QuestionApiItem[]): AdminField[] => [
-  {
-    name: "questionId",
-    label: "Question",
-    type: "select",
-    required: true,
-    options: questions.map((q) => ({
-      label: `[#${q.id}] ${q.questionText.substring(0, 50)}${q.questionText.length > 50 ? "..." : ""}`,
-      value: String(q.id),
-    })),
-  },
-  { name: "sortOrder", label: "Sort order", type: "number", required: true },
 ];
 
 const SAMPLE_BULK_JSON = `[
@@ -510,10 +499,10 @@ export default function AdminDashboardScreen() {
   const [questionImportAutoExplainAi, setQuestionImportAutoExplainAi] = useState(false);
   const [questionImportSummary, setQuestionImportSummary] = useState<string | null>(null);
   const [showPracticePickerModal, setShowPracticePickerModal] = useState(false);
-  const [pickerSearch, setPickerSearch] = useState("");
-  const [pickerPartFilter, setPickerPartFilter] = useState<string>("ALL");
-  const [pickerSelectedIds, setPickerSelectedIds] = useState<number[]>([]);
   const [savingPracticeQuestions, setSavingPracticeQuestions] = useState(false);
+  const [testsSubTab, setTestsSubTab] = useState<"list" | "builder">("list");
+  const [showTestPartPickerModal, setShowTestPartPickerModal] = useState(false);
+  const [savingTestPartQuestions, setSavingTestPartQuestions] = useState(false);
 
   const services = useMemo(() => {
     if (!auth.accessToken) return null;
@@ -537,6 +526,10 @@ export default function AdminDashboardScreen() {
     modules.find((item) => item.id === selectedModuleId) ?? null;
   const selectedPracticeSet =
     practiceSets.find((item) => item.id === selectedPracticeSetId) ?? null;
+  const selectedTest =
+    tests.find((item) => item.id === selectedTestId) ?? null;
+  const selectedTestPart =
+    testParts.find((item) => item.id === selectedTestPartId) ?? null;
 
   const selectedModuleLocations = useMemo(() => {
     if (!selectedModuleId) return [];
@@ -934,31 +927,16 @@ export default function AdminDashboardScreen() {
       Alert.alert("Bộ thực hành", "Hãy chọn hoặc tạo một Bộ bài tập trước.");
       return;
     }
-    setPickerSelectedIds(practiceSetQuestions.map((item) => item.questionId));
-    setPickerSearch("");
-    setPickerPartFilter(
-      selectedPracticeSet?.partNo && selectedPracticeSet.partNo >= 1 && selectedPracticeSet.partNo <= 7
-        ? String(selectedPracticeSet.partNo)
-        : "ALL",
-    );
     setShowPracticePickerModal(true);
   };
 
-  const togglePickerQuestion = (questionId: number) => {
-    setPickerSelectedIds((current) =>
-      current.includes(questionId)
-        ? current.filter((id) => id !== questionId)
-        : [...current, questionId],
-    );
-  };
-
-  const savePracticeSetSelection = async () => {
+  const savePracticeSetSelection = async (selectedIds: number[]) => {
     if (!services || !selectedPracticeSetId) return;
     try {
       setSavingPracticeQuestions(true);
       setErrorMessage(null);
       await services.practiceSets.assignQuestions(selectedPracticeSetId, {
-        questions: pickerSelectedIds.map((questionId, index) => ({
+        questions: selectedIds.map((questionId, index) => ({
           questionId,
           sortOrder: index + 1,
         })),
@@ -970,6 +948,53 @@ export default function AdminDashboardScreen() {
     } finally {
       setSavingPracticeQuestions(false);
     }
+  };
+
+  const saveTestPartSelection = async (selectedIds: number[]) => {
+    if (!services || !selectedTestPartId) return;
+    try {
+      setSavingTestPartQuestions(true);
+      setErrorMessage(null);
+      await services.tests.syncPartQuestions(selectedTestPartId, selectedIds);
+      setShowTestPartPickerModal(false);
+      await Promise.all([loadTestParts(), loadTestPartQuestions()]);
+    } catch (error) {
+      handleError(error);
+    } finally {
+      setSavingTestPartQuestions(false);
+    }
+  };
+
+  const moveTestPartQuestion = async (index: number, direction: -1 | 1) => {
+    if (!services || !selectedTestPartId) return;
+    const target = index + direction;
+    if (target < 0 || target >= testPartQuestions.length) return;
+    const reordered = [...testPartQuestions];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(target, 0, moved);
+    await runAction(
+      () =>
+        services.tests
+          .syncPartQuestions(
+            selectedTestPartId,
+            reordered.map((item) => item.questionId),
+          )
+          .then(() => undefined),
+      loadTestPartQuestions,
+    );
+  };
+
+  const removeTestPartQuestion = async (item: TestPartQuestionApiItem) => {
+    if (!services || !selectedTestPartId) return;
+    if (!confirmWeb(`Gỡ câu hỏi #${item.questionId} khỏi "${selectedTestPart?.partName ?? ""}"?`)) {
+      return;
+    }
+    await runAction(
+      () => services.tests.removeQuestion(selectedTestPartId, item.id).then(() => undefined),
+      async () => {
+        await Promise.all([loadTestParts(), loadTestPartQuestions()]);
+      },
+    );
   };
 
   const movePracticeQuestion = async (index: number, direction: -1 | 1) => {
@@ -1794,153 +1819,20 @@ export default function AdminDashboardScreen() {
               </View>
             </View>
 
-            <Modal
-              animationType="fade"
-              onRequestClose={() => setShowPracticePickerModal(false)}
-              transparent
+            <QuestionPickerModal
+              defaultPartFilter={
+                selectedPracticeSet?.partNo && selectedPracticeSet.partNo >= 1 && selectedPracticeSet.partNo <= 7
+                  ? String(selectedPracticeSet.partNo)
+                  : "ALL"
+              }
+              initialSelectedIds={practiceSetQuestions.map((item) => item.questionId)}
+              onClose={() => setShowPracticePickerModal(false)}
+              onSave={savePracticeSetSelection}
+              questions={questions}
+              saving={savingPracticeQuestions}
+              title={`Chọn câu hỏi cho “${selectedPracticeSet?.title ?? ""}”`}
               visible={showPracticePickerModal}
-            >
-              <View style={styles.modalBackdrop}>
-                <View style={[styles.modalPanel, { maxWidth: 820 }]}>
-                  <View style={styles.bulkHeaderRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.uploadTitle}>
-                        {`Chọn câu hỏi cho “${selectedPracticeSet?.title ?? ""}”`}
-                      </Text>
-                      <Text style={styles.uploadSubtitle}>
-                        Tick nhiều câu từ Ngân hàng câu hỏi rồi bấm Lưu để cập nhật bộ bài tập.
-                      </Text>
-                    </View>
-                    <Text style={[styles.partPillText, { fontSize: 13 }]}>
-                      Đã chọn: {pickerSelectedIds.length} câu
-                    </Text>
-                  </View>
-
-                  <TextInput
-                    onChangeText={setPickerSearch}
-                    placeholder="Tìm nội dung câu hỏi hoặc #ID..."
-                    placeholderTextColor={colors.textMuted}
-                    style={[styles.userSearchInput, { width: "100%" }]}
-                    value={pickerSearch}
-                  />
-
-                  <View style={styles.chipRow}>
-                    {["ALL", "1", "2", "3", "4", "5", "6", "7"].map((partKey) => {
-                      const active = pickerPartFilter === partKey;
-                      return (
-                        <Pressable
-                          key={partKey}
-                          onPress={() => setPickerPartFilter(partKey)}
-                          style={[styles.selectorChip, active ? styles.selectorChipActive : null]}
-                        >
-                          <Text style={[styles.selectorText, active ? styles.selectorTextActive : null]}>
-                            {partKey === "ALL" ? "Tất cả Part" : `Part ${partKey}`}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-
-                  {(() => {
-                    const qSearch = pickerSearch.trim().toLowerCase();
-                    const visibleBank = questions.filter((q) => {
-                      if (pickerPartFilter !== "ALL" && String(q.partNo ?? "") !== pickerPartFilter) {
-                        return false;
-                      }
-                      if (!qSearch) return true;
-                      return (
-                        q.questionText.toLowerCase().includes(qSearch) ||
-                        String(q.id).includes(qSearch)
-                      );
-                    });
-                    return (
-                      <>
-                        <View style={styles.templateRow}>
-                          <Pressable
-                            onPress={() =>
-                              setPickerSelectedIds((prev) => {
-                                const merged = new Set(prev);
-                                visibleBank.forEach((q) => merged.add(q.id));
-                                return Array.from(merged);
-                              })
-                            }
-                            style={styles.templateBtn}
-                          >
-                            <Text style={styles.templateBtnText}>
-                              Chọn tất cả đang lọc ({visibleBank.length})
-                            </Text>
-                          </Pressable>
-                          <Pressable
-                            onPress={() => setPickerSelectedIds([])}
-                            style={styles.templateBtn}
-                          >
-                            <Text style={styles.templateBtnText}>Bỏ chọn hết</Text>
-                          </Pressable>
-                        </View>
-
-                        <ScrollView style={styles.pickerScroll}>
-                          {visibleBank.map((q) => {
-                            const checked = pickerSelectedIds.includes(q.id);
-                            const correct = q.options?.find((o) => o.correct)?.optionLabel ?? "-";
-                            return (
-                              <Pressable
-                                key={q.id}
-                                onPress={() => togglePickerQuestion(q.id)}
-                                style={[styles.pickerRow, checked ? styles.pickerRowChecked : null]}
-                              >
-                                <View style={[styles.checkboxBox, checked ? styles.checkboxBoxChecked : null]}>
-                                  {checked ? <Text style={styles.checkboxMark}>✓</Text> : null}
-                                </View>
-                                <View style={{ flex: 1, gap: 3 }}>
-                                  <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                                    <View style={styles.partPill}>
-                                      <Text style={styles.partPillText}>
-                                        {q.partNo && q.partNo >= 1 && q.partNo <= 7
-                                          ? `Part ${q.partNo}`
-                                          : `⚠️ Part ${q.partNo ?? "-"}`}
-                                      </Text>
-                                    </View>
-                                    <Text style={styles.uploadHint}>
-                                      #{q.id} • {q.sourceType ?? "INTERNAL"} • Đáp án {correct}
-                                    </Text>
-                                  </View>
-                                  <Text numberOfLines={2} style={styles.assignedQuestionText}>
-                                    {q.questionText}
-                                  </Text>
-                                </View>
-                              </Pressable>
-                            );
-                          })}
-                          {visibleBank.length === 0 ? (
-                            <Text style={styles.uploadHint}>Không tìm thấy câu hỏi phù hợp.</Text>
-                          ) : null}
-                        </ScrollView>
-                      </>
-                    );
-                  })()}
-
-                  <View style={styles.templateRow}>
-                    <Pressable
-                      onPress={() => setShowPracticePickerModal(false)}
-                      style={styles.modalSecondaryBtn}
-                    >
-                      <Text style={styles.modalSecondaryBtnText}>Đóng</Text>
-                    </Pressable>
-                    <Pressable
-                      disabled={savingPracticeQuestions}
-                      onPress={() => void savePracticeSetSelection()}
-                      style={styles.bulkOpenBtn}
-                    >
-                      <Text style={styles.bulkOpenBtnText}>
-                        {savingPracticeQuestions
-                          ? "Đang lưu..."
-                          : `Lưu danh sách (${pickerSelectedIds.length} câu)`}
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-              </View>
-            </Modal>
+            />
           </>
         ) : null}
       </View>
@@ -2548,181 +2440,412 @@ export default function AdminDashboardScreen() {
     );
   };
 
-  const renderTests = () => (
-    <View style={styles.stack}>
-      <AdminCrudPanel
-        columns={[
-          { label: "ID", render: (item) => String(item.id) },
-          { label: "Title", render: (item) => item.title },
-          { label: "Type", render: (item) => item.testType },
-          { label: "Duration", render: (item) => `${item.totalDurationMinutes}m` },
-          { label: "Published", render: (item) => yesNo(item.published) },
-        ]}
-        fields={testFields}
-        getInitialValues={(item?: TestApiItem) => ({
-          title: item?.title ?? "",
-          testType: item?.testType ?? "FULL_TEST",
-          totalDurationMinutes: String(item?.totalDurationMinutes ?? 120),
-          targetScore: String(item?.targetScore ?? 500),
-          description: item?.description ?? "",
-          published: item?.published ?? false,
-        })}
-        getItemId={(item) => item.id}
-        onCreate={(values) =>
-          runAction(
-            () =>
-              services!.tests
-                .create({
-                  title: text(values, "title", true),
-                  testType: text(values, "testType", true),
-                  totalDurationMinutes: numberValue(values, "totalDurationMinutes", true)!,
-                  targetScore: numberValue(values, "targetScore", true)!,
-                  description: text(values, "description"),
-                  published: boolValue(values, "published"),
-                })
-                .then(() => undefined),
-            loadTests,
-          )
-        }
-        onDelete={(item) =>
-          confirmWeb(`Xóa đề thi "${item.title}"?`)
-            ? runAction(
-                () => services!.tests.delete(item.id).then(() => undefined),
-                loadTests,
-              )
-            : Promise.resolve()
-        }
-        onRefresh={loadTests}
-        onUpdate={(item, values) =>
-          runAction(
-            () =>
-              services!.tests
-                .update(item.id, {
-                  title: text(values, "title", true),
-                  testType: text(values, "testType", true),
-                  totalDurationMinutes: numberValue(values, "totalDurationMinutes", true)!,
-                  targetScore: numberValue(values, "targetScore", true)!,
-                  description: text(values, "description"),
-                  published: boolValue(values, "published"),
-                })
-                .then(() => undefined),
-            loadTests,
-          )
-        }
-        records={tests}
-        subtitle="Tạo, chỉnh sửa và xuất bản đề thi thử TOEIC."
-        title="Quản lý Đề thi TOEIC"
-        working={working}
-      />
+  const renderTests = () => {
+    const validTestTypeValues = new Set(testTypeOptions.map((o) => o.value));
+    return (
+      <View style={styles.stack}>
+        <View style={styles.contentTabRow}>
+          <Pressable
+            onPress={() => setTestsSubTab("list")}
+            style={[
+              styles.contentTabBtn,
+              testsSubTab === "list" ? styles.contentTabBtnActive : null,
+            ]}
+          >
+            <Text
+              style={[
+                styles.contentTabText,
+                testsSubTab === "list" ? styles.contentTabTextActive : null,
+              ]}
+            >
+              {`1. Danh sách Đề thi (${tests.length})`}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setTestsSubTab("builder")}
+            style={[
+              styles.contentTabBtn,
+              testsSubTab === "builder" ? styles.contentTabBtnActive : null,
+            ]}
+          >
+            <Text
+              style={[
+                styles.contentTabText,
+                testsSubTab === "builder" ? styles.contentTabTextActive : null,
+              ]}
+            >
+              {selectedTest
+                ? `2. Cấu hình Part & Câu hỏi (#${selectedTest.id})`
+                : "2. Cấu hình Part & Câu hỏi"}
+            </Text>
+          </Pressable>
+        </View>
 
-      {renderSelector("Chọn đề thi để quản lý từng Part", tests, selectedTestId, setSelectedTestId)}
+        {testsSubTab === "list" ? (
+          <>
+            <AdminCrudPanel
+              columns={[
+                { label: "ID", render: (item) => String(item.id), width: 70 },
+                { label: "Title", render: (item) => item.title },
+                { label: "Type", render: (item) => item.testType, width: 140 },
+                { label: "Duration", render: (item) => `${item.totalDurationMinutes}m`, width: 100 },
+                { label: "Published", render: (item) => yesNo(item.published), width: 105 },
+              ]}
+              fields={testFields}
+              getInitialValues={(item?: TestApiItem) => ({
+                title: item?.title ?? "",
+                testType:
+                  item?.testType && validTestTypeValues.has(item.testType)
+                    ? item.testType
+                    : "FULL_TEST",
+                totalDurationMinutes: String(item?.totalDurationMinutes ?? 120),
+                targetScore: String(item?.targetScore ?? 500),
+                description: item?.description ?? "",
+                published: item?.published ?? false,
+              })}
+              getItemId={(item) => item.id}
+              onCreate={(values) =>
+                runAction(
+                  () =>
+                    services!.tests
+                      .create({
+                        title: text(values, "title", true),
+                        testType: text(values, "testType", true),
+                        totalDurationMinutes: numberValue(values, "totalDurationMinutes", true)!,
+                        targetScore: numberValue(values, "targetScore", true)!,
+                        description: text(values, "description"),
+                        published: boolValue(values, "published"),
+                      })
+                      .then((res) => {
+                        if (res.data?.id) {
+                          setSelectedTestId(res.data.id);
+                          setTestsSubTab("builder");
+                        }
+                      }),
+                  loadTests,
+                )
+              }
+              onDelete={(item) =>
+                confirmWeb(`Xóa đề thi "${item.title}"?`)
+                  ? runAction(
+                      () => services!.tests.delete(item.id).then(() => undefined),
+                      loadTests,
+                    )
+                  : Promise.resolve()
+              }
+              onRefresh={loadTests}
+              onUpdate={(item, values) =>
+                runAction(
+                  () =>
+                    services!.tests
+                      .update(item.id, {
+                        title: text(values, "title", true),
+                        testType: text(values, "testType", true),
+                        totalDurationMinutes: numberValue(values, "totalDurationMinutes", true)!,
+                        targetScore: numberValue(values, "targetScore", true)!,
+                        description: text(values, "description"),
+                        published: boolValue(values, "published"),
+                      })
+                      .then(() => undefined),
+                  loadTests,
+                )
+              }
+              records={tests}
+              subtitle="Bước 1: Tạo đề thi rồi bấm vào đề bên dưới để soạn Part & gán câu hỏi."
+              title="Quản lý Đề thi TOEIC"
+              working={working}
+            />
 
-      <AdminCrudPanel
-        columns={[
-          { label: "ID", render: (item) => String(item.id) },
-          { label: "No.", render: (item) => String(item.partNumber) },
-          { label: "Name", render: (item) => item.partName },
-          { label: "Section", render: (item) => item.partSection },
-          { label: "Duration", render: (item) => `${item.durationMinutes}m` },
-          { label: "Questions", render: (item) => String(item.questionCount) },
-        ]}
-        fields={testPartFields}
-        getInitialValues={(item?: TestPartApiItem) => ({
-          partName: item?.partName ?? "",
-          partNumber: String(item?.partNumber ?? testParts.length + 1),
-          partSection: item?.partSection ?? "LISTENING",
-          sortOrder: String(item?.sortOrder ?? testParts.length + 1),
-          durationMinutes: String(item?.durationMinutes ?? 45),
-          description: item?.description ?? "",
-        })}
-        getItemId={(item) => item.id}
-        onCreate={(values) =>
-          runAction(
-            () =>
-              services!.tests
-                .createPart(selectedTestId!, {
-                  partName: text(values, "partName", true),
-                  partNumber: numberValue(values, "partNumber", true)!,
-                  partSection: text(values, "partSection", true),
-                  sortOrder: numberValue(values, "sortOrder", true)!,
-                  durationMinutes: numberValue(values, "durationMinutes", true)!,
-                  description: text(values, "description"),
-                })
-                .then(() => undefined),
-            loadTestParts,
-          )
-        }
-        onDelete={(item) =>
-          confirmWeb(`Xóa phần "${item.partName}"?`)
-            ? runAction(
-                () => services!.tests.deletePart(item.id).then(() => undefined),
-                loadTestParts,
-              )
-            : Promise.resolve()
-        }
-        onRefresh={loadTestParts}
-        onUpdate={(item, values) =>
-          runAction(
-            () =>
-              services!.tests
-                .updatePart(item.id, {
-                  partName: text(values, "partName", true),
-                  partNumber: numberValue(values, "partNumber", true)!,
-                  partSection: text(values, "partSection", true),
-                  sortOrder: numberValue(values, "sortOrder", true)!,
-                  durationMinutes: numberValue(values, "durationMinutes", true)!,
-                  description: text(values, "description"),
-                })
-                .then(() => undefined),
-            loadTestParts,
-          )
-        }
-        records={testParts}
-        subtitle="Cấu hình từng Part Listening / Reading cho đề thi đang chọn."
-        title="Danh sách Part trong đề thi"
-        working={working}
-      />
+            {tests.length > 0 ? (
+              <View style={styles.infoFlow}>
+                <Text style={styles.infoFlowTitle}>
+                  Chọn nhanh đề thi để soạn Part & gán câu hỏi →
+                </Text>
+                <View style={[styles.chipRow, { marginTop: 10 }]}>
+                  {tests.map((t) => {
+                    const active = t.id === selectedTestId;
+                    return (
+                      <Pressable
+                        key={t.id}
+                        onPress={() => {
+                          setSelectedTestId(t.id);
+                          setTestsSubTab("builder");
+                        }}
+                        style={[styles.selectorChip, active ? styles.selectorChipActive : null]}
+                      >
+                        <Text style={[styles.selectorText, active ? styles.selectorTextActive : null]}>
+                          {`#${t.id} ${t.title} (${t.testType}) →`}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <View style={styles.infoFlow}>
+              <View style={styles.bulkHeaderRow}>
+                <View style={{ flex: 1, minWidth: 240, gap: 4 }}>
+                  <Text style={styles.infoFlowTitle}>
+                    {selectedTest
+                      ? `Đang cấu hình Đề #${selectedTest.id}: ${selectedTest.title}`
+                      : "Chưa chọn đề thi"}
+                  </Text>
+                  <Text style={styles.infoFlowText}>
+                    {selectedTest
+                      ? `Loại đề: ${selectedTest.testType} • Tổng thời gian: ${selectedTest.totalDurationMinutes} phút • Target: ${selectedTest.targetScore}`
+                      : "Vui lòng chọn hoặc tạo mới một đề thi ở tab Danh sách Đề thi."}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {selectedTestId ? (
+                    <Pressable
+                      disabled={working}
+                      onPress={() =>
+                        void runAction(
+                          () => services!.tests.initStandardParts(selectedTestId).then(() => undefined),
+                          loadTestParts,
+                        )
+                      }
+                      style={styles.bulkOpenBtn}
+                    >
+                      <Text style={styles.bulkOpenBtnText}>
+                        ⚡ Tạo nhanh Part chuẩn TOEIC
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    onPress={() => setTestsSubTab("list")}
+                    style={styles.selectorChip}
+                  >
+                    <Text style={styles.selectorTextActive}>← Quay lại Danh sách Đề</Text>
+                  </Pressable>
+                </View>
+              </View>
+              {tests.length > 1 ? (
+                <View style={[styles.chipRow, { marginTop: 10 }]}>
+                  {tests.map((t) => {
+                    const active = t.id === selectedTestId;
+                    return (
+                      <Pressable
+                        key={t.id}
+                        onPress={() => setSelectedTestId(t.id)}
+                        style={[styles.selectorChip, active ? styles.selectorChipActive : null]}
+                      >
+                        <Text style={[styles.selectorText, active ? styles.selectorTextActive : null]}>
+                          {`#${t.id} ${t.title}`}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+            </View>
 
-      {renderSelector("Gán câu hỏi vào part", testParts, selectedTestPartId, setSelectedTestPartId)}
+            <AdminCrudPanel
+              columns={[
+                { label: "Part", render: (item) => `Part ${item.partNumber}`, width: 92 },
+                { label: "Name", render: (item) => item.partName, width: 230 },
+                { label: "Section", render: (item) => item.partSection, width: 120 },
+                { label: "Duration", render: (item) => `${item.durationMinutes}m`, width: 96 },
+                { label: "Questions", render: (item) => `${item.questionCount} câu`, width: 105 },
+              ]}
+              fields={testPartFields}
+              getInitialValues={(item?: TestPartApiItem) => {
+                const nextPartNo = item?.partNumber && item.partNumber >= 1 && item.partNumber <= 7
+                  ? item.partNumber
+                  : Math.min(7, testParts.length + 1);
+                return {
+                  partName: item?.partName ?? "",
+                  partNumber: String(nextPartNo),
+                  partSection: item?.partSection ?? (nextPartNo <= 4 ? "LISTENING" : "READING"),
+                  sortOrder: String(item?.sortOrder ?? nextPartNo),
+                  durationMinutes: String(item?.durationMinutes ?? (nextPartNo <= 4 ? 10 : 15)),
+                  description: item?.description ?? "",
+                };
+              }}
+              getItemId={(item) => item.id}
+              onCreate={(values) =>
+                runAction(
+                  () => {
+                    const partNum = numberValue(values, "partNumber", true)!;
+                    const defaultName = `Part ${partNum}`;
+                    return services!.tests
+                      .createPart(selectedTestId!, {
+                        partName: text(values, "partName") || defaultName,
+                        partNumber: partNum,
+                        partSection: text(values, "partSection") || (partNum <= 4 ? "LISTENING" : "READING"),
+                        sortOrder: numberValue(values, "sortOrder", true)!,
+                        durationMinutes: numberValue(values, "durationMinutes", true)!,
+                        description: text(values, "description"),
+                      })
+                      .then((res) => {
+                        if (res.data?.id) setSelectedTestPartId(res.data.id);
+                      });
+                  },
+                  loadTestParts,
+                )
+              }
+              onDelete={(item) =>
+                confirmWeb(`Xóa "${item.partName}"?`)
+                  ? runAction(
+                      () => services!.tests.deletePart(item.id).then(() => undefined),
+                      loadTestParts,
+                    )
+                  : Promise.resolve()
+              }
+              onRefresh={loadTestParts}
+              onUpdate={(item, values) =>
+                runAction(
+                  () => {
+                    const partNum = numberValue(values, "partNumber", true)!;
+                    return services!.tests
+                      .updatePart(item.id, {
+                        partName: text(values, "partName") || `Part ${partNum}`,
+                        partNumber: partNum,
+                        partSection: text(values, "partSection") || (partNum <= 4 ? "LISTENING" : "READING"),
+                        sortOrder: numberValue(values, "sortOrder", true)!,
+                        durationMinutes: numberValue(values, "durationMinutes", true)!,
+                        description: text(values, "description"),
+                      })
+                      .then(() => undefined);
+                  },
+                  loadTestParts,
+                )
+              }
+              records={testParts}
+              subtitle="Có thể bấm “⚡ Tạo nhanh Part chuẩn TOEIC” phía trên hoặc tự thêm từng Part."
+              title="Danh sách Part trong đề thi"
+              working={working}
+            />
 
-      <AdminCrudPanel
-        columns={[
-          { label: "ID", render: (item) => String(item.id) },
-          { label: "Question", render: (item) => item.questionText || String(item.questionId) },
-          { label: "Sort", render: (item) => String(item.sortOrder) },
-        ]}
-        fields={testPartQuestionFields(questions)}
-        getInitialValues={(item?: TestPartQuestionApiItem) => ({
-          questionId: String(item?.questionId ?? ""),
-          sortOrder: String(item?.sortOrder ?? testPartQuestions.length + 1),
-        })}
-        getItemId={(item) => item.id}
-        onCreate={(values) =>
-          runAction(
-            () =>
-              services!.tests
-                .assignQuestions(selectedTestPartId!, {
-                  questionIds: [numberValue(values, "questionId", true)!],
-                })
-                .then(() => undefined),
-            loadTestPartQuestions,
-          )
-        }
-        onDelete={(item) =>
-          confirmWeb(`Gỡ question #${item.questionId} khỏi part?`)
-            ? runAction(
-                () => services!.tests.removeQuestion(selectedTestPartId!, item.id).then(() => undefined),
-                loadTestPartQuestions,
-              )
-            : Promise.resolve()
-        }
-        onRefresh={loadTestPartQuestions}
-        records={testPartQuestions}
-        title="Gán câu hỏi cho part"
-        working={working}
-      />
-    </View>
-  );
+            <View style={styles.panelSection}>
+              <View style={styles.bulkHeaderRow}>
+                <View style={{ flex: 1, minWidth: 220 }}>
+                  <Text style={styles.uploadTitle}>
+                    {selectedTestPart
+                      ? `Câu hỏi trong Part ${selectedTestPart.partNumber}: ${selectedTestPart.partName} (${testPartQuestions.length})`
+                      : "Chọn một Part bên dưới để gán câu hỏi"}
+                  </Text>
+                  <Text style={styles.uploadSubtitle}>
+                    Chọn hàng loạt câu hỏi bằng checkbox (tự lọc theo đúng Part) và sắp xếp thứ tự nhanh.
+                  </Text>
+                </View>
+                <Pressable
+                  disabled={!selectedTestPartId || working}
+                  onPress={() => setShowTestPartPickerModal(true)}
+                  style={[
+                    styles.bulkOpenBtn,
+                    (!selectedTestPartId || working) ? { opacity: 0.55 } : null,
+                  ]}
+                >
+                  <Text style={styles.bulkOpenBtnText}>+ Chọn câu hỏi (Checkbox)</Text>
+                </Pressable>
+              </View>
+
+              {testParts.length > 0 ? (
+                <View style={[styles.chipRow, { marginTop: 10 }]}>
+                  {testParts.map((part) => {
+                    const active = part.id === selectedTestPartId;
+                    return (
+                      <Pressable
+                        key={part.id}
+                        onPress={() => setSelectedTestPartId(part.id)}
+                        style={[styles.selectorChip, active ? styles.selectorChipActive : null]}
+                      >
+                        <Text style={[styles.selectorText, active ? styles.selectorTextActive : null]}>
+                          {`Part ${part.partNumber}: ${part.partName} (${part.questionCount} câu)`}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : (
+                <Text style={styles.uploadHint}>
+                  Đề thi này chưa có Part nào. Bấm “⚡ Tạo nhanh Part chuẩn TOEIC” để tạo tự động.
+                </Text>
+              )}
+
+              <View style={styles.assignedList}>
+                {selectedTestPart && testPartQuestions.length === 0 ? (
+                  <Text style={styles.uploadHint}>
+                    Part này chưa có câu hỏi nào. Bấm “+ Chọn câu hỏi (Checkbox)” để thêm nhiều câu cùng lúc.
+                  </Text>
+                ) : null}
+                {testPartQuestions.map((item, idx) => (
+                  <View key={item.id} style={styles.assignedRow}>
+                    <View style={styles.assignedOrderBadge}>
+                      <Text style={styles.assignedOrderText}>{idx + 1}</Text>
+                    </View>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <View style={{ flexDirection: "row", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                        <View style={styles.partPill}>
+                          <Text style={styles.partPillText}>
+                            {`Part ${item.partNo ?? "-"}`}
+                          </Text>
+                        </View>
+                        <Text style={styles.uploadHint}>#{item.questionId}</Text>
+                      </View>
+                      <Text numberOfLines={2} style={styles.assignedQuestionText}>
+                        {item.questionText || `Question #${item.questionId}`}
+                      </Text>
+                    </View>
+                    <View style={styles.assignedActions}>
+                      <Pressable
+                        disabled={idx === 0 || working}
+                        onPress={() => void moveTestPartQuestion(idx, -1)}
+                        style={[styles.miniIconBtn, idx === 0 ? { opacity: 0.4 } : null]}
+                      >
+                        <Text style={styles.miniIconBtnText}>↑</Text>
+                      </Pressable>
+                      <Pressable
+                        disabled={idx === testPartQuestions.length - 1 || working}
+                        onPress={() => void moveTestPartQuestion(idx, 1)}
+                        style={[
+                          styles.miniIconBtn,
+                          idx === testPartQuestions.length - 1 ? { opacity: 0.4 } : null,
+                        ]}
+                      >
+                        <Text style={styles.miniIconBtnText}>↓</Text>
+                      </Pressable>
+                      <Pressable
+                        disabled={working}
+                        onPress={() => void removeTestPartQuestion(item)}
+                        style={[styles.miniIconBtn, styles.miniDangerBtn]}
+                      >
+                        <Text style={styles.miniDangerBtnText}>Gỡ</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            <QuestionPickerModal
+              defaultPartFilter={
+                selectedTestPart?.partNumber && selectedTestPart.partNumber >= 1 && selectedTestPart.partNumber <= 7
+                  ? String(selectedTestPart.partNumber)
+                  : "ALL"
+              }
+              initialSelectedIds={testPartQuestions.map((item) => item.questionId)}
+              onClose={() => setShowTestPartPickerModal(false)}
+              onSave={saveTestPartSelection}
+              questions={questions}
+              saving={savingTestPartQuestions}
+              title={
+                selectedTestPart
+                  ? `Chọn câu hỏi cho Part ${selectedTestPart.partNumber}: “${selectedTestPart.partName}”`
+                  : "Chọn câu hỏi cho Part"
+              }
+              visible={showTestPartPickerModal}
+            />
+          </>
+        )}
+      </View>
+    );
+  };
 
   const renderActiveSection = () => {
     if (activeSection === "video-library") {
