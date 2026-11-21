@@ -29,6 +29,7 @@ import UserScreen from "@/src/components/user/UserScreen";
 import { useAuth } from "@/src/hooks/use-auth";
 import {
   assignRecommendedPath,
+  getAdaptiveRecommendations,
   getMyProfile,
   getMyStreak,
   getUserLearningPathCatalog,
@@ -37,6 +38,7 @@ import {
 } from "@/src/services/user.service";
 import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
 import {
+  AdaptiveRecommendationData,
   UserLearningPathCatalogItem,
   UserRoadmap,
   WeeklyLeaderboardEntry,
@@ -65,6 +67,7 @@ export default function HomeScreen() {
   const [learningPaths, setLearningPaths] = useState<UserLearningPathCatalogItem[]>([]);
   const [roadmap, setRoadmap] = useState<UserRoadmap | null>(null);
   const [weeklyLeaders, setWeeklyLeaders] = useState<WeeklyLeaderboardEntry[]>([]);
+  const [recommendations, setRecommendations] = useState<AdaptiveRecommendationData | null>(null);
   const [selectedPathId, setSelectedPathId] = useState<number | null>(null);
   const [streakDays, setStreakDays] = useState(0);
   const [inspectUserId, setInspectUserId] = useState<number | null>(null);
@@ -95,8 +98,9 @@ export default function HomeScreen() {
       getWeeklyLeaderboard(auth.accessToken, 0),
       getMyStreak(auth.accessToken),
       getMyProfile(auth.accessToken),
+      getAdaptiveRecommendations(auth.accessToken),
     ])
-      .then(([pathsResult, roadmapResult, leaderboardResult, streakResult, profileResult]) => {
+      .then(([pathsResult, roadmapResult, leaderboardResult, streakResult, profileResult, recResult]) => {
         if (pathsResult.status !== "fulfilled") {
           throw pathsResult.reason;
         }
@@ -121,11 +125,13 @@ export default function HomeScreen() {
         ).slice(0, 5);
         const nextStreak =
           streakResult.status === "fulfilled" ? streakResult.value.data?.currentLoginStreak ?? 0 : 0;
+        const nextRec = recResult.status === "fulfilled" ? recResult.value?.data ?? null : null;
 
         setLearningPaths(nextPaths);
         setRoadmap(nextRoadmap);
         setWeeklyLeaders(nextWeekly);
         setStreakDays(nextStreak);
+        setRecommendations(nextRec);
         hasLoadedRef.current = true;
 
         setSelectedPathId((prev) => {
@@ -433,6 +439,75 @@ export default function HomeScreen() {
           </View>
         </SurfaceCard>
       </Pressable>
+
+      {recommendations &&
+      (recommendations.dailyPlan.length > 0 ||
+        recommendations.weakestPartNo !== null ||
+        recommendations.dueVocabCount > 0 ||
+        recommendations.mistakeCount > 0) ? (
+        <SurfaceCard style={styles.adaptiveCard}>
+          <View style={styles.adaptiveHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.adaptiveEyebrow}>GỢI Ý CÁ NHÂN HÓA</Text>
+              <Text style={[styles.adaptiveTitle, { fontSize: rf(15.5) }]}>
+                Kế hoạch học hôm nay
+              </Text>
+            </View>
+            <Pressable hitSlop={8} onPress={() => pushRoute("/user/onboarding")}>
+              <Text style={styles.adaptiveTestLink}>Test trình độ →</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.adaptiveChipsRow}>
+            {recommendations.weakestPartNo ? (
+              <View style={styles.adaptiveChipWarn}>
+                <Text style={styles.adaptiveChipWarnText}>
+                  Cần cải thiện: Part {recommendations.weakestPartNo} (
+                  {Math.round(recommendations.weakestPartAccuracy ?? 0)}%)
+                </Text>
+              </View>
+            ) : null}
+            {recommendations.dueVocabCount > 0 ? (
+              <View style={styles.adaptiveChipInfo}>
+                <Text style={styles.adaptiveChipInfoText}>
+                  {recommendations.dueVocabCount} từ đến hạn ôn
+                </Text>
+              </View>
+            ) : null}
+            {recommendations.mistakeCount > 0 ? (
+              <View style={styles.adaptiveChipInfo}>
+                <Text style={styles.adaptiveChipInfoText}>
+                  {recommendations.mistakeCount} lỗi sai cần sửa
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          {recommendations.dailyPlan.length > 0 ? (
+            <View style={styles.adaptivePlanList}>
+              {recommendations.dailyPlan.slice(0, 3).map((task) => (
+                <Pressable
+                  key={task.id}
+                  onPress={() => pushRoute(task.route as never)}
+                  style={({ pressed }) => [styles.adaptiveTaskRow, pressed ? { opacity: 0.88 } : null]}
+                >
+                  <View style={styles.adaptiveTaskCopy}>
+                    <Text numberOfLines={1} style={styles.adaptiveTaskTitle}>
+                      {task.title}
+                    </Text>
+                    <Text numberOfLines={1} style={styles.adaptiveTaskSub}>
+                      {task.subtitle}
+                    </Text>
+                  </View>
+                  <View style={styles.adaptiveTaskBadge}>
+                    <Text style={styles.adaptiveTaskBadgeText}>{task.badge}</Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+        </SurfaceCard>
+      ) : null}
 
       <SectionTitle
         actionLabel="Xem tất cả"
@@ -1038,4 +1113,97 @@ const createStyles = (colors: LiquidThemeColors) =>
     emptyRankWrap: { alignItems: "center", gap: 8, paddingVertical: 10 },
     emptyRankBtn: { paddingVertical: 4 },
     emptyRankBtnText: { color: colors.primary, fontSize: 12.5, fontWeight: "900" },
+    adaptiveCard: {
+      gap: 10,
+      marginBottom: 18,
+    },
+    adaptiveHeader: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 10,
+      justifyContent: "space-between",
+    },
+    adaptiveEyebrow: {
+      color: colors.primary,
+      fontSize: 10.5,
+      fontWeight: "900",
+      letterSpacing: 0.8,
+    },
+    adaptiveTitle: {
+      color: colors.text,
+      fontWeight: "900",
+      marginTop: 2,
+    },
+    adaptiveTestLink: {
+      color: colors.primary,
+      fontSize: 12.5,
+      fontWeight: "800",
+    },
+    adaptiveChipsRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+    },
+    adaptiveChipWarn: {
+      backgroundColor: "#FEF3C7",
+      borderRadius: radius.pill,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+    },
+    adaptiveChipWarnText: {
+      color: "#B45309",
+      fontSize: 11.5,
+      fontWeight: "800",
+    },
+    adaptiveChipInfo: {
+      backgroundColor: colors.primarySoft,
+      borderRadius: radius.pill,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+    },
+    adaptiveChipInfoText: {
+      color: colors.primary,
+      fontSize: 11.5,
+      fontWeight: "800",
+    },
+    adaptivePlanList: {
+      gap: 8,
+    },
+    adaptiveTaskRow: {
+      alignItems: "center",
+      backgroundColor: colors.surface,
+      borderColor: colors.glassBorder,
+      borderRadius: 12,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: 10,
+      justifyContent: "space-between",
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    adaptiveTaskCopy: {
+      flex: 1,
+      minWidth: 0,
+    },
+    adaptiveTaskTitle: {
+      color: colors.text,
+      fontSize: 13.5,
+      fontWeight: "800",
+    },
+    adaptiveTaskSub: {
+      color: colors.textMuted,
+      fontSize: 12,
+      marginTop: 2,
+    },
+    adaptiveTaskBadge: {
+      backgroundColor: colors.accentSoft,
+      borderRadius: radius.pill,
+      paddingHorizontal: 9,
+      paddingVertical: 4,
+    },
+    adaptiveTaskBadgeText: {
+      color: colors.accent,
+      fontSize: 11,
+      fontWeight: "900",
+    },
   });

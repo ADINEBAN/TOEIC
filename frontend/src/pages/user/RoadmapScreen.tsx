@@ -36,7 +36,9 @@ export default function RoadmapScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [moduleInfo, setModuleInfo] = useState<UserRoadmapModuleItem | null>(null);
   const [moduleContent, setModuleContent] = useState<UserModuleContent | null>(null);
-  const [practiceDoneModuleId, setPracticeDoneModuleId] = useState<number | null>(null);
+  const [hydratedVocabDone, setHydratedVocabDone] = useState(false);
+
+  const currentUserId = auth.user?.id;
 
   const selectedModuleId = useMemo(() => {
     if (!params.moduleId) return undefined;
@@ -72,6 +74,8 @@ export default function RoadmapScreen() {
 
       const modulePayload = await getUserModuleContent(auth.accessToken, resolvedModuleId);
       setModuleContent(modulePayload.data ?? null);
+      const persistedVocab = await vocabProgressStore.hydrate(currentUserId);
+      setHydratedVocabDone(persistedVocab.has(resolvedModuleId));
     } catch (error) {
       setModuleInfo(null);
       setModuleContent(null);
@@ -83,7 +87,7 @@ export default function RoadmapScreen() {
     } finally {
       setLoading(false);
     }
-  }, [auth.accessToken, selectedModuleId]);
+  }, [auth.accessToken, currentUserId, selectedModuleId]);
 
   useEffect(() => {
     if (!isHydrated || !auth.accessToken) return;
@@ -94,7 +98,7 @@ export default function RoadmapScreen() {
   }, [auth.accessToken, isHydrated, loadModule]);
 
   const activeModuleId = moduleContent?.moduleId ?? moduleInfo?.moduleId;
-  const practiceStepDone = typeof activeModuleId === "number" && practiceDoneModuleId === activeModuleId;
+  const practiceStepDone = Boolean(moduleContent?.practiceCompleted) || Boolean(moduleContent?.moduleCompleted);
   const totalVideoLessons = moduleContent?.videoLessons?.length ?? 0;
   const totalFlashcards = moduleContent?.flashcards?.length ?? 0;
   const totalPracticeSets = moduleContent?.practiceSets?.length ?? 0;
@@ -103,6 +107,8 @@ export default function RoadmapScreen() {
   const allVideosCompleted = totalVideoLessons > 0 && completedVideoLessons === totalVideoLessons;
   const videosSatisfied = totalVideoLessons === 0 || allVideosCompleted;
   const vocabStepDone =
+    hydratedVocabDone ||
+    Boolean(moduleContent?.moduleCompleted) ||
     (typeof activeModuleId === "number" && vocabProgressStore.isCompleted(activeModuleId)) ||
     params.vocabDone === "true";
   const vocabSatisfied = totalFlashcards === 0 || vocabStepDone;
@@ -114,9 +120,9 @@ export default function RoadmapScreen() {
 
   useEffect(() => {
     if (params.vocabDone === "true" && typeof activeModuleId === "number") {
-      vocabProgressStore.markCompleted(activeModuleId);
+      vocabProgressStore.markCompleted(activeModuleId, auth.user?.id);
     }
-  }, [activeModuleId, params.vocabDone]);
+  }, [activeModuleId, auth.user?.id, params.vocabDone]);
 
   const handleCompleteModule = async () => {
     if (!auth.accessToken || !activeModuleId || unlocking) return;
@@ -295,10 +301,9 @@ export default function RoadmapScreen() {
           <LiquidButton
             compact
             disabled={!activeModuleId || !canOpenPractice}
-            label={totalPracticeSets === 0 ? "Không có" : "Làm đề"}
+            label={totalPracticeSets === 0 ? "Không có" : practiceStepDone ? "Làm lại" : "Làm đề"}
             onPress={() => {
               if (activeModuleId) {
-                setPracticeDoneModuleId(activeModuleId);
                 pushRoute(`/user/practice-module?moduleId=${activeModuleId}`);
               }
             }}
@@ -343,7 +348,6 @@ export default function RoadmapScreen() {
             key={set.id}
             disabled={!canOpenPractice}
             onPress={() => {
-              setPracticeDoneModuleId(activeModuleId ?? null);
               pushRoute(`/user/practice-module?moduleId=${activeModuleId}`);
             }}
             style={[styles.previewRow, !canOpenPractice ? { opacity: 0.5 } : null]}

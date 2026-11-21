@@ -2,12 +2,14 @@ package org.example.backend.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.request.CompleteModuleRequest;
+import org.example.backend.dto.response.AdaptiveRecommendationResponse;
 import org.example.backend.dto.response.ApiResponse;
 import org.example.backend.dto.response.ModuleUnlockResponse;
 import org.example.backend.dto.response.UserLearningPathCatalogItemResponse;
 import org.example.backend.dto.response.UserModuleContentResponse;
 import org.example.backend.dto.response.UserRoadmapResponse;
 import org.example.backend.enums.SuccessCode;
+import org.example.backend.service.AdaptiveLearningService;
 import org.example.backend.service.UserLearningService;
 import org.example.backend.service.UserProgressService;
 import org.example.backend.util.ApiResponseUtil;
@@ -30,6 +32,16 @@ public class UserLearningController {
 
     private final UserLearningService userLearningService;
     private final UserProgressService userProgressService;
+    private final AdaptiveLearningService adaptiveLearningService;
+
+    @GetMapping("/recommendations")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
+    public ResponseEntity<ApiResponse<AdaptiveRecommendationResponse>> getAdaptiveRecommendations(
+            Authentication authentication
+    ) {
+        AdaptiveRecommendationResponse response = adaptiveLearningService.getRecommendations(authentication.getName());
+        return ApiResponseUtil.success(response, SuccessCode.LEARNING_PATH_GET);
+    }
 
     @GetMapping("/paths")
     @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")

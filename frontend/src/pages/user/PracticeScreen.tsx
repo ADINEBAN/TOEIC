@@ -21,9 +21,9 @@ import SectionTitle from "@/src/components/user/SectionTitle";
 import SurfaceCard from "@/src/components/user/SurfaceCard";
 import UserScreen from "@/src/components/user/UserScreen";
 import { useAuth } from "@/src/hooks/use-auth";
-import { getUserRoadmap } from "@/src/services/user.service";
+import { getAdaptiveRecommendations, getUserRoadmap } from "@/src/services/user.service";
 import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
-import { UserRoadmap, UserRoadmapModuleItem } from "@/src/types/user-api";
+import { AdaptiveRecommendationData, UserRoadmap, UserRoadmapModuleItem } from "@/src/types/user-api";
 import { isNoActiveLearningPathError } from "@/src/utils/api-errors";
 import { pushRoute } from "@/src/utils/navigation";
 import { useResponsiveLayout } from "@/src/utils/responsive";
@@ -57,6 +57,7 @@ export default function PracticeScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [roadmap, setRoadmap] = useState<UserRoadmap | null>(null);
+  const [recommendations, setRecommendations] = useState<AdaptiveRecommendationData | null>(null);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
 
   const loadRoadmap = useCallback(async () => {
@@ -65,8 +66,21 @@ export default function PracticeScreen() {
     try {
       setLoading(true);
       setErrorMessage(null);
-      const payload = await getUserRoadmap(auth.accessToken);
-      setRoadmap(payload.data ?? null);
+      const [roadmapResult, recResult] = await Promise.allSettled([
+        getUserRoadmap(auth.accessToken),
+        getAdaptiveRecommendations(auth.accessToken),
+      ]);
+      if (roadmapResult.status === "fulfilled") {
+        setRoadmap(roadmapResult.value.data ?? null);
+      } else {
+        setRoadmap(null);
+        if (!isNoActiveLearningPathError(roadmapResult.reason)) {
+          throw roadmapResult.reason;
+        }
+      }
+      setRecommendations(
+        recResult.status === "fulfilled" ? recResult.value.data ?? null : null,
+      );
     } catch (error) {
       setRoadmap(null);
       if (isNoActiveLearningPathError(error)) {
@@ -317,6 +331,9 @@ export default function PracticeScreen() {
       <View style={styles.moduleList}>
         {filteredNodes.map((item, idx) => {
           const palette = TILE_PALETTES[idx % TILE_PALETTES.length];
+          const isPrioritized =
+            !item.isCompleted &&
+            Boolean(recommendations?.prioritizedModuleIds?.includes(item.module.moduleId));
           const modPct = Number.isFinite(item.module.progressPercent)
             ? Math.round(item.module.progressPercent)
             : 0;
@@ -365,10 +382,19 @@ export default function PracticeScreen() {
                       <Text numberOfLines={1} style={styles.milestoneEyebrow}>
                         {item.milestoneTitle}
                       </Text>
-                      <View style={[styles.moduleStatusPill, { backgroundColor: statusMeta.bg }]}>
-                        <Text style={[styles.moduleStatusText, { color: statusMeta.fg }]}>
-                          {statusMeta.label}
-                        </Text>
+                      <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                        {isPrioritized ? (
+                          <View style={[styles.moduleStatusPill, { backgroundColor: "#FEF3C7" }]}>
+                            <Text style={[styles.moduleStatusText, { color: "#B45309" }]}>
+                              Ưu tiên
+                            </Text>
+                          </View>
+                        ) : null}
+                        <View style={[styles.moduleStatusPill, { backgroundColor: statusMeta.bg }]}>
+                          <Text style={[styles.moduleStatusText, { color: statusMeta.fg }]}>
+                            {statusMeta.label}
+                          </Text>
+                        </View>
                       </View>
                     </View>
 

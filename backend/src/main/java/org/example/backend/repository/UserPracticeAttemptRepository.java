@@ -20,6 +20,10 @@ public interface UserPracticeAttemptRepository extends JpaRepository<UserPractic
 
 	Optional<UserPracticeAttempt> findByUserIdAndPracticeSetIdAndStatus(Long userId, Long practiceSetId, AttemptStatus status);
 
+	boolean existsByUserIdAndPracticeSetModuleIdAndStatus(Long userId, Long moduleId, AttemptStatus status);
+
+	long countByUserIdAndPracticeSetModuleIdAndStatus(Long userId, Long moduleId, AttemptStatus status);
+
 	List<UserPracticeAttempt> findByUserIdOrderByStartedAtDesc(Long userId);
 
 	Optional<UserPracticeAttempt> findByIdAndUserId(Long id, Long userId);

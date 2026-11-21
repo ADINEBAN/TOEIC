@@ -2,7 +2,9 @@ import { Platform } from "react-native";
 
 import { API_BASE_URL } from "@/src/config/env";
 import { apiRequest } from "@/src/services/api.client";
+import { ApiResponse } from "@/src/types/auth";
 import {
+  AdaptiveRecommendationData,
   ArenaLeaderboardResponse,
   ArenaMatchmakingStatusResponse,
   ArenaMode,
@@ -17,6 +19,8 @@ import {
   ImportedVideoApiResponse,
   ImportedVideoListApiResponse,
   LearningPathListResponse,
+  PlacementEvaluationData,
+  PlacementQuickTestData,
   UserLearningPathCatalogListResponse,
   LessonProgressUpdateResponse,
   MistakeListResponse,
@@ -120,6 +124,43 @@ export function assignRecommendedPath(
       body: payload ? JSON.stringify(payload) : undefined,
       headers: buildAuthHeaders(accessToken),
       method: "POST",
+    },
+  );
+}
+
+export function getPlacementQuickTest(accessToken: string) {
+  return apiRequest<ApiResponse<PlacementQuickTestData>>(
+    "/api/placement-onboarding/quick-test",
+    {
+      headers: buildAuthHeaders(accessToken),
+      method: "GET",
+    },
+  );
+}
+
+export function evaluatePlacementQuickTest(
+  accessToken: string,
+  payload: {
+    answers: { questionKey: string; selectedLabel: string }[];
+    targetScore?: number;
+  },
+) {
+  return apiRequest<ApiResponse<PlacementEvaluationData>>(
+    "/api/placement-onboarding/evaluate-test",
+    {
+      body: JSON.stringify(payload),
+      headers: buildAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+}
+
+export function getAdaptiveRecommendations(accessToken: string) {
+  return apiRequest<ApiResponse<AdaptiveRecommendationData>>(
+    "/api/users/learning/recommendations",
+    {
+      headers: buildAuthHeaders(accessToken),
+      method: "GET",
     },
   );
 }

@@ -751,7 +751,7 @@ export default function CardsScreen() {
 
   const handleFinishLessonCards = () => {
     if (!selectedModuleId) return;
-    vocabProgressStore.markCompleted(selectedModuleId);
+    vocabProgressStore.markCompleted(selectedModuleId, auth.user?.id);
     replaceRoute(`/user/roadmap?moduleId=${selectedModuleId}&vocabDone=true&focus=practice`);
   };
 
