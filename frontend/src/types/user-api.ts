@@ -288,6 +288,73 @@ export type UserModuleContent = {
   videoLessons: UserLessonApiItem[];
   flashcards: FlashcardApiItem[];
   practiceSets: PracticeSetApiItem[];
+  practiceCompleted?: boolean | null;
+  submittedPracticeCount?: number | null;
+  moduleCompleted?: boolean | null;
+};
+
+export type PlacementQuickOption = {
+  label: string;
+  text: string;
+};
+
+export type PlacementQuickQuestion = {
+  questionKey: string;
+  partNo: number;
+  skillArea: string;
+  questionText: string;
+  passageText: string | null;
+  options: PlacementQuickOption[];
+};
+
+export type PlacementQuickTestData = {
+  questions: PlacementQuickQuestion[];
+};
+
+export type PlacementEvaluationData = {
+  correctCount: number;
+  totalQuestions: number;
+  accuracyPercent: number;
+  estimatedScore: number;
+  recommendedTargetScore: number;
+  levelLabel: string;
+  recommendedPathId: number | null;
+  recommendedPathTitle: string | null;
+  partBreakdown: {
+    partNo: number;
+    skillArea: string;
+    correct: number;
+    total: number;
+    accuracyPercent: number;
+  }[];
+  weakAreas: string[];
+  strengths: string[];
+};
+
+export type AdaptiveRecommendationData = {
+  targetScore: number | null;
+  currentLevel: string | null;
+  weakestPartNo: number | null;
+  weakestPartAccuracy: number | null;
+  mistakeCount: number;
+  dueVocabCount: number;
+  nextModuleId: number | null;
+  nextModuleTitle: string | null;
+  nextModuleReason: string | null;
+  prioritizedModuleIds: number[];
+  partAccuracies: {
+    partNo: number;
+    correct: number;
+    total: number;
+    accuracyPercent: number;
+  }[];
+  dailyPlan: {
+    id: string;
+    title: string;
+    subtitle: string;
+    badge: string;
+    route: string;
+  }[];
 };
 
 export type UserGrammarListItem = {

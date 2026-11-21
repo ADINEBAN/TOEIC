@@ -18,4 +18,7 @@ public class UserModuleContentResponse {
     private List<UserLessonResponse> videoLessons;
     private List<FlashcardResponse> flashcards;
     private List<PracticeSetResponse> practiceSets;
+    private Boolean practiceCompleted;
+    private Integer submittedPracticeCount;
+    private Boolean moduleCompleted;
 }

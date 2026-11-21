@@ -20,6 +20,16 @@ public interface UserTestAnswerRepository extends JpaRepository<UserTestAnswer, 
             """)
     List<UserTestAnswer> findIncorrectAnswersByUserId(@Param("userId") Long userId);
 
+    @Query("""
+            select q.partNo, count(a), sum(case when a.correct = true then 1 else 0 end)
+            from UserTestAnswer a
+            join a.testPartQuestion tpq
+            join tpq.question q
+            where a.attempt.user.id = :userId and q.partNo is not null
+            group by q.partNo
+            """)
+    List<Object[]> summarizeAccuracyByPart(@Param("userId") Long userId);
+
     @Modifying
     @Query("delete from UserTestAnswer a where a.testPartQuestion.id = :tpqId")
     void deleteByTestPartQuestionId(@Param("tpqId") Long testPartQuestionId);
@@ -32,4 +42,3 @@ public interface UserTestAnswerRepository extends JpaRepository<UserTestAnswer, 
     @Query("delete from UserTestAnswer a where a.attempt.test.id = :testId")
     void deleteByTestId(@Param("testId") Long testId);
 }
-

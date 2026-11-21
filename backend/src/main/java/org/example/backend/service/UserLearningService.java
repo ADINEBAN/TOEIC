@@ -13,6 +13,7 @@ import org.example.backend.entity.MilestoneModule;
 import org.example.backend.entity.User;
 import org.example.backend.entity.UserLearningPath;
 import org.example.backend.entity.UserModuleProgress;
+import org.example.backend.enums.AttemptStatus;
 import org.example.backend.enums.ErrorCode;
 import org.example.backend.enums.PathStatus;
 import org.example.backend.enums.ProgressStatus;
@@ -27,8 +28,10 @@ import org.example.backend.repository.MilestoneModuleRepository;
 import org.example.backend.repository.PracticeSetRepository;
 import org.example.backend.repository.UserLearningPathRepository;
 import org.example.backend.repository.UserModuleProgressRepository;
+import org.example.backend.repository.UserPracticeAttemptRepository;
 import org.example.backend.repository.UserRepository;
 import org.example.backend.repository.VideoLessonRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,6 +62,9 @@ public class UserLearningService {
     private final PlacementOnboardingService placementOnboardingService;
     private final FlashcardMapper flashcardMapper;
     private final PracticeSetMapper practiceSetMapper;
+
+    @Autowired(required = false)
+    private UserPracticeAttemptRepository userPracticeAttemptRepository;
 
     @Transactional(readOnly = true)
     public List<UserLearningPathCatalogItemResponse> getLearningPathCatalog(String email) {
@@ -270,6 +276,17 @@ public class UserLearningService {
                 practiceSetRepository.findByModuleIdAndPublishedTrueOrderByCreatedAtDesc(moduleId)
         );
         response.setPracticeSets(practiceSets);
+
+        long submittedCount = userPracticeAttemptRepository != null
+                ? userPracticeAttemptRepository.countByUserIdAndPracticeSetModuleIdAndStatus(
+                        user.getId(), moduleId, AttemptStatus.SUBMITTED)
+                : 0L;
+        boolean modCompleted = userModuleProgressRepository.findByUserIdAndModuleId(user.getId(), moduleId)
+                .map(p -> p.getStatus() == ProgressStatus.COMPLETED)
+                .orElse(false);
+        response.setSubmittedPracticeCount((int) submittedCount);
+        response.setPracticeCompleted(submittedCount > 0 || modCompleted);
+        response.setModuleCompleted(modCompleted);
 
         return response;
     }
