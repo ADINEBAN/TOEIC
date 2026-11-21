@@ -105,7 +105,7 @@ public class AdminQuestionBankService {
         Question question = findQuestion(questionId);
 
         if (request.getPartNo() != null) {
-            if (request.getPartNo() <= 0) {
+            if (request.getPartNo() < 1 || request.getPartNo() > 7) {
                 throw new AppException(ErrorCode.INVALID_QUESTION_DATA);
             }
             question.setPartNo(request.getPartNo());
@@ -194,7 +194,7 @@ public class AdminQuestionBankService {
             String questionGroupCode
     ) {
         String normalizedQuestionText = trimToNull(questionText);
-        if (partNo == null || partNo <= 0 || normalizedQuestionText == null) {
+        if (partNo == null || partNo < 1 || partNo > 7 || normalizedQuestionText == null) {
             throw new AppException(ErrorCode.INVALID_QUESTION_DATA);
         }
 

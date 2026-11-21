@@ -76,6 +76,14 @@ const correctLabelOptions = ["A", "B", "C", "D"].map((value) => ({
   label: value,
   value,
 }));
+const partNoOptions = [1, 2, 3, 4, 5, 6, 7].map((value) => ({
+  label: `Part ${value}`,
+  value: String(value),
+}));
+const practicePartOptions = [
+  { label: "Tổng hợp (Tất cả Part)", value: "" },
+  ...partNoOptions,
+];
 
 function text(values: FormValues, key: string, required = false) {
   const value = String(values[key] ?? "").trim();
@@ -199,7 +207,12 @@ const practiceSetFields: AdminField[] = [
     options: practiceSetTypeOptions,
     required: true,
   },
-  { name: "partNo", label: "Part No", type: "number" },
+  {
+    name: "partNo",
+    label: "Part No",
+    type: "select",
+    options: practicePartOptions,
+  },
   { name: "targetScore", label: "Target score", type: "number" },
   {
     name: "durationMinutes",
@@ -211,27 +224,52 @@ const practiceSetFields: AdminField[] = [
   { name: "published", label: "Published", type: "switch" },
 ];
 
-const questionFields: AdminField[] = [
-  { name: "partNo", label: "Part No", type: "number", required: true },
+const buildQuestionFields = (
+  onExplainDraft?: (values: FormValues) => Promise<Partial<FormValues> | null>,
+): AdminField[] => [
+  {
+    name: "partNo",
+    label: "TOEIC Part",
+    type: "select",
+    options: partNoOptions,
+    required: true,
+  },
   {
     name: "questionText",
     label: "Question text",
     type: "textarea",
     required: true,
   },
-  { name: "difficultyLevel", label: "Difficulty level", type: "text" },
   {
-    name: "sourceType",
-    label: "Source type",
-    type: "select",
-    options: sourceTypeOptions,
+    name: "questionGroupCode",
+    label: "Group code (Part 3/4/6/7)",
+    type: "text",
+    visibleWhen: (v) => ["3", "4", "6", "7"].includes(String(v.partNo ?? "")),
   },
-  { name: "sourceYear", label: "Source year", type: "number" },
-  { name: "questionGroupCode", label: "Group code (Part 3/4/6/7)", type: "text" },
-  { name: "audioUrl", label: "Audio URL (Listening Part 1-4)", type: "text" },
-  { name: "imageUrl", label: "Image URL (Part 1 / Part 7)", type: "text" },
-  { name: "passageText", label: "Passage text (Part 6-7)", type: "textarea" },
-  { name: "transcript", label: "Audio transcript (Listening)", type: "textarea" },
+  {
+    name: "audioUrl",
+    label: "Audio URL (Listening Part 1–4)",
+    type: "text",
+    visibleWhen: (v) => ["1", "2", "3", "4"].includes(String(v.partNo ?? "")),
+  },
+  {
+    name: "imageUrl",
+    label: "Image URL (Part 1 / Part 6–7)",
+    type: "text",
+    visibleWhen: (v) => ["1", "6", "7"].includes(String(v.partNo ?? "")),
+  },
+  {
+    name: "passageText",
+    label: "Passage text (Part 6–7)",
+    type: "textarea",
+    visibleWhen: (v) => ["6", "7"].includes(String(v.partNo ?? "")),
+  },
+  {
+    name: "transcript",
+    label: "Audio transcript (Listening Part 1–4)",
+    type: "textarea",
+    visibleWhen: (v) => ["1", "2", "3", "4"].includes(String(v.partNo ?? "")),
+  },
   { name: "optionA", label: "Option A", type: "text", required: true },
   { name: "optionB", label: "Option B", type: "text", required: true },
   { name: "optionC", label: "Option C", type: "text", required: true },
@@ -243,7 +281,32 @@ const questionFields: AdminField[] = [
     options: correctLabelOptions,
     required: true,
   },
-  { name: "explanation", label: "Explanation", type: "textarea" },
+  { name: "difficultyLevel", label: "Difficulty level", type: "text" },
+  {
+    name: "sourceType",
+    label: "Source type",
+    type: "select",
+    options: sourceTypeOptions,
+  },
+  { name: "sourceYear", label: "Source year", type: "number" },
+  {
+    name: "explanation",
+    label: "Explanation",
+    type: "textarea",
+    actionButton: onExplainDraft
+      ? {
+          label: "AI tạo giải thích",
+          loadingLabel: "Đang tạo...",
+          isEnabled: (v) =>
+            Boolean(
+              String(v.questionText ?? "").trim() &&
+                String(v.optionA ?? "").trim() &&
+                String(v.optionB ?? "").trim(),
+            ),
+          onPress: onExplainDraft,
+        }
+      : undefined,
+  },
 ];
 
 const testTypeOptions = [
@@ -276,20 +339,6 @@ const testPartFields: AdminField[] = [
   { name: "description", label: "Description", type: "textarea" },
 ];
 const testPartQuestionFields = (questions: QuestionApiItem[]): AdminField[] => [
-  {
-    name: "questionId",
-    label: "Question",
-    type: "select",
-    required: true,
-    options: questions.map((q) => ({
-      label: `[#${q.id}] ${q.questionText.substring(0, 50)}${q.questionText.length > 50 ? "..." : ""}`,
-      value: String(q.id),
-    })),
-  },
-  { name: "sortOrder", label: "Sort order", type: "number", required: true },
-];
-
-const practiceSetQuestionFields = (questions: QuestionApiItem[]): AdminField[] => [
   {
     name: "questionId",
     label: "Question",
@@ -455,6 +504,16 @@ export default function AdminDashboardScreen() {
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [bulkImportRaw, setBulkImportRaw] = useState(SAMPLE_BULK_JSON);
   const [bulkImporting, setBulkImporting] = useState(false);
+  const [questionPartFilter, setQuestionPartFilter] = useState<string>("ALL");
+  const [questionSourceFilter, setQuestionSourceFilter] = useState<string>("ALL");
+  const [importingQuestions, setImportingQuestions] = useState(false);
+  const [questionImportAutoExplainAi, setQuestionImportAutoExplainAi] = useState(false);
+  const [questionImportSummary, setQuestionImportSummary] = useState<string | null>(null);
+  const [showPracticePickerModal, setShowPracticePickerModal] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerPartFilter, setPickerPartFilter] = useState<string>("ALL");
+  const [pickerSelectedIds, setPickerSelectedIds] = useState<number[]>([]);
+  const [savingPracticeQuestions, setSavingPracticeQuestions] = useState(false);
 
   const services = useMemo(() => {
     if (!auth.accessToken) return null;
@@ -805,6 +864,155 @@ export default function AdminDashboardScreen() {
     }
   };
 
+  const handleImportQuestionsFile = useCallback(async () => {
+    if (!services) return;
+    const defaultPart =
+      questionPartFilter !== "ALL" && questionPartFilter !== "INVALID"
+        ? Number(questionPartFilter)
+        : 5;
+
+    const executeImport = async (
+      file: File | { uri: string; name: string; type?: string },
+      displayName: string,
+    ) => {
+      try {
+        setImportingQuestions(true);
+        setErrorMessage(null);
+        setQuestionImportSummary(null);
+        const res = await services.questions.importFile(
+          file,
+          defaultPart,
+          questionImportAutoExplainAi,
+        );
+        const stats = res.data;
+        const imported = stats?.importedCount ?? 0;
+        const aiCount = stats?.aiExplainedCount ?? 0;
+        const skipped = stats?.skippedDuplicateCount ?? 0;
+        const summary = `File "${displayName}": Đã thêm ${imported} câu hỏi${
+          aiCount > 0 ? ` (AI giải thích ${aiCount} câu)` : ""
+        }${skipped > 0 ? `, bỏ qua ${skipped} câu trùng` : ""}.`;
+        setQuestionImportSummary(summary);
+        await Promise.all([loadBaseData(), loadUsersAndAnalytics()]);
+      } catch (error) {
+        handleError(error);
+      } finally {
+        setImportingQuestions(false);
+      }
+    };
+
+    if (Platform.OS === "web") {
+      const picker = document.createElement("input");
+      picker.type = "file";
+      picker.accept = ".xlsx,.xls,.docx,.doc,.pdf,.csv,.tsv,.txt";
+      picker.onchange = () => {
+        const file = picker.files?.[0];
+        if (!file) return;
+        void executeImport(file, file.name);
+      };
+      picker.click();
+      return;
+    }
+
+    const picked = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      type: "*/*",
+    });
+    if (picked.canceled || !picked.assets?.length) return;
+    const asset = picked.assets[0];
+    await executeImport(
+      {
+        name: asset.name,
+        type: asset.mimeType ?? "application/octet-stream",
+        uri: asset.uri,
+      },
+      asset.name,
+    );
+  }, [handleError, loadBaseData, loadUsersAndAnalytics, questionImportAutoExplainAi, questionPartFilter, services]);
+
+  const openPracticeQuestionPicker = () => {
+    if (!selectedPracticeSetId) {
+      Alert.alert("Bộ thực hành", "Hãy chọn hoặc tạo một Bộ bài tập trước.");
+      return;
+    }
+    setPickerSelectedIds(practiceSetQuestions.map((item) => item.questionId));
+    setPickerSearch("");
+    setPickerPartFilter(
+      selectedPracticeSet?.partNo && selectedPracticeSet.partNo >= 1 && selectedPracticeSet.partNo <= 7
+        ? String(selectedPracticeSet.partNo)
+        : "ALL",
+    );
+    setShowPracticePickerModal(true);
+  };
+
+  const togglePickerQuestion = (questionId: number) => {
+    setPickerSelectedIds((current) =>
+      current.includes(questionId)
+        ? current.filter((id) => id !== questionId)
+        : [...current, questionId],
+    );
+  };
+
+  const savePracticeSetSelection = async () => {
+    if (!services || !selectedPracticeSetId) return;
+    try {
+      setSavingPracticeQuestions(true);
+      setErrorMessage(null);
+      await services.practiceSets.assignQuestions(selectedPracticeSetId, {
+        questions: pickerSelectedIds.map((questionId, index) => ({
+          questionId,
+          sortOrder: index + 1,
+        })),
+      });
+      setShowPracticePickerModal(false);
+      await loadPracticeSetQuestions();
+    } catch (error) {
+      handleError(error);
+    } finally {
+      setSavingPracticeQuestions(false);
+    }
+  };
+
+  const movePracticeQuestion = async (index: number, direction: -1 | 1) => {
+    if (!services || !selectedPracticeSetId) return;
+    const target = index + direction;
+    if (target < 0 || target >= practiceSetQuestions.length) return;
+    const reordered = [...practiceSetQuestions];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(target, 0, moved);
+    await runAction(
+      () =>
+        services.practiceSets
+          .assignQuestions(selectedPracticeSetId, {
+            questions: reordered.map((item, idx) => ({
+              questionId: item.questionId,
+              sortOrder: idx + 1,
+            })),
+          })
+          .then(() => undefined),
+      loadPracticeSetQuestions,
+    );
+  };
+
+  const removePracticeQuestion = async (item: PracticeSetQuestionApiItem) => {
+    if (!services || !selectedPracticeSetId) return;
+    if (!confirmWeb(`Gỡ câu hỏi #${item.questionId} khỏi bộ "${selectedPracticeSet?.title ?? ""}"?`)) {
+      return;
+    }
+    const remaining = practiceSetQuestions.filter((entry) => entry.id !== item.id);
+    await runAction(
+      () =>
+        services.practiceSets
+          .assignQuestions(selectedPracticeSetId, {
+            questions: remaining.map((entry, idx) => ({
+              questionId: entry.questionId,
+              sortOrder: idx + 1,
+            })),
+          })
+          .then(() => undefined),
+      loadPracticeSetQuestions,
+    );
+  };
+
   useEffect(() => {
     if (!isFullAdmin) return;
     const t = setTimeout(() => {
@@ -879,11 +1087,6 @@ export default function AdminDashboardScreen() {
   const requireModule = () => {
     if (!selectedModuleId) throw new Error("Hãy chọn module trước.");
     return selectedModuleId;
-  };
-
-  const requirePracticeSet = () => {
-    if (!selectedPracticeSetId) throw new Error("Hãy chọn practice set trước.");
-    return selectedPracticeSetId;
   };
 
   const questionPayload = (values: FormValues) => {
@@ -1407,6 +1610,7 @@ export default function AdminDashboardScreen() {
         ) : null}
 
         {contentSubTab === "practice" ? (
+          <>
           <AdminCrudPanel
             columns={[
               { label: "ID", render: (item) => String(item.id) },
@@ -1418,7 +1622,10 @@ export default function AdminDashboardScreen() {
             getInitialValues={(item?: PracticeSetApiItem) => ({
               description: item?.description ?? "",
               durationMinutes: String(item?.durationMinutes ?? 20),
-              partNo: String(item?.partNo ?? 1),
+              partNo:
+                item?.partNo && item.partNo >= 1 && item.partNo <= 7
+                  ? String(item.partNo)
+                  : "",
               published: item?.published ?? false,
               setType: item?.setType ?? "PRACTICE",
               targetScore: String(item?.targetScore ?? 300),
@@ -1488,6 +1695,253 @@ export default function AdminDashboardScreen() {
             title="Bộ bài tập thực hành"
             working={working}
           />
+            <View style={styles.panelSection}>
+              <View style={styles.bulkHeaderRow}>
+                <View style={{ flex: 1, minWidth: 220 }}>
+                  <Text style={styles.uploadTitle}>
+                    Câu hỏi trong Bộ thực hành ({practiceSetQuestions.length})
+                  </Text>
+                  <Text style={styles.uploadSubtitle}>
+                    {selectedPracticeSet
+                      ? `Đang chọn bộ #${selectedPracticeSet.id}: "${selectedPracticeSet.title}". Chọn hàng loạt bằng checkbox hoặc đổi thứ tự nhanh.`
+                      : "Tạo hoặc chọn một bộ bài tập phía trên để gán câu hỏi."}
+                  </Text>
+                </View>
+                <Pressable
+                  disabled={!selectedPracticeSetId || working}
+                  onPress={openPracticeQuestionPicker}
+                  style={[
+                    styles.bulkOpenBtn,
+                    (!selectedPracticeSetId || working) ? { opacity: 0.55 } : null,
+                  ]}
+                >
+                  <Text style={styles.bulkOpenBtnText}>+ Chọn câu hỏi (Checkbox)</Text>
+                </Pressable>
+              </View>
+
+              {practiceSets.length > 0 ? (
+                <View style={[styles.chipRow, { marginTop: 10 }]}>
+                  {practiceSets.map((ps) => {
+                    const active = ps.id === selectedPracticeSetId;
+                    return (
+                      <Pressable
+                        key={ps.id}
+                        onPress={() => setSelectedPracticeSetId(ps.id)}
+                        style={[styles.selectorChip, active ? styles.selectorChipActive : null]}
+                      >
+                        <Text style={[styles.selectorText, active ? styles.selectorTextActive : null]}>
+                          #{ps.id} {ps.title}{ps.partNo ? ` (P${ps.partNo})` : ""}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+
+              <View style={styles.assignedList}>
+                {practiceSetQuestions.length === 0 ? (
+                  <Text style={styles.uploadHint}>
+                    Bộ bài tập này chưa có câu hỏi nào. Bấm “+ Chọn câu hỏi (Checkbox)” để gán nhanh nhiều câu cùng lúc.
+                  </Text>
+                ) : (
+                  practiceSetQuestions.map((item, idx) => (
+                    <View key={item.id} style={styles.assignedRow}>
+                      <View style={styles.assignedOrderBadge}>
+                        <Text style={styles.assignedOrderText}>{idx + 1}</Text>
+                      </View>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <View style={{ flexDirection: "row", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                          <View style={styles.partPill}>
+                            <Text style={styles.partPillText}>
+                              Part {item.question?.partNo ?? "-"}
+                            </Text>
+                          </View>
+                          <Text style={styles.uploadHint}>#{item.questionId}</Text>
+                        </View>
+                        <Text numberOfLines={2} style={styles.assignedQuestionText}>
+                          {item.question?.questionText ?? `Question #${item.questionId}`}
+                        </Text>
+                      </View>
+                      <View style={styles.assignedActions}>
+                        <Pressable
+                          disabled={idx === 0 || working}
+                          onPress={() => void movePracticeQuestion(idx, -1)}
+                          style={[styles.miniIconBtn, idx === 0 ? { opacity: 0.4 } : null]}
+                        >
+                          <Text style={styles.miniIconBtnText}>↑</Text>
+                        </Pressable>
+                        <Pressable
+                          disabled={idx === practiceSetQuestions.length - 1 || working}
+                          onPress={() => void movePracticeQuestion(idx, 1)}
+                          style={[
+                            styles.miniIconBtn,
+                            idx === practiceSetQuestions.length - 1 ? { opacity: 0.4 } : null,
+                          ]}
+                        >
+                          <Text style={styles.miniIconBtnText}>↓</Text>
+                        </Pressable>
+                        <Pressable
+                          disabled={working}
+                          onPress={() => void removePracticeQuestion(item)}
+                          style={[styles.miniIconBtn, styles.miniDangerBtn]}
+                        >
+                          <Text style={styles.miniDangerBtnText}>Gỡ</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            </View>
+
+            <Modal
+              animationType="fade"
+              onRequestClose={() => setShowPracticePickerModal(false)}
+              transparent
+              visible={showPracticePickerModal}
+            >
+              <View style={styles.modalBackdrop}>
+                <View style={[styles.modalPanel, { maxWidth: 820 }]}>
+                  <View style={styles.bulkHeaderRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.uploadTitle}>
+                        {`Chọn câu hỏi cho “${selectedPracticeSet?.title ?? ""}”`}
+                      </Text>
+                      <Text style={styles.uploadSubtitle}>
+                        Tick nhiều câu từ Ngân hàng câu hỏi rồi bấm Lưu để cập nhật bộ bài tập.
+                      </Text>
+                    </View>
+                    <Text style={[styles.partPillText, { fontSize: 13 }]}>
+                      Đã chọn: {pickerSelectedIds.length} câu
+                    </Text>
+                  </View>
+
+                  <TextInput
+                    onChangeText={setPickerSearch}
+                    placeholder="Tìm nội dung câu hỏi hoặc #ID..."
+                    placeholderTextColor={colors.textMuted}
+                    style={[styles.userSearchInput, { width: "100%" }]}
+                    value={pickerSearch}
+                  />
+
+                  <View style={styles.chipRow}>
+                    {["ALL", "1", "2", "3", "4", "5", "6", "7"].map((partKey) => {
+                      const active = pickerPartFilter === partKey;
+                      return (
+                        <Pressable
+                          key={partKey}
+                          onPress={() => setPickerPartFilter(partKey)}
+                          style={[styles.selectorChip, active ? styles.selectorChipActive : null]}
+                        >
+                          <Text style={[styles.selectorText, active ? styles.selectorTextActive : null]}>
+                            {partKey === "ALL" ? "Tất cả Part" : `Part ${partKey}`}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  {(() => {
+                    const qSearch = pickerSearch.trim().toLowerCase();
+                    const visibleBank = questions.filter((q) => {
+                      if (pickerPartFilter !== "ALL" && String(q.partNo ?? "") !== pickerPartFilter) {
+                        return false;
+                      }
+                      if (!qSearch) return true;
+                      return (
+                        q.questionText.toLowerCase().includes(qSearch) ||
+                        String(q.id).includes(qSearch)
+                      );
+                    });
+                    return (
+                      <>
+                        <View style={styles.templateRow}>
+                          <Pressable
+                            onPress={() =>
+                              setPickerSelectedIds((prev) => {
+                                const merged = new Set(prev);
+                                visibleBank.forEach((q) => merged.add(q.id));
+                                return Array.from(merged);
+                              })
+                            }
+                            style={styles.templateBtn}
+                          >
+                            <Text style={styles.templateBtnText}>
+                              Chọn tất cả đang lọc ({visibleBank.length})
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => setPickerSelectedIds([])}
+                            style={styles.templateBtn}
+                          >
+                            <Text style={styles.templateBtnText}>Bỏ chọn hết</Text>
+                          </Pressable>
+                        </View>
+
+                        <ScrollView style={styles.pickerScroll}>
+                          {visibleBank.map((q) => {
+                            const checked = pickerSelectedIds.includes(q.id);
+                            const correct = q.options?.find((o) => o.correct)?.optionLabel ?? "-";
+                            return (
+                              <Pressable
+                                key={q.id}
+                                onPress={() => togglePickerQuestion(q.id)}
+                                style={[styles.pickerRow, checked ? styles.pickerRowChecked : null]}
+                              >
+                                <View style={[styles.checkboxBox, checked ? styles.checkboxBoxChecked : null]}>
+                                  {checked ? <Text style={styles.checkboxMark}>✓</Text> : null}
+                                </View>
+                                <View style={{ flex: 1, gap: 3 }}>
+                                  <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                                    <View style={styles.partPill}>
+                                      <Text style={styles.partPillText}>
+                                        {q.partNo && q.partNo >= 1 && q.partNo <= 7
+                                          ? `Part ${q.partNo}`
+                                          : `⚠️ Part ${q.partNo ?? "-"}`}
+                                      </Text>
+                                    </View>
+                                    <Text style={styles.uploadHint}>
+                                      #{q.id} • {q.sourceType ?? "INTERNAL"} • Đáp án {correct}
+                                    </Text>
+                                  </View>
+                                  <Text numberOfLines={2} style={styles.assignedQuestionText}>
+                                    {q.questionText}
+                                  </Text>
+                                </View>
+                              </Pressable>
+                            );
+                          })}
+                          {visibleBank.length === 0 ? (
+                            <Text style={styles.uploadHint}>Không tìm thấy câu hỏi phù hợp.</Text>
+                          ) : null}
+                        </ScrollView>
+                      </>
+                    );
+                  })()}
+
+                  <View style={styles.templateRow}>
+                    <Pressable
+                      onPress={() => setShowPracticePickerModal(false)}
+                      style={styles.modalSecondaryBtn}
+                    >
+                      <Text style={styles.modalSecondaryBtnText}>Đóng</Text>
+                    </Pressable>
+                    <Pressable
+                      disabled={savingPracticeQuestions}
+                      onPress={() => void savePracticeSetSelection()}
+                      style={styles.bulkOpenBtn}
+                    >
+                      <Text style={styles.bulkOpenBtnText}>
+                        {savingPracticeQuestions
+                          ? "Đang lưu..."
+                          : `Lưu danh sách (${pickerSelectedIds.length} câu)`}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            </Modal>
+          </>
         ) : null}
       </View>
     );
@@ -1581,239 +2035,324 @@ export default function AdminDashboardScreen() {
     </View>
   );
 
-  const renderQuestions = () => (
-    <View style={styles.stack}>
-      <View style={styles.bulkCard}>
-        <View style={styles.bulkHeaderRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.uploadTitle}>Import hàng loạt câu hỏi TOEIC (JSON / CSV)</Text>
-            <Text style={styles.uploadSubtitle}>
-              Tạo nhanh nhiều câu hỏi Part 1–7 kèm liên kết audio, hình ảnh và đoạn văn.
-            </Text>
+  const renderQuestions = () => {
+    const invalidPartCount = questions.filter(
+      (q) => !q.partNo || q.partNo < 1 || q.partNo > 7,
+    ).length;
+
+    const filteredQuestions = questions.filter((q) => {
+      if (questionPartFilter === "INVALID") {
+        if (q.partNo && q.partNo >= 1 && q.partNo <= 7) return false;
+      } else if (questionPartFilter !== "ALL") {
+        if (String(q.partNo ?? "") !== questionPartFilter) return false;
+      }
+
+      if (questionSourceFilter !== "ALL") {
+        if ((q.sourceType ?? "INTERNAL").toUpperCase() !== questionSourceFilter) return false;
+      }
+      return true;
+    });
+
+    const dynamicQuestionFields = buildQuestionFields(async (values) => {
+      if (!services) return null;
+      const correctLabel = String(values.correctLabel ?? "A").trim() || "A";
+      const res = await services.questions.explainDraft({
+        correctLabel,
+        explanation: nullableText(values, "explanation"),
+        optionA: String(values.optionA ?? "").trim(),
+        optionB: String(values.optionB ?? "").trim(),
+        optionC: String(values.optionC ?? "").trim(),
+        optionD: String(values.optionD ?? "").trim(),
+        partNo: numberValue(values, "partNo"),
+        passageText: nullableText(values, "passageText"),
+        questionText: String(values.questionText ?? "").trim(),
+        transcript: nullableText(values, "transcript"),
+      });
+      if (!res.data?.explanation) return null;
+      return { explanation: res.data.explanation };
+    });
+
+    return (
+      <View style={styles.stack}>
+        <View style={styles.uploadBox}>
+          <View style={styles.uploadHeaderRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.uploadTitle}>Import câu hỏi TOEIC (Excel / Word / PDF)</Text>
+              <Text style={styles.uploadSubtitle}>
+                Hỗ trợ .xlsx, .xls, .docx, .doc, .pdf, .csv, .txt. Hoặc dùng dán JSON/CSV nhanh nếu đã chuẩn bị sẵn.
+              </Text>
+            </View>
+            {questionImportSummary ? (
+              <View style={styles.uploadStatusPill}>
+                <Text style={styles.uploadStatusText}>Import thành công ✓</Text>
+              </View>
+            ) : null}
           </View>
-          <Pressable
-            onPress={() => setShowBulkImportModal(true)}
-            style={styles.bulkOpenBtn}
-          >
-            <Text style={styles.bulkOpenBtnText}>Import hàng loạt</Text>
-          </Pressable>
+
+          <View style={styles.uploadActionRow}>
+            <Pressable
+              disabled={!services || importingQuestions || working}
+              onPress={handleImportQuestionsFile}
+              style={[styles.uploadButton, { marginTop: 0 }]}
+            >
+              <Text style={styles.uploadButtonText}>
+                {importingQuestions
+                  ? "Đang đọc file & tạo câu hỏi..."
+                  : "Chọn file Excel / Word / PDF & Import"}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setShowBulkImportModal(true)}
+              style={styles.uploadClearBtn}
+            >
+              <Text style={styles.uploadClearText}>Dán JSON / CSV</Text>
+            </Pressable>
+
+            <View style={styles.importToggleRow}>
+              <Switch
+                onValueChange={setQuestionImportAutoExplainAi}
+                thumbColor={colors.surface}
+                trackColor={{ false: "#CBD5E1", true: colors.primary }}
+                value={questionImportAutoExplainAi}
+              />
+              <Text style={styles.importToggleText}>
+                AI tự tạo giải thích nếu thiếu
+              </Text>
+            </View>
+          </View>
+
+          {questionImportSummary ? (
+            <Text style={[styles.uploadHint, { color: colors.primaryDark, fontWeight: "700" }]}>
+              {questionImportSummary}
+            </Text>
+          ) : null}
         </View>
+
+        <Modal
+          animationType="fade"
+          onRequestClose={() => setShowBulkImportModal(false)}
+          transparent
+          visible={showBulkImportModal}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalPanel}>
+              <Text style={styles.uploadTitle}>Bulk Import Question Bank (JSON / CSV)</Text>
+              <Text style={styles.uploadSubtitle}>
+                Hỗ trợ dán mảng JSON câu hỏi hoặc CSV có header partNo,questionText,optionA..D,correctLabel.
+              </Text>
+              <View style={styles.templateRow}>
+                <Pressable
+                  onPress={() => setBulkImportRaw(SAMPLE_BULK_JSON)}
+                  style={styles.templateBtn}
+                >
+                  <Text style={styles.templateBtnText}>Dán mẫu JSON</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setBulkImportRaw(SAMPLE_BULK_CSV)}
+                  style={styles.templateBtn}
+                >
+                  <Text style={styles.templateBtnText}>Dán mẫu CSV</Text>
+                </Pressable>
+              </View>
+              <TextInput
+                multiline
+                onChangeText={setBulkImportRaw}
+                placeholder="Dán JSON hoặc CSV tại đây..."
+                placeholderTextColor={colors.textMuted}
+                style={styles.bulkInput}
+                textAlignVertical="top"
+                value={bulkImportRaw}
+              />
+              <View style={styles.templateRow}>
+                <Pressable
+                  onPress={() => setShowBulkImportModal(false)}
+                  style={styles.modalSecondaryBtn}
+                >
+                  <Text style={styles.modalSecondaryBtnText}>Đóng</Text>
+                </Pressable>
+                <Pressable
+                  disabled={bulkImporting}
+                  onPress={() => void handleBulkImportQuestions()}
+                  style={styles.bulkOpenBtn}
+                >
+                  <Text style={styles.bulkOpenBtnText}>
+                    {bulkImporting ? "Đang import..." : "Import vào Question Bank"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <AdminCrudPanel
+          columns={[
+            { label: "ID", render: (item) => String(item.id) },
+            {
+              label: "Part",
+              render: (item) =>
+                item.partNo && item.partNo >= 1 && item.partNo <= 7
+                  ? `Part ${item.partNo}`
+                  : `⚠️ Part ${item.partNo ?? "-"}`,
+            },
+            {
+              label: "Question",
+              render: (item) => {
+                const correct = item.options?.find((o) => o.correct)?.optionLabel;
+                const tags = [
+                  correct ? `Đáp án ${correct}` : null,
+                  item.audioUrl ? "Audio" : null,
+                  item.imageUrl ? "Ảnh" : null,
+                  item.passageText ? "Đoạn văn" : null,
+                ].filter(Boolean);
+                return tags.length > 0
+                  ? `${item.questionText} [${tags.join(" · ")}]`
+                  : item.questionText;
+              },
+            },
+            { label: "Source", render: (item) => item.sourceType ?? "-" },
+          ]}
+          fields={dynamicQuestionFields}
+          filterBar={
+            <View style={styles.filterBarStack}>
+              <View style={styles.chipRow}>
+                <Pressable
+                  onPress={() => setQuestionPartFilter("ALL")}
+                  style={[
+                    styles.selectorChip,
+                    questionPartFilter === "ALL" ? styles.selectorChipActive : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.selectorText,
+                      questionPartFilter === "ALL" ? styles.selectorTextActive : null,
+                    ]}
+                  >
+                    Tất cả ({questions.length})
+                  </Text>
+                </Pressable>
+                {[1, 2, 3, 4, 5, 6, 7].map((p) => {
+                  const key = String(p);
+                  const count = questions.filter((q) => q.partNo === p).length;
+                  const active = questionPartFilter === key;
+                  return (
+                    <Pressable
+                      key={key}
+                      onPress={() => setQuestionPartFilter(key)}
+                      style={[styles.selectorChip, active ? styles.selectorChipActive : null]}
+                    >
+                      <Text style={[styles.selectorText, active ? styles.selectorTextActive : null]}>
+                        Part {p} ({count})
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+                {invalidPartCount > 0 ? (
+                  <Pressable
+                    onPress={() => setQuestionPartFilter("INVALID")}
+                    style={[
+                      styles.selectorChip,
+                      { borderColor: "#FCA5A5" },
+                      questionPartFilter === "INVALID"
+                        ? { backgroundColor: colors.danger, borderColor: colors.danger }
+                        : null,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.selectorText,
+                        { color: questionPartFilter === "INVALID" ? colors.onPrimary : colors.danger },
+                      ]}
+                    >
+                      Part lỗi ⚠️ ({invalidPartCount})
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+
+              <View style={styles.chipRow}>
+                {["ALL", "ETS", "HACKER", "INTERNAL"].map((src) => {
+                  const active = questionSourceFilter === src;
+                  return (
+                    <Pressable
+                      key={src}
+                      onPress={() => setQuestionSourceFilter(src)}
+                      style={[styles.selectorChip, active ? styles.selectorChipActive : null]}
+                    >
+                      <Text style={[styles.selectorText, active ? styles.selectorTextActive : null]}>
+                        {src === "ALL" ? "Mọi nguồn" : src}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          }
+          getInitialValues={(item?: QuestionApiItem) => {
+            const option = (label: string) =>
+              item?.options?.find((entry) => entry.optionLabel === label);
+            const correct =
+              item?.options?.find((entry) => entry.correct)?.optionLabel ?? "A";
+            const validPart =
+              item?.partNo && item.partNo >= 1 && item.partNo <= 7
+                ? item.partNo
+                : 5;
+            return {
+              audioUrl: item?.audioUrl ?? "",
+              correctLabel: correct,
+              difficultyLevel: item?.difficultyLevel ?? "BEGINNER",
+              explanation: item?.explanation ?? "",
+              imageUrl: item?.imageUrl ?? "",
+              optionA: option("A")?.optionText ?? "",
+              optionB: option("B")?.optionText ?? "",
+              optionC: option("C")?.optionText ?? "",
+              optionD: option("D")?.optionText ?? "",
+              partNo: String(validPart),
+              passageText: item?.passageText ?? "",
+              questionGroupCode: item?.questionGroupCode ?? "",
+              questionText: item?.questionText ?? "",
+              sourceType: item?.sourceType ?? "INTERNAL",
+              sourceYear: String(item?.sourceYear ?? new Date().getFullYear()),
+              transcript: item?.transcript ?? "",
+            };
+          }}
+          getItemId={(item) => item.id}
+          onCreate={(values) =>
+            runAction(
+              () =>
+                services!.questions
+                  .create(questionPayload(values))
+                  .then(() => undefined),
+              loadBaseData,
+            )
+          }
+          onDelete={(item) =>
+            confirmWeb(`Xóa câu hỏi #${item.id}?`)
+              ? runAction(
+                  () => services!.questions.delete(item.id).then(() => undefined),
+                  loadBaseData,
+                )
+              : Promise.resolve()
+          }
+          onRefresh={loadBaseData}
+          onUpdate={(item, values) =>
+            runAction(
+              () =>
+                services!.questions
+                  .update(item.id, questionPayload(values))
+                  .then(() => undefined),
+              loadBaseData,
+            )
+          }
+          records={filteredQuestions}
+          subtitle="Kho câu hỏi Part 1–7 dùng chung (việc gán vào Bộ thực hành đã chuyển sang Nội dung Mô-đun → Bộ bài tập)."
+          title="Ngân hàng câu hỏi TOEIC"
+          working={working}
+        />
       </View>
-
-      <Modal
-        animationType="fade"
-        onRequestClose={() => setShowBulkImportModal(false)}
-        transparent
-        visible={showBulkImportModal}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalPanel}>
-            <Text style={styles.uploadTitle}>Bulk Import Question Bank</Text>
-            <Text style={styles.uploadSubtitle}>
-              Hỗ trợ dán mảng JSON câu hỏi hoặc CSV có header partNo,questionText,optionA..D,correctLabel.
-            </Text>
-            <View style={styles.templateRow}>
-              <Pressable
-                onPress={() => setBulkImportRaw(SAMPLE_BULK_JSON)}
-                style={styles.templateBtn}
-              >
-                <Text style={styles.templateBtnText}>Dán mẫu JSON</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setBulkImportRaw(SAMPLE_BULK_CSV)}
-                style={styles.templateBtn}
-              >
-                <Text style={styles.templateBtnText}>Dán mẫu CSV</Text>
-              </Pressable>
-            </View>
-            <TextInput
-              multiline
-              onChangeText={setBulkImportRaw}
-              placeholder="Dán JSON hoặc CSV tại đây..."
-              placeholderTextColor={colors.textMuted}
-              style={styles.bulkInput}
-              textAlignVertical="top"
-              value={bulkImportRaw}
-            />
-            <View style={styles.templateRow}>
-              <Pressable
-                onPress={() => setShowBulkImportModal(false)}
-                style={styles.modalSecondaryBtn}
-              >
-                <Text style={styles.modalSecondaryBtnText}>Đóng</Text>
-              </Pressable>
-              <Pressable
-                disabled={bulkImporting}
-                onPress={() => void handleBulkImportQuestions()}
-                style={styles.bulkOpenBtn}
-              >
-                <Text style={styles.bulkOpenBtnText}>
-                  {bulkImporting ? "Đang import..." : "Import vào Question Bank"}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <AdminCrudPanel
-        columns={[
-          { label: "ID", render: (item) => String(item.id) },
-          { label: "Part", render: (item) => String(item.partNo ?? "-") },
-          { label: "Question", render: (item) => item.questionText },
-          { label: "Source", render: (item) => item.sourceType ?? "-" },
-        ]}
-        fields={questionFields}
-        getInitialValues={(item?: QuestionApiItem) => {
-          const option = (label: string) =>
-            item?.options?.find((entry) => entry.optionLabel === label);
-          const correct =
-            item?.options?.find((entry) => entry.correct)?.optionLabel ?? "A";
-          return {
-            audioUrl: item?.audioUrl ?? "",
-            correctLabel: correct,
-            difficultyLevel: item?.difficultyLevel ?? "BEGINNER",
-            explanation: item?.explanation ?? "",
-            imageUrl: item?.imageUrl ?? "",
-            optionA: option("A")?.optionText ?? "",
-            optionB: option("B")?.optionText ?? "",
-            optionC: option("C")?.optionText ?? "",
-            optionD: option("D")?.optionText ?? "",
-            partNo: String(item?.partNo ?? 1),
-            passageText: item?.passageText ?? "",
-            questionGroupCode: item?.questionGroupCode ?? "",
-            questionText: item?.questionText ?? "",
-            sourceType: item?.sourceType ?? "INTERNAL",
-            sourceYear: String(item?.sourceYear ?? new Date().getFullYear()),
-            transcript: item?.transcript ?? "",
-          };
-        }}
-        getItemId={(item) => item.id}
-        onCreate={(values) =>
-          runAction(
-            () =>
-              services!.questions
-                .create(questionPayload(values))
-                .then(() => undefined),
-            loadBaseData,
-          )
-        }
-        onDelete={(item) =>
-          confirmWeb(`Xóa câu hỏi #${item.id}?`)
-            ? runAction(
-                () => services!.questions.delete(item.id).then(() => undefined),
-                loadBaseData,
-              )
-            : Promise.resolve()
-        }
-        onRefresh={loadBaseData}
-        onUpdate={(item, values) =>
-          runAction(
-            () =>
-              services!.questions
-                .update(item.id, questionPayload(values))
-                .then(() => undefined),
-            loadBaseData,
-          )
-        }
-        records={questions}
-        subtitle="Quản lý toàn bộ câu hỏi Part 1–7, đáp án và tệp đính kèm."
-        title="Ngân hàng câu hỏi TOEIC"
-        working={working}
-      />
-      {renderSelector(
-        "Practice Set",
-        practiceSets,
-        selectedPracticeSetId,
-        setSelectedPracticeSetId,
-      )}
-      <AdminCrudPanel
-        columns={[
-          { label: "ID", render: (item) => String(item.id) },
-          {
-            label: "Practice set",
-            render: (item) => String(item.practiceSetId),
-          },
-          { label: "Question", render: (item) => item.question?.questionText || String(item.questionId) },
-          { label: "Order", render: (item) => String(item.sortOrder) },
-        ]}
-        fields={practiceSetQuestionFields(questions)}
-        getInitialValues={(item?: PracticeSetQuestionApiItem) => ({
-          questionId: String(item?.questionId ?? questions[0]?.id ?? ""),
-          sortOrder: String(item?.sortOrder ?? practiceSetQuestions.length + 1),
-        })}
-        getItemId={(item) => item.id}
-        onCreate={(values) =>
-          runAction(
-            () =>
-              services!.practiceSets
-                .assignQuestions(requirePracticeSet(), {
-                  questions: [
-                    ...practiceSetQuestions.map((item) => ({
-                      questionId: item.questionId,
-                      sortOrder: item.sortOrder,
-                    })),
-                    {
-                      questionId: numberValue(values, "questionId", true)!,
-                      sortOrder: numberValue(values, "sortOrder", true)!,
-                    },
-                  ],
-                })
-                .then(() => undefined),
-            loadPracticeSetQuestions,
-          )
-        }
-        onDelete={(item) =>
-          confirmWeb(`Gỡ question #${item.questionId} khỏi practice set?`)
-            ? runAction(
-                () =>
-                  services!.practiceSets
-                    .assignQuestions(requirePracticeSet(), {
-                      questions: practiceSetQuestions
-                        .filter((entry) => entry.id !== item.id)
-                        .map((entry) => ({
-                          questionId: entry.questionId,
-                          sortOrder: entry.sortOrder,
-                        })),
-                    })
-                    .then(() => undefined),
-                loadPracticeSetQuestions,
-              )
-            : Promise.resolve()
-        }
-        onRefresh={loadPracticeSetQuestions}
-        onUpdate={(item, values) =>
-          runAction(
-            () =>
-              services!.practiceSets
-                .assignQuestions(requirePracticeSet(), {
-                  questions: practiceSetQuestions.map((entry) =>
-                    entry.id === item.id
-                      ? {
-                          questionId: numberValue(values, "questionId", true)!,
-                          sortOrder: numberValue(values, "sortOrder", true)!,
-                        }
-                      : {
-                          questionId: entry.questionId,
-                          sortOrder: entry.sortOrder,
-                        },
-                  ),
-                })
-                .then(() => undefined),
-            loadPracticeSetQuestions,
-          )
-        }
-        records={practiceSetQuestions}
-        subtitle={
-          selectedPracticeSet
-            ? `Đang gán câu hỏi cho "${selectedPracticeSet.title}"`
-            : "Chọn bộ thực hành phía trên"
-        }
-        title="Câu hỏi trong Bộ thực hành"
-        working={working}
-      />
-    </View>
-  );
+    );
+  };
 
   const renderPermissions = () => (
     <AdminCrudPanel
@@ -3189,5 +3728,130 @@ const styles = StyleSheet.create({
     color: colors.onPrimary,
     fontSize: 12.5,
     fontWeight: "700",
+  },
+  filterBarStack: {
+    gap: 8,
+    marginBottom: spacing.md,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  panelSection: {
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 10,
+    padding: spacing.md,
+  },
+  assignedList: {
+    gap: 8,
+    marginTop: 4,
+  },
+  assignedRow: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    padding: 10,
+  },
+  assignedOrderBadge: {
+    alignItems: "center",
+    backgroundColor: colors.primarySoft,
+    borderRadius: 999,
+    height: 28,
+    justifyContent: "center",
+    width: 28,
+  },
+  assignedOrderText: {
+    color: colors.primaryDark,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  partPill: {
+    backgroundColor: "#EEF2FF",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  partPillText: {
+    color: colors.primaryDark,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  assignedQuestionText: {
+    color: colors.text,
+    fontSize: 13.5,
+    fontWeight: "600",
+  },
+  assignedActions: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  miniIconBtn: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.borderStrong,
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: "center",
+    minWidth: 30,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  miniIconBtnText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  miniDangerBtn: {
+    borderColor: "#FCA5A5",
+  },
+  miniDangerBtnText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  pickerScroll: {
+    maxHeight: 340,
+  },
+  pickerRow: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 8,
+    padding: 10,
+  },
+  pickerRowChecked: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary,
+  },
+  checkboxBox: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.borderStrong,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    height: 22,
+    justifyContent: "center",
+    width: 22,
+  },
+  checkboxBoxChecked: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  checkboxMark: {
+    color: colors.onPrimary,
+    fontSize: 13,
+    fontWeight: "900",
   },
 });
