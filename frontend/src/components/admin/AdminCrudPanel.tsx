@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -36,7 +37,17 @@ export type AdminColumn<T> = {
   width?: number;
 };
 
+export type AdminAutoFillConfig = {
+  autoTriggerOnType?: boolean;
+  buttonLabel?: string;
+  debounceMs?: number;
+  onAutoFill: (values: FormValues) => Promise<Partial<FormValues> | null>;
+  targetFields: string[];
+  triggerField: string;
+};
+
 type AdminCrudPanelProps<T> = {
+  autoFillAction?: AdminAutoFillConfig;
   columns: AdminColumn<T>[];
   emptyText?: string;
   fields: AdminField[];
@@ -113,6 +124,7 @@ function getStatusBadgeTone(rawValue: string) {
 }
 
 export default function AdminCrudPanel<T>({
+  autoFillAction,
   columns,
   emptyText = "Chưa có dữ liệu.",
   fields,
@@ -135,6 +147,16 @@ export default function AdminCrudPanel<T>({
   const [page, setPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [values, setValues] = useState<FormValues>(() => getInitialValues());
+  const [autoFilling, setAutoFilling] = useState(false);
+  const [autoFillMessage, setAutoFillMessage] = useState<string | null>(null);
+  const manualEditedTargetsRef = useRef<Set<string>>(new Set());
+  const lastAutoFilledWordRef = useRef<string>("");
+  const requestSeqRef = useRef(0);
+  const valuesRef = useRef<FormValues>(values);
+
+  useEffect(() => {
+    valuesRef.current = values;
+  }, [values]);
 
   const filteredRecords = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -157,7 +179,16 @@ export default function AdminCrudPanel<T>({
     ACTION_COLUMN_WIDTH,
   );
 
+  const resetAutoFillState = () => {
+    requestSeqRef.current += 1;
+    manualEditedTargetsRef.current = new Set();
+    lastAutoFilledWordRef.current = "";
+    setAutoFilling(false);
+    setAutoFillMessage(null);
+  };
+
   const openCreate = () => {
+    resetAutoFillState();
     setEditingItem(null);
     setOpenSelectName(null);
     setValues(getInitialValues());
@@ -165,6 +196,7 @@ export default function AdminCrudPanel<T>({
   };
 
   const openEdit = (item: T) => {
+    resetAutoFillState();
     setEditingItem(item);
     setOpenSelectName(null);
     setValues(getInitialValues(item));
@@ -172,14 +204,105 @@ export default function AdminCrudPanel<T>({
   };
 
   const updateValue = (name: string, value: FormValue) => {
+    if (autoFillAction?.targetFields.includes(name)) {
+      if (String(value ?? "").trim().length > 0) {
+        manualEditedTargetsRef.current.add(name);
+      } else {
+        manualEditedTargetsRef.current.delete(name);
+      }
+    }
     setValues((current) => ({ ...current, [name]: value }));
   };
 
   const closeForm = () => {
+    resetAutoFillState();
     setEditingItem(null);
     setOpenSelectName(null);
     setFormOpen(false);
   };
+
+  const runAutoFill = useCallback(
+    async (forceOverwrite: boolean) => {
+      if (!autoFillAction) return;
+      const latest = valuesRef.current;
+      const triggerText = String(latest[autoFillAction.triggerField] ?? "").trim();
+      if (!triggerText) {
+        setAutoFillMessage("Nhập từ tiếng Anh trước để AI gợi ý.");
+        return;
+      }
+
+      const seq = ++requestSeqRef.current;
+      setAutoFilling(true);
+      setAutoFillMessage(null);
+      try {
+        const patch = await autoFillAction.onAutoFill(latest);
+        if (seq !== requestSeqRef.current || !patch) {
+          return;
+        }
+        lastAutoFilledWordRef.current = triggerText.toLowerCase();
+        setValues((current) => {
+          const next = { ...current };
+          for (const key of autoFillAction.targetFields) {
+            const suggested = patch[key];
+            if (suggested === undefined || suggested === null) continue;
+            const suggestedStr = String(suggested).trim();
+            if (!suggestedStr) continue;
+            const isEmpty = String(current[key] ?? "").trim().length === 0;
+            const wasManuallyEdited = manualEditedTargetsRef.current.has(key);
+            if (forceOverwrite || isEmpty || !wasManuallyEdited) {
+              next[key] = suggestedStr;
+              manualEditedTargetsRef.current.delete(key);
+            }
+          }
+          return next;
+        });
+        setAutoFillMessage(`AI đã gợi ý nghĩa, phát âm & ví dụ cho "${triggerText}".`);
+      } catch (err) {
+        if (seq === requestSeqRef.current && forceOverwrite) {
+          setAutoFillMessage(
+            err instanceof Error ? err.message : "Không thể gọi AI gợi ý lúc này.",
+          );
+        }
+      } finally {
+        if (seq === requestSeqRef.current) {
+          setAutoFilling(false);
+        }
+      }
+    },
+    [autoFillAction],
+  );
+
+  const triggerValue = autoFillAction
+    ? String(values[autoFillAction.triggerField] ?? "").trim()
+    : "";
+
+  useEffect(() => {
+    if (
+      !formOpen ||
+      editingItem ||
+      !autoFillAction?.autoTriggerOnType ||
+      triggerValue.length < 2
+    ) {
+      return;
+    }
+    if (triggerValue.toLowerCase() === lastAutoFilledWordRef.current) {
+      return;
+    }
+    const hasEditableTarget = autoFillAction.targetFields.some(
+      (key) =>
+        String(valuesRef.current[key] ?? "").trim().length === 0 ||
+        !manualEditedTargetsRef.current.has(key),
+    );
+    if (!hasEditableTarget) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      void runAutoFill(false);
+    }, autoFillAction.debounceMs ?? 800);
+
+    return () => clearTimeout(timer);
+  }, [autoFillAction, editingItem, formOpen, runAutoFill, triggerValue]);
 
   const submitForm = async () => {
     if (editingItem && onUpdate) {
@@ -279,12 +402,34 @@ export default function AdminCrudPanel<T>({
                         field.type === "textarea" ? styles.fieldWide : null,
                       ]}
                     >
-                      <Text style={styles.label}>
-                        {field.label}
-                        {field.required ? (
-                          <Text style={styles.required}> *</Text>
+                      <View style={styles.labelRow}>
+                        <Text style={styles.label}>
+                          {field.label}
+                          {field.required ? (
+                            <Text style={styles.required}> *</Text>
+                          ) : null}
+                        </Text>
+                        {autoFillAction && autoFillAction.triggerField === field.name ? (
+                          <Pressable
+                            disabled={autoFilling || working || triggerValue.length === 0}
+                            onPress={() => void runAutoFill(true)}
+                            style={({ pressed }) => [
+                              styles.aiFillChip,
+                              pressed ? styles.aiFillChipPressed : null,
+                              (autoFilling || triggerValue.length === 0) ? styles.aiFillChipDisabled : null,
+                            ]}
+                          >
+                            {autoFilling ? (
+                              <ActivityIndicator color={colors.primary} size="small" />
+                            ) : (
+                              <Ionicons color={colors.primary} name="sparkles" size={13} />
+                            )}
+                            <Text style={styles.aiFillChipText}>
+                              {autoFilling ? "Đang gợi ý..." : (autoFillAction.buttonLabel ?? "AI tự điền")}
+                            </Text>
+                          </Pressable>
                         ) : null}
-                      </Text>
+                      </View>
                       {field.type === "switch" ? (
                         <View style={styles.switchRow}>
                           <Switch
@@ -371,6 +516,12 @@ export default function AdminCrudPanel<T>({
                   );
                 })}
               </View>
+              {autoFillMessage ? (
+                <View style={styles.aiHintBanner}>
+                  <Ionicons color={colors.primaryDark} name="sparkles-outline" size={14} />
+                  <Text style={styles.aiHintText}>{autoFillMessage}</Text>
+                </View>
+              ) : null}
             </ScrollView>
             <View style={styles.formActions}>
               <Pressable
@@ -966,5 +1117,52 @@ const styles = StyleSheet.create({
   titleBlock: {
     flex: 1,
     minWidth: 200,
+  },
+  labelRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  aiFillChip: {
+    alignItems: "center",
+    backgroundColor: colors.primarySoft,
+    borderColor: "#BFDBFE",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  aiFillChipPressed: {
+    opacity: 0.8,
+  },
+  aiFillChipDisabled: {
+    opacity: 0.55,
+  },
+  aiFillChipText: {
+    color: colors.primaryDark,
+    fontSize: 11.5,
+    fontWeight: "700",
+  },
+  aiHintBanner: {
+    alignItems: "center",
+    backgroundColor: colors.primarySoft,
+    borderColor: "#BFDBFE",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    marginTop: spacing.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  aiHintText: {
+    color: colors.primaryDark,
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: "600",
   },
 });

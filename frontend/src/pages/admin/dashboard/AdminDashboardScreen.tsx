@@ -1,3 +1,4 @@
+import * as DocumentPicker from "expo-document-picker";
 import { Redirect } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -7,6 +8,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -440,6 +442,9 @@ export default function AdminDashboardScreen() {
   const [selectedVideoFile, setSelectedVideoFile] = useState<File | null>(null);
   const [uploadedVideoUrl, setUploadedVideoUrl] = useState("");
   const [uploadedVideoDuration, setUploadedVideoDuration] = useState<number | null>(null);
+  const [importingFlashcards, setImportingFlashcards] = useState(false);
+  const [flashcardImportAutoFillAi, setFlashcardImportAutoFillAi] = useState(true);
+  const [flashcardImportSummary, setFlashcardImportSummary] = useState<string | null>(null);
   const [contentSubTab, setContentSubTab] = useState<"flashcards" | "video" | "practice">("flashcards");
   const [showAllLocations, setShowAllLocations] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -631,6 +636,78 @@ export default function AdminDashboardScreen() {
       handleError(error);
     }
   }, [handleError, selectedModuleId, services]);
+
+  const handleImportFlashcardsFile = useCallback(async () => {
+    if (!services) return;
+    if (!selectedModuleId) {
+      Alert.alert("Import từ vựng", "Vui lòng chọn Mô-đun trước khi import.");
+      return;
+    }
+
+    const executeImport = async (
+      file: File | { uri: string; name: string; type?: string },
+      displayName: string,
+    ) => {
+      try {
+        setImportingFlashcards(true);
+        setErrorMessage(null);
+        setFlashcardImportSummary(null);
+        const res = await services.flashcards.importFile(
+          selectedModuleId,
+          file,
+          flashcardImportAutoFillAi,
+        );
+        const stats = res.data;
+        const imported = stats?.importedCount ?? 0;
+        const aiFilled = stats?.aiEnrichedCount ?? 0;
+        const skipped = stats?.skippedDuplicateCount ?? 0;
+        const summary = `File "${displayName}": Đã thêm ${imported} thẻ từ vựng${
+          aiFilled > 0 ? ` (AI tự điền ${aiFilled} từ)` : ""
+        }${skipped > 0 ? `, bỏ qua ${skipped} từ trùng` : ""}.`;
+        setFlashcardImportSummary(summary);
+        await loadContent();
+      } catch (error) {
+        handleError(error);
+      } finally {
+        setImportingFlashcards(false);
+      }
+    };
+
+    if (Platform.OS === "web") {
+      const picker = document.createElement("input");
+      picker.type = "file";
+      picker.accept = ".xlsx,.xls,.docx,.doc,.csv,.tsv,.txt";
+      picker.onchange = () => {
+        const file = picker.files?.[0];
+        if (!file) return;
+        void executeImport(file, file.name);
+      };
+      picker.click();
+      return;
+    }
+
+    const picked = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      type: [
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+        "text/csv",
+        "text/plain",
+      ],
+    });
+    if (picked.canceled || !picked.assets?.length) return;
+    const asset = picked.assets[0];
+    await executeImport(
+      {
+        name: asset.name,
+        type: asset.mimeType ?? "application/octet-stream",
+        uri: asset.uri,
+      },
+      asset.name,
+    );
+  }, [flashcardImportAutoFillAi, handleError, loadContent, selectedModuleId, services]);
 
   const loadPracticeSetQuestions = useCallback(async () => {
     if (!services || !selectedPracticeSetId) {
@@ -1037,13 +1114,82 @@ export default function AdminDashboardScreen() {
         </View>
 
         {contentSubTab === "flashcards" ? (
-          <AdminCrudPanel
-            columns={[
-              { label: "ID", render: (item) => String(item.id) },
-              { label: "Word", render: (item) => item.englishWord },
-              { label: "Meaning", render: (item) => item.meaningVi },
-              { label: "Active", render: (item) => yesNo(item.active) },
-            ]}
+          <>
+            <View style={styles.uploadBox}>
+              <View style={styles.uploadHeaderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.uploadTitle}>Import từ vựng từ Excel / Word</Text>
+                  <Text style={styles.uploadSubtitle}>
+                    Hỗ trợ .xlsx, .xls, .docx, .doc, .csv, .txt (có thể chỉ gồm cột/dòng từ tiếng Anh hoặc đủ 4 cột English | Meaning VI | Pronunciation | Example).
+                  </Text>
+                </View>
+                {flashcardImportSummary ? (
+                  <View style={styles.uploadStatusPill}>
+                    <Text style={styles.uploadStatusText}>Import thành công ✓</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={styles.uploadActionRow}>
+                <Pressable
+                  disabled={!services || !selectedModuleId || importingFlashcards || working}
+                  onPress={handleImportFlashcardsFile}
+                  style={[styles.uploadButton, { marginTop: 0 }]}
+                >
+                  <Text style={styles.uploadButtonText}>
+                    {importingFlashcards
+                      ? "Đang đọc file & AI bổ sung..."
+                      : "Chọn file Excel / Word & Import"}
+                  </Text>
+                </Pressable>
+
+                <View style={styles.importToggleRow}>
+                  <Switch
+                    onValueChange={setFlashcardImportAutoFillAi}
+                    thumbColor={colors.surface}
+                    trackColor={{ false: "#CBD5E1", true: colors.primary }}
+                    value={flashcardImportAutoFillAi}
+                  />
+                  <Text style={styles.importToggleText}>
+                    AI tự điền nghĩa, phát âm & ví dụ nếu thiếu
+                  </Text>
+                </View>
+              </View>
+
+              {flashcardImportSummary ? (
+                <Text style={[styles.uploadHint, { color: colors.primaryDark, fontWeight: "700" }]}>
+                  {flashcardImportSummary}
+                </Text>
+              ) : null}
+            </View>
+
+            <AdminCrudPanel
+              autoFillAction={{
+                autoTriggerOnType: true,
+                buttonLabel: "AI tự điền",
+                debounceMs: 800,
+                onAutoFill: async (values) => {
+                  const word = String(values.englishWord ?? "").trim();
+                  if (!word || !services) return null;
+                  const res = await services.flashcards.aiSuggest(word);
+                  const data = res.data;
+                  if (!data) return null;
+                  return {
+                    exampleSentence: data.exampleSentence ?? "",
+                    meaningVi: data.meaningVi ?? "",
+                    pronunciation: data.pronunciation ?? "",
+                  };
+                },
+                targetFields: ["meaningVi", "pronunciation", "exampleSentence"],
+                triggerField: "englishWord",
+              }}
+              columns={[
+                { label: "ID", render: (item) => String(item.id) },
+                { label: "Word", render: (item) => item.englishWord },
+                { label: "IPA", render: (item) => item.pronunciation ?? "-" },
+                { label: "Meaning", render: (item) => item.meaningVi },
+                { label: "Active", render: (item) => yesNo(item.active) },
+              ]}
             fields={flashcardFields}
             getInitialValues={(item?: AdminFlashcardApiItem) => ({
               active: item?.active ?? true,
@@ -1104,6 +1250,7 @@ export default function AdminDashboardScreen() {
             title="Quản lý Thẻ từ vựng (Flashcards)"
             working={working}
           />
+          </>
         ) : null}
 
         {contentSubTab === "video" ? (
@@ -2700,6 +2847,16 @@ const styles = StyleSheet.create({
   uploadHint: {
     color: colors.textMuted,
     fontSize: 12.5,
+  },
+  importToggleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  importToggleText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
   },
   uploadSubtitle: {
     color: colors.textMuted,
