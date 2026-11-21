@@ -401,7 +401,6 @@ export default function ProfileScreen() {
             <Text style={styles.coinText}>💎 {insights?.diamonds ?? auth.user?.diamonds ?? 50}</Text>
           </Pressable>
         }
-        subtitle="Thành tích & Cài đặt"
         title="Hồ sơ"
       />
 

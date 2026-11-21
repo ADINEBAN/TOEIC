@@ -16,6 +16,21 @@ import { TestAttemptResponse, UserTestResponse } from "@/src/types/user-api";
 import { pushRoute } from "@/src/utils/navigation";
 import { useResponsiveLayout } from "@/src/utils/responsive";
 
+function formatTestTypeLabel(testType?: string | null): string {
+  switch (testType) {
+    case "MINI_TEST":
+      return "Mini Test";
+    case "FULL_TEST":
+      return "Full Test";
+    case "PLACEMENT":
+      return "Kiểm tra trình độ";
+    case "DOCUMENT_EXAM":
+      return "Đề từ tài liệu";
+    default:
+      return "Đề thi TOEIC";
+  }
+}
+
 export default function TestHubScreen() {
   const { auth } = useAuth();
   const { theme } = useAppTheme();
@@ -88,7 +103,6 @@ export default function TestHubScreen() {
     <UserScreen>
       <AppHeader
         rightSlot={<AvatarBadge label={auth.user?.fullName?.[0] || "U"} />}
-        subtitle="Luyện đề TOEIC"
         title="Trung tâm thi"
       />
 
@@ -96,7 +110,7 @@ export default function TestHubScreen() {
         <LiquidCard hero style={styles.heroCard}>
           <View style={styles.heroTop}>
             <View style={styles.typePill}>
-              <Text style={styles.typePillText}>{tests[0].testType}</Text>
+              <Text style={styles.typePillText}>{formatTestTypeLabel(tests[0].testType)}</Text>
             </View>
             <View style={styles.timerChip}>
               <Ionicons color="#FFE082" name="timer-outline" size={14} />
@@ -108,7 +122,7 @@ export default function TestHubScreen() {
             {tests[0].title}
           </Text>
           <Text numberOfLines={2} style={[styles.heroDesc, { fontSize: rf(13) }]}>
-            {tests[0].description || "Làm bài bấm giờ chuẩn, lưu nháp tự động và xem giải thích AI."}
+            {tests[0].description || "Làm bài bấm giờ chuẩn, lưu nháp tự động và xem giải thích chi tiết."}
           </Text>
 
           <LiquidButton
@@ -125,7 +139,7 @@ export default function TestHubScreen() {
             Phòng thi & Đấu trường TOEIC
           </Text>
           <Text numberOfLines={2} style={[styles.heroDesc, { fontSize: rf(13) }]}>
-            Hiện chưa có đề thi nào được phát hành trong DB. Bạn vẫn có thể thử Đấu trường 1v1 hoặc Ôn câu sai bên dưới!
+            Bạn có thể thử Đấu trường 1v1, ôn lại câu hay sai hoặc tải tài liệu lên để tạo đề thi.
           </Text>
         </LiquidCard>
       )}
@@ -146,7 +160,7 @@ export default function TestHubScreen() {
               Đấu trường 1v1
             </Text>
             <Text numberOfLines={1} style={styles.arenaSub}>
-              Thi tốc độ WebSocket
+              So tài trực tiếp
             </Text>
           </LiquidCard>
         </Pressable>
@@ -183,10 +197,10 @@ export default function TestHubScreen() {
             </View>
             <View style={styles.itemMain}>
               <Text numberOfLines={1} style={[styles.itemTitle, { fontSize: rf(14.5) }]}>
-                Tạo đề TOEIC từ Tài liệu (PDF / DOCX / OCR)
+                Tạo đề thi từ Tài liệu
               </Text>
               <Text numberOfLines={1} style={styles.itemMeta}>
-                AI trích xuất Part 5, 6, 7 nguyên bản & kiểm tra tính trung thực
+                Tải file Word, PDF hoặc ảnh chụp đề thi lên để luyện tập
               </Text>
             </View>
             <Ionicons color={colors.primary} name="chevron-forward" size={18} />
@@ -211,7 +225,7 @@ export default function TestHubScreen() {
                         {exam.title}
                       </Text>
                       <Text style={styles.itemMeta}>
-                        {exam.questionCount ?? 0} câu • {exam.testType} • {exam.totalDurationMinutes} phút
+                        {exam.questionCount ?? 0} câu • {formatTestTypeLabel(exam.testType)} • {exam.totalDurationMinutes} phút
                       </Text>
                     </View>
                     <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
@@ -240,7 +254,7 @@ export default function TestHubScreen() {
                         {test.title}
                       </Text>
                       <Text style={styles.itemMeta}>
-                        {test.testType} • {test.totalDurationMinutes} phút
+                        {formatTestTypeLabel(test.testType)} • {test.totalDurationMinutes} phút
                       </Text>
                     </View>
                     <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />

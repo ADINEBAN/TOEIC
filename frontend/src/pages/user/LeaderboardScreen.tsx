@@ -87,7 +87,6 @@ export default function LeaderboardScreen() {
     <UserScreen>
       <AppHeader
         onLeftPress={() => safeBack("/user/home")}
-        subtitle="Tổng bài học tuần"
         title="Bảng xếp hạng"
         rightSlot={
           <Pressable onPress={() => pushRoute("/user/arena")} style={styles.soloLinkBtn}>

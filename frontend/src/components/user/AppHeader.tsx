@@ -15,6 +15,7 @@ import { useResponsiveLayout } from "@/src/utils/responsive";
 type AppHeaderProps = {
   title: string;
   subtitle?: string;
+  titleSlot?: ReactNode;
   onLeftPress?: () => void;
   leftIcon?: keyof typeof Ionicons.glyphMap;
   rightSlot?: ReactNode;
@@ -24,6 +25,7 @@ type AppHeaderProps = {
 export default function AppHeader({
   title,
   subtitle,
+  titleSlot,
   onLeftPress,
   leftIcon = "chevron-back-outline",
   rightSlot,
@@ -56,20 +58,26 @@ export default function AppHeader({
           ) : null}
 
           <View style={styles.copyBlock}>
-            {subtitle ? (
-              <Text
-                numberOfLines={1}
-                style={[styles.subtitle, { color: c.primary, fontSize: rf(10.5) }]}
-              >
-                {subtitle}
-              </Text>
-            ) : null}
-            <Text
-              numberOfLines={1}
-              style={[styles.title, { color: c.text, fontSize: rf(isNarrow ? 19 : 21) }]}
-            >
-              {title}
-            </Text>
+            {titleSlot ? (
+              titleSlot
+            ) : (
+              <>
+                {subtitle ? (
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.subtitle, { color: c.primary, fontSize: rf(10.5) }]}
+                  >
+                    {subtitle}
+                  </Text>
+                ) : null}
+                <Text
+                  numberOfLines={1}
+                  style={[styles.title, { color: c.text, fontSize: rf(isNarrow ? 19 : 21) }]}
+                >
+                  {title}
+                </Text>
+              </>
+            )}
           </View>
         </View>
 

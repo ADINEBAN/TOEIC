@@ -137,14 +137,12 @@ export default function PracticeAttemptReviewScreen() {
         leftIcon="chevron-back-outline"
         onLeftPress={() => safeBack("/user/practice")}
         rightSlot={<AvatarBadge label={auth.user?.fullName?.[0] || "U"} />}
-        subtitle="Bài tập theo module"
-        title="Xem lại practice"
+        title="Xem lại bài luyện tập"
       />
 
       <LiquidCard hero style={styles.heroCard}>
         <View style={styles.heroTopRow}>
           <View style={styles.heroCopy}>
-            <Text style={styles.heroEyebrow}>KẾT QUẢ LUYỆN TẬP</Text>
             <Text numberOfLines={2} style={[styles.heroTitle, { fontSize: rf(19) }]}>
               {attempt.practiceSetTitle}
             </Text>

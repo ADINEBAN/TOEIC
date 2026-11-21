@@ -139,8 +139,7 @@ export default function PracticeModuleScreen() {
         leftIcon="chevron-back-outline"
         onLeftPress={() => safeBack(moduleId ? `/user/roadmap?moduleId=${moduleId}` : "/user/practice")}
         rightSlot={<AvatarBadge label={auth.user?.fullName?.[0] || "U"} />}
-        subtitle="Bài tập theo module"
-        title="Bộ Practice"
+        title="Bộ bài tập"
       />
 
       {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}

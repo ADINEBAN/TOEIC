@@ -233,7 +233,7 @@ public class AdaptiveLearningService {
         if (dueVocabCount > 0) {
             tasks.add(DailyTaskItem.builder()
                     .id("sm2")
-                    .title("Ôn " + Math.min(dueVocabCount, 20) + " từ vựng đến hạn (SM-2)")
+                    .title("Ôn " + Math.min(dueVocabCount, 20) + " từ vựng đến hạn")
                     .subtitle("Lặp lại ngắt quãng giúp ghi nhớ sâu trước khi quên")
                     .badge("Hôm nay")
                     .route("/user/cards?mode=sm2")

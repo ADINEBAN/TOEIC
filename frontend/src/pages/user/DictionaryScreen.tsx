@@ -612,7 +612,6 @@ export default function DictionaryScreen() {
       <AppHeader
         leftIcon="chevron-back-outline"
         onLeftPress={() => safeBack("/user/home")}
-        subtitle="Mạng ngữ nghĩa & Nhận diện Camera"
         title="Từ điển Thông minh"
       />
 

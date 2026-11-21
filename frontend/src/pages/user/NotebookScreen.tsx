@@ -131,8 +131,7 @@ export default function NotebookScreen() {
         leftIcon="chevron-back-outline"
         onLeftPress={() => safeBack("/user/home")}
         rightSlot={<AvatarBadge label={auth.user?.fullName?.[0] || "U"} />}
-        subtitle="Theo mốc thời gian"
-        title="Sổ tay Video Notes"
+        title="Ghi chú bài giảng"
       />
 
       <View style={styles.toolbarRow}>

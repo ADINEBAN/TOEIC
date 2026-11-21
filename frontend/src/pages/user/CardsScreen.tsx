@@ -926,7 +926,7 @@ export default function CardsScreen() {
     { value: "mine" as const, label: "Từ của tôi" },
     {
       value: "sm2" as const,
-      label: "Ôn SM-2",
+      label: "Ôn tập",
       badge: sm2Topics.length > 0 ? sm2TotalRemaining : sm2DueItems.length,
     },
   ];
@@ -1251,7 +1251,7 @@ export default function CardsScreen() {
                     ? `Kết quả: "${activeSearchQuery}"`
                     : activeSm2Topic
                       ? parseUnitTitleParts(activeSm2Topic.name).title
-                      : "Bộ từ SM-2"}
+                      : "Bộ từ ôn tập"}
                 </Text>
                 {activeSm2Topic && !activeSearchQuery ? (
                   <Text numberOfLines={1} style={styles.sm2StudySub}>
@@ -1477,7 +1477,9 @@ export default function CardsScreen() {
                       ? "Bài học"
                       : mode === "sm2"
                         ? [
-                            `SM-2${currentDisplayCard.sm2?.intervalDays ? ` ${currentDisplayCard.sm2.intervalDays}d` : ""}`,
+                            currentDisplayCard.sm2?.intervalDays
+                              ? `Ôn sau ${currentDisplayCard.sm2.intervalDays}d`
+                              : "Ôn tập",
                             currentDisplayCard.sm2?.partOfSpeech,
                             currentDisplayCard.sm2?.difficultyLevel,
                           ]
@@ -1738,7 +1740,7 @@ export default function CardsScreen() {
                 onChange={setAddMode}
                 options={[
                   { value: "manual", label: "Nhập tay" },
-                  { value: "bulk", label: "Import JSON" },
+                  { value: "bulk", label: "Nhập nhanh" },
                 ]}
                 style={{ marginBottom: 10 }}
                 value={addMode}
@@ -1789,7 +1791,7 @@ export default function CardsScreen() {
                   <TextInput
                     multiline
                     onChangeText={setBulkJson}
-                    placeholder="Dán JSON vào đây"
+                    placeholder="Dán danh sách từ..."
                     placeholderTextColor={colors.textMuted}
                     style={[styles.input, styles.jsonInput]}
                     textAlignVertical="top"
@@ -1798,7 +1800,7 @@ export default function CardsScreen() {
                   <LiquidButton
                     compact
                     disabled={working}
-                    label={working ? "Đang import..." : "Thêm từ JSON"}
+                    label={working ? "Đang nhập..." : "Thêm danh sách"}
                     loading={working}
                     onPress={handleBulkAdd}
                     style={{ marginTop: 14 }}

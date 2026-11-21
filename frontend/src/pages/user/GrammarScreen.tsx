@@ -249,7 +249,6 @@ export default function GrammarScreen() {
           leftIcon="chevron-back-outline"
           onLeftPress={() => safeBack("/user/home")}
           rightSlot={<AvatarBadge label={auth.user?.fullName?.[0]?.toUpperCase() || "A"} />}
-          subtitle="Thư viện trọng tâm"
           title="Ngữ pháp TOEIC"
         />
 

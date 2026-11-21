@@ -232,7 +232,6 @@ export default function PathCompleteScreen() {
         </View>
 
         <View style={styles.quoteCard}>
-          <Text style={styles.quoteEyebrow}>{roadmap?.learningPathCode ?? "ROADMAP"}</Text>
           <Text style={styles.quoteText}>
             {roadmap?.learningPathDescription ?? "Một hành trình tốt là hành trình được đi đến tận cùng."}
           </Text>
