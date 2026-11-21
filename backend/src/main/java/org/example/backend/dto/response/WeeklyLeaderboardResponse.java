@@ -25,6 +25,7 @@ public class WeeklyLeaderboardResponse {
         private String username;
         private String avatarUrl;
         private String equippedFrameId;
+        private boolean verified;
         private int level;
         private int weeklyStudyDiamonds;
         private int totalDiamonds;

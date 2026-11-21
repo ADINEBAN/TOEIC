@@ -726,6 +726,7 @@ public class ArenaService {
             item.setUsername(DiamondRewardService.resolveUsername(u));
             item.setAvatarUrl(u.getAvatarUrl());
             item.setEquippedFrameId(u.getEquippedFrameId());
+            item.setVerified(Boolean.TRUE.equals(u.getVerified()));
             int xp = u.getLearningXp() != null ? u.getLearningXp() : 0;
             item.setLevel(LevelCalculator.fromXp(xp).level());
             item.setElo(u.getArenaElo() != null ? u.getArenaElo() : 1000);
@@ -1185,6 +1186,7 @@ public class ArenaService {
         dst.setUsername(src.getUsername());
         dst.setAvatarUrl(src.getAvatarUrl());
         dst.setEquippedFrameId(src.getEquippedFrameId());
+        dst.setVerified(src.isVerified());
         dst.setLevel(src.getLevel());
         dst.setScore(src.getScore());
         dst.setRoundWins(src.getRoundWins());
@@ -1233,6 +1235,7 @@ public class ArenaService {
         ps.setUsername(DiamondRewardService.resolveUsername(user));
         ps.setAvatarUrl(user.getAvatarUrl());
         ps.setEquippedFrameId(user.getEquippedFrameId());
+        ps.setVerified(Boolean.TRUE.equals(user.getVerified()));
         int xp = user.getLearningXp() != null ? user.getLearningXp() : 0;
         ps.setLevel(LevelCalculator.fromXp(xp).level());
         ps.setDiamonds(user.getDiamonds() != null ? user.getDiamonds() : 50);

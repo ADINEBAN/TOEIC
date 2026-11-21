@@ -21,6 +21,7 @@ public class ArenaLeaderboardResponse {
         private String username;
         private String avatarUrl;
         private String equippedFrameId;
+        private boolean verified;
         private int level;
         private int elo;
         private int wins;

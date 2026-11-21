@@ -19,6 +19,7 @@ import {
 } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
+import VerifiedBadge from "@/src/components/common/VerifiedBadge";
 import { LiquidButton, LiquidCard, LiquidSwitch } from "@/src/components/ui/LiquidGlass";
 import AppHeader from "@/src/components/user/AppHeader";
 import ClayIcon3D from "@/src/components/user/ClayIcon3D";
@@ -395,6 +396,7 @@ export default function ProfileScreen() {
               <Text numberOfLines={1} style={[styles.profileHeroName, { fontSize: rf(18) }]}>
                 {fullName || "Học viên TOEIC"}
               </Text>
+              <VerifiedBadge size={17} verified={insights?.verified ?? auth.user?.verified} />
               <Pressable onPress={() => setShowLevelModal(true)}>
                 <LinearGradient
                   colors={getLevelTierStyle(effectiveLevel).badgeColors}

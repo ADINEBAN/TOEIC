@@ -27,6 +27,7 @@ import {
   View,
 } from "react-native";
 
+import VerifiedBadge from "@/src/components/common/VerifiedBadge";
 import { LiquidCard } from "@/src/components/ui/LiquidGlass";
 import PublicProfileModal from "@/src/components/user/PublicProfileModal";
 import UserAvatarWithFrame from "@/src/components/user/UserAvatarWithFrame";
@@ -57,6 +58,7 @@ type PeerStub = {
   username: string;
   avatarUrl?: string | null;
   equippedFrameId?: string | null;
+  verified?: boolean;
   level: number;
 };
 
@@ -605,8 +607,12 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
         </Pressable>
         <View style={styles.msgColOther}>
           <View style={styles.msgMetaRowOther}>
-            <Pressable onPress={() => item.senderId && setInspectUserId(item.senderId)}>
+            <Pressable
+              onPress={() => item.senderId && setInspectUserId(item.senderId)}
+              style={{ alignItems: "center", flexDirection: "row", gap: 3 }}
+            >
               <Text style={styles.msgSenderHandle}>@{item.senderUsername}</Text>
+              <VerifiedBadge size={13} verified={item.senderVerified} />
             </Pressable>
             <Text style={styles.msgTime}>{formatRelativeTime(item.createdAt)}</Text>
           </View>
@@ -830,9 +836,12 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
                     size={32}
                   />
                   <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text numberOfLines={1} style={styles.dmName}>
-                      {activePeer.fullName}
-                    </Text>
+                    <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                      <Text numberOfLines={1} style={[styles.dmName, { flexShrink: 1 }]}>
+                        {activePeer.fullName}
+                      </Text>
+                      <VerifiedBadge size={14} verified={activePeer.verified} />
+                    </View>
                     <Text numberOfLines={1} style={styles.dmHandle}>
                       @{activePeer.username}
                     </Text>
@@ -893,7 +902,10 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
                             size={36}
                           />
                           <View style={{ flex: 1, minWidth: 0 }}>
-                            <Text numberOfLines={1} style={styles.friendName}>{p.fullName}</Text>
+                            <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                              <Text numberOfLines={1} style={[styles.friendName, { flexShrink: 1 }]}>{p.fullName}</Text>
+                              <VerifiedBadge size={13} verified={p.verified} />
+                            </View>
                             <Text numberOfLines={1} style={styles.friendHandle}>@{p.username}</Text>
                           </View>
                           {p.relationStatus === "ACCEPTED" ? (
@@ -905,6 +917,7 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
                                   username: p.username,
                                   avatarUrl: p.avatarUrl,
                                   equippedFrameId: p.equippedFrameId,
+                                  verified: p.verified,
                                   level: p.level,
                                 })
                               }
@@ -968,7 +981,10 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
                           size={36}
                         />
                         <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text numberOfLines={1} style={styles.friendName}>{p.fullName}</Text>
+                          <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                            <Text numberOfLines={1} style={[styles.friendName, { flexShrink: 1 }]}>{p.fullName}</Text>
+                            <VerifiedBadge size={13} verified={p.verified} />
+                          </View>
                           <Text numberOfLines={1} style={styles.friendHandle}>@{p.username}</Text>
                         </View>
                         <Pressable onPress={() => void handleAccept(p.userId)} style={styles.pillPrimary}>
@@ -998,6 +1014,7 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
                             username: f.username,
                             avatarUrl: f.avatarUrl,
                             equippedFrameId: f.equippedFrameId,
+                            verified: f.verified,
                             level: f.level,
                           })
                         }
@@ -1011,9 +1028,12 @@ export function FloatingChatProvider({ children }: { children: ReactNode }) {
                           size={38}
                         />
                         <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text numberOfLines={1} style={styles.friendName}>
-                            {f.fullName} <Text style={styles.friendHandle}>@{f.username}</Text>
-                          </Text>
+                          <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                            <Text numberOfLines={1} style={[styles.friendName, { flexShrink: 1 }]}>
+                              {f.fullName} <Text style={styles.friendHandle}>@{f.username}</Text>
+                            </Text>
+                            <VerifiedBadge size={13} verified={f.verified} />
+                          </View>
                           <Text
                             numberOfLines={1}
                             style={[styles.emptySmall, (f.unreadCount ?? 0) > 0 ? styles.unreadPreview : null]}

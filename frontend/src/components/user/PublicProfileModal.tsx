@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import VerifiedBadge from "@/src/components/common/VerifiedBadge";
 import { LiquidCard } from "@/src/components/ui/LiquidGlass";
 import UserAvatarWithFrame from "@/src/components/user/UserAvatarWithFrame";
 import { useAuth } from "@/src/hooks/use-auth";
@@ -29,6 +30,7 @@ type PublicProfileModalProps = {
     username: string;
     avatarUrl?: string | null;
     equippedFrameId?: string | null;
+    verified?: boolean;
     level: number;
   }) => void;
 };
@@ -209,7 +211,10 @@ export default function PublicProfileModal({
                   level={profile.level}
                   size={74}
                 />
-                <Text style={styles.fullName}>{profile.fullName}</Text>
+                <View style={{ alignItems: "center", flexDirection: "row", gap: 6, justifyContent: "center", marginTop: 4 }}>
+                  <Text style={[styles.fullName, { marginTop: 0 }]}>{profile.fullName}</Text>
+                  <VerifiedBadge size={17} verified={profile.verified} />
+                </View>
                 <Text style={styles.username}>@{profile.username}</Text>
                 {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
 
@@ -271,6 +276,7 @@ export default function PublicProfileModal({
                             username: profile.username,
                             avatarUrl: profile.avatarUrl,
                             equippedFrameId: profile.equippedFrameId,
+                            verified: profile.verified,
                             level: profile.level,
                           });
                         }}

@@ -157,6 +157,7 @@ public class AchievementService {
         out.setCurrentLevel(user.getCurrentLevel());
         out.setTargetScore(user.getTargetScore());
         out.setPremium(user.getPremium());
+        out.setVerified(Boolean.TRUE.equals(user.getVerified()));
         out.setDiamonds(user.getDiamonds() != null ? user.getDiamonds() : 50);
 
         Long weeklyRaw = diamondTransactionRepository.sumWeeklyStudyDiamondsByUser(

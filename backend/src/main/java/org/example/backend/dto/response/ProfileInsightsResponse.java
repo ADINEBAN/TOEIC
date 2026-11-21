@@ -17,6 +17,7 @@ public class ProfileInsightsResponse {
     private String currentLevel;
     private Integer targetScore;
     private Boolean premium;
+    private boolean verified;
     private int diamonds;
     private int weeklyStudyDiamonds;
     private int level;

@@ -210,6 +210,7 @@ public class DiamondRewardService {
         item.setUsername(resolveUsername(user));
         item.setAvatarUrl(user.getAvatarUrl());
         item.setEquippedFrameId(user.getEquippedFrameId());
+        item.setVerified(Boolean.TRUE.equals(user.getVerified()));
         int xp = user.getLearningXp() != null ? user.getLearningXp() : 0;
         item.setLevel(LevelCalculator.fromXp(xp).level());
         item.setWeeklyStudyDiamonds(weeklyStudyDiamonds);

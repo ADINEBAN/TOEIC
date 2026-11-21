@@ -35,4 +35,14 @@ export class AdminAnalyticsService extends BaseAdminService {
       },
     );
   }
+
+  updateUserVerified(userId: number, verified: boolean) {
+    return this.request<ApiResponse<AdminUserApiItem>>(
+      `/api/admin/users/${userId}/verified`,
+      {
+        body: JSON.stringify({ verified }),
+        method: 'PATCH',
+      },
+    );
+  }
 }
