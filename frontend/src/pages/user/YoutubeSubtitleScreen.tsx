@@ -24,6 +24,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { radius } from "@/src/assets/styles/user-theme";
+import { showDiamondRewardToast } from "@/src/components/common/DiamondRewardToast";
 import UserScreen from "@/src/components/user/UserScreen";
 import { useAuth } from "@/src/hooks/use-auth";
 import {
@@ -930,7 +931,7 @@ export default function YoutubeSubtitleScreen() {
           updateUserProfile({ ...auth.user, diamonds: res.data.currentDiamonds });
         }
         if ((res.data.diamondsEarned ?? 0) > 0) {
-          Alert.alert("Hoàn thành Video", `Tuyệt vời! Bạn vừa nhận +${res.data.diamondsEarned} 💎!`);
+          showDiamondRewardToast(res.data.diamondsEarned ?? 0, "Hoàn thành Video AI");
         }
         setActiveVideo((prev) =>
           prev

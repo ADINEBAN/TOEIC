@@ -8,6 +8,7 @@ import React, { Component, ReactNode, useCallback, useEffect, useMemo, useRef, u
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
+import { showDiamondRewardToast } from "@/src/components/common/DiamondRewardToast";
 import { LiquidButton } from "@/src/components/ui/LiquidGlass";
 import AppHeader, { AvatarBadge } from "@/src/components/user/AppHeader";
 import ProgressBar from "@/src/components/user/ProgressBar";
@@ -125,7 +126,7 @@ function NativeLessonVideoPlayer({
       instance.preservesPitch = true;
       instance.audioMixingMode = "doNotMix";
       if (Platform.OS !== "web") {
-        void setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
+        void setAudioModeAsync({ playsInSilentMode: true }).catch(() => { });
       }
       instance.play();
     } catch {
@@ -523,15 +524,15 @@ export default function LessonScreen() {
     currentLesson?.progressStatus === "COMPLETED"
       ? 100
       : Math.max(
-          0,
-          Math.min(
-            100,
-            Math.max(
-              Math.round(currentLesson?.completionPercent ?? 0),
-              Math.round((displayedWatchedSeconds / effectiveDuration) * 100),
-            ),
+        0,
+        Math.min(
+          100,
+          Math.max(
+            Math.round(currentLesson?.completionPercent ?? 0),
+            Math.round((displayedWatchedSeconds / effectiveDuration) * 100),
           ),
-        );
+        ),
+      );
   const allLessonsCompleted = lessons.length > 0 && lessons.every((lesson) => lesson.progressStatus === "COMPLETED");
 
   useEffect(() => {
@@ -583,7 +584,7 @@ export default function LessonScreen() {
     }
     if (Platform.OS === "web" && webVideoRef.current) {
       webVideoRef.current.currentTime = target;
-      void webVideoRef.current.play().catch(() => {});
+      void webVideoRef.current.play().catch(() => { });
       return;
     }
     if (nativeVideoRef.current?.seekToSeconds) {
@@ -672,12 +673,12 @@ export default function LessonScreen() {
             prev.map((item) =>
               item.lessonId === updated.lessonId
                 ? {
-                    ...item,
-                    completionPercent: updated.lessonCompletionPercent,
-                    lastPositionSeconds: force ? updated.lastPositionSeconds : item.lastPositionSeconds,
-                    watchedSeconds: updated.watchedSeconds,
-                    progressStatus: updated.lessonStatus,
-                  }
+                  ...item,
+                  completionPercent: updated.lessonCompletionPercent,
+                  lastPositionSeconds: force ? updated.lastPositionSeconds : item.lastPositionSeconds,
+                  watchedSeconds: updated.watchedSeconds,
+                  progressStatus: updated.lessonStatus,
+                }
                 : item,
             ),
           );
@@ -690,7 +691,7 @@ export default function LessonScreen() {
             completionNotifiedLessonRef.current !== updated.lessonId
           ) {
             completionNotifiedLessonRef.current = updated.lessonId;
-            alertCrossPlatform("Hoàn thành bài học", `Bạn vừa nhận +${updated.diamondsEarned} 💎!`);
+            showDiamondRewardToast(updated.diamondsEarned ?? 0, "Hoàn thành bài học");
           }
         }
       } catch (error) {
@@ -1006,7 +1007,7 @@ export default function LessonScreen() {
             <Text style={styles.toolBtnText}>Sổ tay</Text>
           </Pressable>
           {(isYoutubeLesson || (completionValue >= 80 && currentLesson?.progressStatus !== "COMPLETED")) &&
-          currentLesson?.progressStatus !== "COMPLETED" ? (
+            currentLesson?.progressStatus !== "COMPLETED" ? (
             <LiquidButton
               compact
               disabled={updatingProgress}

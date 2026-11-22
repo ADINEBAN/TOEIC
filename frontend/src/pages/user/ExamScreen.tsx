@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
+import { showDiamondRewardToast } from "@/src/components/common/DiamondRewardToast";
 import { LiquidButton, LiquidIconButton } from "@/src/components/ui/LiquidGlass";
 import ProgressBar from "@/src/components/user/ProgressBar";
 import QuestionMediaBlock from "@/src/components/user/QuestionMediaBlock";
@@ -204,8 +205,8 @@ export default function ExamScreen() {
       if (auth.user && typeof res.data?.currentDiamonds === "number") {
         updateUserProfile({ ...auth.user, diamonds: res.data.currentDiamonds });
       }
-      if (earned > 0 && Platform.OS !== "web") {
-        alertCrossPlatform("Thành công", `Bài thi của bạn đã được nộp (+${earned} 💎)!`);
+      if (earned > 0) {
+        showDiamondRewardToast(earned, "Hoàn thành bài thi");
       }
       replaceRoute(`/user/attempt-review?attemptId=${res.data?.attemptId ?? attempt.attemptId}`);
     } catch (error) {

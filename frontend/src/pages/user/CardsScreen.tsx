@@ -16,6 +16,7 @@ import {
 } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
+import { showDiamondRewardToast } from "@/src/components/common/DiamondRewardToast";
 import {
   LiquidButton,
   LiquidCard,
@@ -881,6 +882,9 @@ export default function CardsScreen() {
           updateUserProfile({ ...auth.user, diamonds: updated.currentDiamonds });
         }
         const earned = updated.diamondsEarned ?? 0;
+        if (earned > 0) {
+          showDiamondRewardToast(earned, "Ôn tập từ vựng");
+        }
         setSm2Feedback(
           earned > 0
             ? `Đã chấm ${rating} (+${earned} 💎) • Lặp lại sau ${updated.intervalDays ?? 0} ngày`

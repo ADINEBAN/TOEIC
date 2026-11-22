@@ -5,6 +5,7 @@ import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View,
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import AppErrorBoundary from "@/src/components/common/AppErrorBoundary";
+import DiamondRewardToastHost from "@/src/components/common/DiamondRewardToast";
 import { useAppTheme } from "@/src/store/theme-store";
 import { useResponsiveLayout } from "@/src/utils/responsive";
 
@@ -152,6 +153,7 @@ export default function UserScreen({
           body
         )}
       </KeyboardAvoidingView>
+      <DiamondRewardToastHost />
     </SafeAreaView>
   );
 }

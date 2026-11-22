@@ -205,10 +205,11 @@ public class UserTestService {
         userTestAttemptRepository.save(attempt);
 
         int diamondsEarned = 0;
-        if (diamondRewardService != null && !answersToSave.isEmpty()) {
+        if (diamondRewardService != null && correct > 0) {
+            int baseDiamonds = Math.max(5, Math.min(25, (int) Math.ceil(correct / 2.0)));
             int bonus = score >= 80.0 ? 20 : (score >= 50.0 ? 10 : 0);
             diamondsEarned = diamondRewardService.grantStudyReward(
-                    user, "TEST_SUBMIT", "test:" + attempt.getId(), 15 + bonus, 30 + correct, 5,
+                    user, "TEST_SUBMIT", "test:" + attempt.getId(), baseDiamonds + bonus, 10 + correct, 5,
                     "Hoàn thành bài thi: " + attempt.getTest().getTitle() + " (" + correct + "/" + attempt.getTotalQuestions() + ")",
                     true);
         }
@@ -277,8 +278,13 @@ public class UserTestService {
 
         // Load all answers for this attempt
         List<UserTestAnswer> answers = userTestAnswerRepository.findByAttemptIdOrderByIdAsc(attemptId);
-        if (attempt.getStatus() == AttemptStatus.SUBMITTED && attempt.getToeicScore() == null && !answers.isEmpty()) {
+        if (attempt.getStatus() == AttemptStatus.SUBMITTED
+                && (attempt.getToeicScore() == null
+                || attempt.getToeicScore() < 10
+                || attempt.getListeningScore() == null
+                || attempt.getReadingScore() == null)) {
             applyToeicScaledScores(attempt, answers);
+            userTestAttemptRepository.save(attempt);
         }
 
         // Build response with full details
@@ -302,37 +308,101 @@ public class UserTestService {
         return r;
     }
 
+    // Official ETS TOEIC 100-question Listening & Reading Scaled Score Conversion Tables (5..495)
+    private static final int[] ETS_LISTENING_TABLE = {
+            5, 5, 5, 5, 5, 5, 5, 10, 15, 20,
+            25, 30, 35, 40, 45, 50, 55, 60, 65, 70,
+            75, 80, 85, 90, 95, 100, 110, 115, 120, 125,
+            130, 135, 140, 145, 150, 160, 165, 170, 175, 180,
+            185, 190, 195, 200, 210, 215, 220, 230, 240, 245,
+            250, 255, 260, 270, 275, 280, 290, 295, 300, 310,
+            315, 320, 325, 330, 340, 345, 350, 360, 365, 370,
+            380, 385, 390, 395, 400, 405, 410, 420, 425, 430,
+            440, 445, 450, 460, 465, 470, 475, 480, 485, 490,
+            495, 495, 495, 495, 495, 495, 495, 495, 495, 495, 495
+    };
+
+    private static final int[] ETS_READING_TABLE = {
+            5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+            10, 15, 20, 25, 30, 35, 40, 45, 50, 55,
+            60, 65, 70, 75, 80, 90, 95, 100, 105, 115,
+            120, 125, 130, 140, 145, 150, 160, 165, 170, 175,
+            180, 190, 195, 200, 210, 215, 220, 225, 230, 240,
+            245, 250, 260, 265, 270, 275, 285, 290, 295, 300,
+            310, 315, 320, 325, 330, 335, 340, 350, 355, 360,
+            365, 370, 375, 385, 390, 395, 400, 405, 415, 420,
+            425, 430, 435, 440, 450, 455, 460, 465, 470, 475,
+            480, 485, 485, 490, 490, 495, 495, 495, 495, 495, 495
+    };
+
     public static int calculateToeicSectionScore(int correctCount, int totalCount) {
+        return calculateToeicSectionScore(correctCount, totalCount, true);
+    }
+
+    public static int calculateToeicSectionScore(int correctCount, int totalCount, boolean listeningSection) {
         if (totalCount <= 0) {
-            return 0;
+            return 5;
         }
-        double ratio = Math.max(0.0, Math.min(1.0, (double) correctCount / (double) totalCount));
-        long roundedToFive = Math.round((ratio * 490.0 + 5.0) / 5.0) * 5L;
-        return (int) Math.max(5, Math.min(495, roundedToFive));
+        int safeCorrect = Math.max(0, Math.min(totalCount, correctCount));
+        int scaledRaw100 = totalCount == 100
+                ? safeCorrect
+                : (int) Math.round((safeCorrect * 100.0) / totalCount);
+        int idx = Math.max(0, Math.min(100, scaledRaw100));
+        return listeningSection ? ETS_LISTENING_TABLE[idx] : ETS_READING_TABLE[idx];
     }
 
     private void applyToeicScaledScores(UserTestAttempt attempt, List<UserTestAnswer> answers) {
         int listeningCorrect = 0;
-        int listeningTotal = 0;
+        int answeredListeningTotal = 0;
         int readingCorrect = 0;
-        int readingTotal = 0;
+        int answeredReadingTotal = 0;
 
         for (UserTestAnswer answer : answers) {
             if (isListeningAnswer(answer)) {
-                listeningTotal++;
+                answeredListeningTotal++;
                 if (Boolean.TRUE.equals(answer.getCorrect())) {
                     listeningCorrect++;
                 }
             } else {
-                readingTotal++;
+                answeredReadingTotal++;
                 if (Boolean.TRUE.equals(answer.getCorrect())) {
                     readingCorrect++;
                 }
             }
         }
 
-        Integer listeningScore = listeningTotal > 0 ? calculateToeicSectionScore(listeningCorrect, listeningTotal) : null;
-        Integer readingScore = readingTotal > 0 ? calculateToeicSectionScore(readingCorrect, readingTotal) : null;
+        int testListeningTotal = 0;
+        int testReadingTotal = 0;
+        Test test = attempt.getTest();
+        boolean isFullTest = test == null
+                || test.getTestType() == null
+                || "FULL_TEST".equalsIgnoreCase(test.getTestType().trim());
+
+        if (test != null && test.getParts() != null) {
+            for (TestPart p : test.getParts()) {
+                int rawPartCount = p.getQuestionCount() != null ? p.getQuestionCount() : 0;
+                int limit = AdminTestService.standardToeicPartQuestionLimit(p.getPartNumber());
+                int effectiveCount = isFullTest ? Math.min(rawPartCount, limit) : rawPartCount;
+                boolean isListeningPart = (p.getPartSection() != null && "LISTENING".equalsIgnoreCase(p.getPartSection()))
+                        || (p.getPartNumber() != null && p.getPartNumber() <= 4);
+                if (isListeningPart) {
+                    testListeningTotal += effectiveCount;
+                } else {
+                    testReadingTotal += effectiveCount;
+                }
+            }
+        }
+
+        int effectiveListeningTotal = testListeningTotal > 0 ? testListeningTotal : (isFullTest ? 100 : answeredListeningTotal);
+        int effectiveReadingTotal = testReadingTotal > 0 ? testReadingTotal : (isFullTest ? 100 : answeredReadingTotal);
+
+        Integer listeningScore = effectiveListeningTotal > 0
+                ? calculateToeicSectionScore(listeningCorrect, effectiveListeningTotal, true)
+                : null;
+        Integer readingScore = effectiveReadingTotal > 0
+                ? calculateToeicSectionScore(readingCorrect, effectiveReadingTotal, false)
+                : null;
+
         attempt.setListeningScore(listeningScore);
         attempt.setReadingScore(readingScore);
         if (listeningScore != null && readingScore != null) {
@@ -342,7 +412,7 @@ public class UserTestService {
         } else if (readingScore != null) {
             attempt.setToeicScore(readingScore);
         } else {
-            attempt.setToeicScore(0);
+            attempt.setToeicScore(10);
         }
     }
 

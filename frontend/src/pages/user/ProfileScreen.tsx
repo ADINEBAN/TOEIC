@@ -19,6 +19,7 @@ import {
 } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
+import { showDiamondRewardToast } from "@/src/components/common/DiamondRewardToast";
 import VerifiedBadge from "@/src/components/common/VerifiedBadge";
 import { LiquidButton, LiquidCard, LiquidSwitch } from "@/src/components/ui/LiquidGlass";
 import AppHeader from "@/src/components/user/AppHeader";
@@ -269,7 +270,10 @@ export default function ProfileScreen() {
         if (me.data) updateUserProfile(me.data);
         if (ins?.data) setInsights(ins.data);
         if ((res.data.diamondsEarned ?? 0) > 0) {
-          Alert.alert("Điểm danh", `Bạn đã nhận +${res.data.diamondsEarned} 💎 cho chuỗi ${res.data.currentLoginStreak} ngày!`);
+          showDiamondRewardToast(
+            res.data.diamondsEarned ?? 0,
+            `Điểm danh chuỗi ${res.data.currentLoginStreak} ngày`,
+          );
         }
       }
     } catch (err) {
