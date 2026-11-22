@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
+import { showDiamondRewardToast } from "@/src/components/common/DiamondRewardToast";
 import AppHeader from "@/src/components/user/AppHeader";
 import SectionTitle from "@/src/components/user/SectionTitle";
 import SurfaceCard from "@/src/components/user/SurfaceCard";
@@ -132,10 +133,12 @@ export default function SubscriptionScreen() {
           } catch {
             // ignore profile sync failure
           }
-          alertCrossPlatform(
-            "Thanh toán thành công 🎉",
-            `Đã kích hoạt & cộng dồn gói ${refreshed.planTier} (+${refreshed.durationDays} ngày, +${refreshed.bonusDiamonds} 💎) qua SePay Webhook!`
-          );
+          if (refreshed.bonusDiamonds > 0) {
+            showDiamondRewardToast(
+              refreshed.bonusDiamonds,
+              `Kích hoạt gói ${refreshed.planTier} (+${refreshed.durationDays} ngày)`,
+            );
+          }
         }
       } catch {
         // ignore transient polling error

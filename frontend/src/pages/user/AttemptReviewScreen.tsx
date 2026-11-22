@@ -75,6 +75,8 @@ export default function AttemptReviewScreen() {
   const scorePercent = Math.round(attempt?.score ?? 0);
   const answers = attempt?.answers ?? [];
   const incorrectCount = answers.filter((item) => !item.correct).length;
+  const totalQ = attempt?.totalQuestions ?? answers.length;
+  const skippedCount = Math.max(0, totalQ - answers.length);
 
   const handleExplain = async (answer: QuestionAnswerResult) => {
     if (!service) return;
@@ -186,11 +188,16 @@ export default function AttemptReviewScreen() {
         {attempt.toeicScore != null ? (
           <View style={styles.toeicBandRow}>
             <View style={styles.toeicBandPill}>
-              <Text style={styles.toeicBandText}>Listening: {attempt.listeningScore ?? 0}/495</Text>
+              <Text style={styles.toeicBandText}>Listening: {attempt.listeningScore ?? 5}/495</Text>
             </View>
             <View style={styles.toeicBandPill}>
-              <Text style={styles.toeicBandText}>Reading: {attempt.readingScore ?? 0}/495</Text>
+              <Text style={styles.toeicBandText}>Reading: {attempt.readingScore ?? 5}/495</Text>
             </View>
+            {skippedCount > 0 ? (
+              <View style={styles.toeicBandPill}>
+                <Text style={styles.toeicBandText}>Bỏ trống: {skippedCount} câu</Text>
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -288,7 +295,9 @@ export default function AttemptReviewScreen() {
                 </View>
                 <View style={styles.answerContent}>
                   <Text style={[styles.answerQuestion, { fontSize: rf(14.5) }]}>
-                    {answer.questionText}
+                    {(answer.questionText ?? "")
+                      .replace(/^\s*\[(?:Test|Đề)\s*\d+\s*-\s*Q\d+\]\s*/i, "")
+                      .trim()}
                   </Text>
                 </View>
                 <View style={[styles.stateIcon, answer.correct ? styles.stateIconSuccess : styles.stateIconDanger]}>
@@ -304,7 +313,7 @@ export default function AttemptReviewScreen() {
                 audioUrl={answer.audioUrl}
                 imageUrl={answer.imageUrl}
                 passageText={answer.passageText}
-                questionGroupCode={answer.questionGroupCode}
+                questionGroupCode={null}
                 showTranscript
                 transcript={answer.transcript}
               />
