@@ -29,7 +29,13 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "Toeic Trainer",
+      "shortName": "Toeic Trainer",
+      "display": "standalone",
+      "orientation": "portrait",
+      "themeColor": "#09152D",
+      "backgroundColor": "#09152D"
     },
     "plugins": [
       "expo-router",
