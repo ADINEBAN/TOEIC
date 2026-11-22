@@ -236,12 +236,33 @@ export default function ExamScreen() {
     setShowSubmitConfirm(true);
   };
 
-  if (loading || !test || !currentQuestion) {
+  if (loading) {
     return (
       <UserScreen hasTabDock={false}>
         <View style={styles.loadingWrap}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
+      </UserScreen>
+    );
+  }
+
+  if (!test || !currentQuestion) {
+    return (
+      <UserScreen hasTabDock={false}>
+        <SurfaceCard style={{ alignItems: "center", gap: 12, marginTop: 24, padding: 20 }}>
+          <Ionicons color={colors.primary} name="document-text-outline" size={40} />
+          <Text style={{ color: colors.text, fontSize: rf(16), fontWeight: "900", textAlign: "center" }}>
+            Đề thi &quot;{test?.title ?? ""}&quot; chưa có câu hỏi (0 câu)
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: rf(13), lineHeight: 20, textAlign: "center" }}>
+            Đề thi này đã được tạo nhưng chưa được gán câu hỏi vào các Part. Vào Cổng Quản Trị (Admin Console) → Đề thi TOEIC → Cấu hình Part &amp; Câu hỏi → bấm &quot;⚡ Tự động tạo 7 Part &amp; Gán 200 câu&quot; để nạp câu hỏi từ Ngân hàng câu hỏi.
+          </Text>
+          <LiquidButton
+            label="Quay lại Trung tâm thi"
+            onPress={() => safeBack("/user/test")}
+            variant="primary"
+          />
+        </SurfaceCard>
       </UserScreen>
     );
   }
