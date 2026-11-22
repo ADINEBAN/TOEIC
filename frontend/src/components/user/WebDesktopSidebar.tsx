@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { usePathname } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import AppLogoBadge from "@/src/components/common/AppLogoBadge";
 import VerifiedBadge from "@/src/components/common/VerifiedBadge";
 import UserAvatarWithFrame from "@/src/components/user/UserAvatarWithFrame";
 import { useAuth } from "@/src/hooks/use-auth";
@@ -131,9 +132,7 @@ export default function WebDesktopSidebar() {
       ]}
     >
       <View style={styles.brandBox}>
-        <View style={[styles.brandIcon, { backgroundColor: c.primary }]}>
-          <Ionicons color="#FFFFFF" name="school" size={18} />
-        </View>
+        <AppLogoBadge animated glowColor={c.primary} size={38} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text numberOfLines={1} style={[styles.brandTitle, { color: c.text }]}>
             TOEIC TRAINER
@@ -279,13 +278,6 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
     paddingHorizontal: 4,
   },
-  brandIcon: {
-    alignItems: "center",
-    borderRadius: 12,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
   brandTitle: {
     fontSize: 13.5,
     fontWeight: "900",
@@ -315,17 +307,17 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
   navScrollContent: {
-    gap: 10,
-    paddingBottom: 10,
+    gap: 7,
+    paddingBottom: 8,
   },
   navGroup: {
-    gap: 2,
+    gap: 1,
   },
   groupTitle: {
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: "800",
     letterSpacing: 0.7,
-    marginBottom: 3,
+    marginBottom: 2,
     paddingHorizontal: 10,
   },
   navItem: {
@@ -336,7 +328,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
     paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingVertical: 5.5,
   },
   navLabel: {
     flex: 1,

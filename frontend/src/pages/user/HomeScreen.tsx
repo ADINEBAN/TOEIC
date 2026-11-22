@@ -1,10 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
   Image,
   Platform,
   Pressable,
@@ -15,6 +17,7 @@ import {
 } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
+import AppLogoBadge from "@/src/components/common/AppLogoBadge";
 import VerifiedBadge from "@/src/components/common/VerifiedBadge";
 import { LiquidCard } from "@/src/components/ui/LiquidGlass";
 import AppHeader from "@/src/components/user/AppHeader";
@@ -71,9 +74,42 @@ export default function HomeScreen() {
   const [selectedPathId, setSelectedPathId] = useState<number | null>(null);
   const [streakDays, setStreakDays] = useState(0);
   const [inspectUserId, setInspectUserId] = useState<number | null>(null);
+  const [enterAnim] = useState(() => new Animated.Value(0));
+  const [mascotFloat] = useState(() => new Animated.Value(0));
 
   const hasLoadedRef = useRef(false);
   const inFlightRef = useRef(false);
+
+  useEffect(() => {
+    const useNative = Platform.OS !== "web";
+    Animated.timing(enterAnim, {
+      duration: 420,
+      easing: Easing.out(Easing.cubic),
+      toValue: 1,
+      useNativeDriver: useNative,
+    }).start();
+
+    const floatLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(mascotFloat, {
+          duration: 1850,
+          easing: Easing.inOut(Easing.sin),
+          toValue: 1,
+          useNativeDriver: useNative,
+        }),
+        Animated.timing(mascotFloat, {
+          duration: 1850,
+          easing: Easing.inOut(Easing.sin),
+          toValue: 0,
+          useNativeDriver: useNative,
+        }),
+      ]),
+    );
+    floatLoop.start();
+    return () => {
+      floatLoop.stop();
+    };
+  }, [enterAnim, mascotFloat]);
 
   const fullName = auth.user?.fullName ?? "";
   const targetScore = auth.user?.targetScore ?? 0;
@@ -288,6 +324,116 @@ export default function HomeScreen() {
   ];
 
   const mascotSize = isNarrow ? 98 : 112;
+  const mascotTranslateY = mascotFloat.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -7],
+  });
+  const sectionTranslateY = enterAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [12, 0],
+  });
+
+  const goalPickerSection = (
+    <>
+      <SectionTitle
+        actionLabel="Đổi mục tiêu"
+        onActionPress={() => pushRoute("/user/onboarding")}
+        title="Mục tiêu điểm TOEIC"
+      />
+
+      {loading && learningPaths.length === 0 ? (
+        <SurfaceCard style={styles.loadingCard}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={styles.feedbackText}>Đang đồng bộ lộ trình...</Text>
+        </SurfaceCard>
+      ) : null}
+
+      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
+      {learningPaths.length > 0 ? (
+        <View style={styles.pathSection}>
+          <ScrollView
+            contentContainerStyle={styles.pathTabsRow}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ flexGrow: 0, flexShrink: 0 }}
+          >
+            {learningPaths.map((path) => {
+              const active = path.id === selectedPathId;
+              const isCurrent = roadmap?.learningPathId === path.id;
+              return (
+                <Pressable
+                  key={path.id}
+                  onPress={() => path.active && setSelectedPathId(path.id)}
+                  style={[
+                    styles.scoreTabPill,
+                    active ? styles.scoreTabPillActive : null,
+                    !path.active ? { opacity: 0.45 } : null,
+                  ]}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.scoreTabText, active ? styles.scoreTabTextActive : null]}
+                  >
+                    {path.targetScore}+
+                  </Text>
+                  {isCurrent ? (
+                    <View
+                      style={[
+                        styles.activeDot,
+                        { backgroundColor: active ? colors.onPrimary : colors.success },
+                      ]}
+                    />
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          {selectedPath ? (
+            <SurfaceCard style={styles.selectedPathCard}>
+              <View style={styles.selectedPathTop}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  {(recommendedPathId === selectedPath.id || roadmap?.learningPathId === selectedPath.id) ? (
+                    <View style={styles.tagRow}>
+                      {recommendedPathId === selectedPath.id ? (
+                        <Text style={styles.tagRecommend}>Đề xuất</Text>
+                      ) : null}
+                      {roadmap?.learningPathId === selectedPath.id ? (
+                        <Text style={styles.tagCurrent}>Đang học</Text>
+                      ) : null}
+                    </View>
+                  ) : null}
+                  <Text numberOfLines={1} style={[styles.pathTitle, { fontSize: rf(16) }]}>
+                    {selectedPath.title}
+                  </Text>
+                  <Text numberOfLines={1} style={styles.pathHint}>
+                    {selectedPath.milestoneCount} chặng • {selectedPath.moduleCount} bài học
+                  </Text>
+                </View>
+
+                <Pressable
+                  disabled={assigningPath || !selectedPath.active}
+                  onPress={() =>
+                    roadmap?.learningPathId === selectedPath.id
+                      ? pushRoute("/user/practice")
+                      : void handleChoosePath()
+                  }
+                  style={[styles.chevronCircle, { backgroundColor: colors.primary }]}
+                >
+                  {assigningPath ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Ionicons color="#FFFFFF" name="chevron-forward" size={18} />
+                  )}
+                </Pressable>
+              </View>
+            </SurfaceCard>
+          ) : null}
+        </View>
+      ) : null}
+    </>
+  );
 
   return (
     <UserScreen>
@@ -312,6 +458,14 @@ export default function HomeScreen() {
         title=""
         titleSlot={
           <View style={styles.headerGreetingRow}>
+            {isDesktopWeb ? (
+              <AppLogoBadge
+                animated
+                glowColor={colors.primary}
+                size={34}
+                style={{ marginRight: 6 }}
+              />
+            ) : null}
             <Text numberOfLines={1} style={[styles.headerGreetingText, { fontSize: rf(17.5) }]}>
               Chào, {greetingName}!
             </Text>
@@ -321,10 +475,23 @@ export default function HomeScreen() {
         }
       />
 
-      <View style={isDesktopWeb ? { alignItems: "flex-start", flexDirection: "row", gap: 20, marginBottom: 8 } : undefined}>
+      <Animated.View
+        style={[
+          isDesktopWeb
+            ? { alignItems: "flex-start", flexDirection: "row", gap: 20, marginBottom: 8 }
+            : undefined,
+          { opacity: enterAnim, transform: [{ translateY: sectionTranslateY }] },
+        ]}
+      >
         <View style={isDesktopWeb ? { flex: 1.12, minWidth: 0 } : undefined}>
-          <View style={styles.welcomeRow}>
+          <View style={[styles.welcomeRow, isDesktopWeb ? styles.welcomeDesktopCard : null]}>
             <View style={styles.welcomeTextCol}>
+              {isDesktopWeb ? (
+                <View style={styles.heroBrandEyebrow}>
+                  <View style={[styles.heroBrandDot, { backgroundColor: colors.success }]} />
+                  <Text style={styles.heroBrandEyebrowText}>TOEIC TRAINER • WEB STUDIO</Text>
+                </View>
+              ) : null}
               <Text style={[styles.welcomeHeadline, { fontSize: rf(isNarrow ? 19 : 21) }]}>
                 Sẵn sàng chinh phục TOEIC hôm nay!
               </Text>
@@ -339,10 +506,15 @@ export default function HomeScreen() {
                 </View>
               </View>
             </View>
-            <Image
+            <Animated.Image
               resizeMode="contain"
               source={require("@/assets/images/mascot-home.png")}
-              style={{ height: mascotSize, marginBottom: -12, width: mascotSize }}
+              style={{
+                height: mascotSize,
+                marginBottom: isDesktopWeb ? -4 : -12,
+                transform: [{ translateY: mascotTranslateY }],
+                width: mascotSize,
+              }}
             />
           </View>
 
@@ -452,6 +624,8 @@ export default function HomeScreen() {
               </View>
             </SurfaceCard>
           </Pressable>
+
+          {isDesktopWeb ? <View style={{ marginTop: 14 }}>{goalPickerSection}</View> : null}
         </View>
 
         <View style={isDesktopWeb ? { flex: 0.96, gap: 14, minWidth: 0 } : undefined}>
@@ -592,7 +766,7 @@ export default function HomeScreen() {
             </>
           ) : null}
         </View>
-      </View>
+      </Animated.View>
 
       <SectionTitle
         actionLabel="Xem tất cả"
@@ -627,103 +801,7 @@ export default function HomeScreen() {
         ))}
       </View>
 
-      <SectionTitle
-        actionLabel="Đổi mục tiêu"
-        onActionPress={() => pushRoute("/user/onboarding")}
-        title="Mục tiêu điểm TOEIC"
-      />
-
-      {loading && learningPaths.length === 0 ? (
-        <SurfaceCard style={styles.loadingCard}>
-          <ActivityIndicator color={colors.primary} />
-          <Text style={styles.feedbackText}>Đang đồng bộ lộ trình...</Text>
-        </SurfaceCard>
-      ) : null}
-
-      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-
-      {learningPaths.length > 0 ? (
-        <View style={styles.pathSection}>
-          <ScrollView
-            contentContainerStyle={styles.pathTabsRow}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ flexGrow: 0, flexShrink: 0 }}
-          >
-            {learningPaths.map((path) => {
-              const active = path.id === selectedPathId;
-              const isCurrent = roadmap?.learningPathId === path.id;
-              return (
-                <Pressable
-                  key={path.id}
-                  onPress={() => path.active && setSelectedPathId(path.id)}
-                  style={[
-                    styles.scoreTabPill,
-                    active ? styles.scoreTabPillActive : null,
-                    !path.active ? { opacity: 0.45 } : null,
-                  ]}
-                >
-                  <Text
-                    numberOfLines={1}
-                    style={[styles.scoreTabText, active ? styles.scoreTabTextActive : null]}
-                  >
-                    {path.targetScore}+
-                  </Text>
-                  {isCurrent ? (
-                    <View
-                      style={[
-                        styles.activeDot,
-                        { backgroundColor: active ? colors.onPrimary : colors.success },
-                      ]}
-                    />
-                  ) : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-
-          {selectedPath ? (
-            <SurfaceCard style={styles.selectedPathCard}>
-              <View style={styles.selectedPathTop}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  {(recommendedPathId === selectedPath.id || roadmap?.learningPathId === selectedPath.id) ? (
-                    <View style={styles.tagRow}>
-                      {recommendedPathId === selectedPath.id ? (
-                        <Text style={styles.tagRecommend}>Đề xuất</Text>
-                      ) : null}
-                      {roadmap?.learningPathId === selectedPath.id ? (
-                        <Text style={styles.tagCurrent}>Đang học</Text>
-                      ) : null}
-                    </View>
-                  ) : null}
-                  <Text numberOfLines={1} style={[styles.pathTitle, { fontSize: rf(16) }]}>
-                    {selectedPath.title}
-                  </Text>
-                  <Text numberOfLines={1} style={styles.pathHint}>
-                    {selectedPath.milestoneCount} chặng • {selectedPath.moduleCount} bài học
-                  </Text>
-                </View>
-
-                <Pressable
-                  disabled={assigningPath || !selectedPath.active}
-                  onPress={() =>
-                    roadmap?.learningPathId === selectedPath.id
-                      ? pushRoute("/user/practice")
-                      : void handleChoosePath()
-                  }
-                  style={[styles.chevronCircle, { backgroundColor: colors.primary }]}
-                >
-                  {assigningPath ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                  ) : (
-                    <Ionicons color="#FFFFFF" name="chevron-forward" size={18} />
-                  )}
-                </Pressable>
-              </View>
-            </SurfaceCard>
-          ) : null}
-        </View>
-      ) : null}
+      {!isDesktopWeb ? goalPickerSection : null}
 
       {!isDesktopWeb ? (
         <>
@@ -804,6 +882,40 @@ const createStyles = (colors: LiquidThemeColors) =>
       gap: 10,
       justifyContent: "space-between",
       marginBottom: 8,
+    },
+    welcomeDesktopCard: {
+      backgroundColor: colors.glassFillStrong,
+      borderColor: colors.glassBorder,
+      borderRadius: 22,
+      borderWidth: 1,
+      marginBottom: 14,
+      paddingHorizontal: 20,
+      paddingVertical: 14,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.08,
+      shadowRadius: 22,
+    },
+    heroBrandEyebrow: {
+      alignItems: "center",
+      alignSelf: "flex-start",
+      backgroundColor: colors.primarySoft,
+      borderRadius: radius.pill,
+      flexDirection: "row",
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+    },
+    heroBrandDot: {
+      borderRadius: 4,
+      height: 7,
+      width: 7,
+    },
+    heroBrandEyebrowText: {
+      color: colors.primary,
+      fontSize: 10.5,
+      fontWeight: "900",
+      letterSpacing: 0.7,
     },
     welcomeTextCol: {
       flex: 1,

@@ -3,9 +3,10 @@ import * as Linking from "expo-linking";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
+import AppLogoBadge from "@/src/components/common/AppLogoBadge";
 import PrimaryButton from "@/src/components/common/PrimaryButton";
 import TextField, { FieldIconButton } from "@/src/components/common/TextField";
 import { API_BASE_URL } from "@/src/config/env";
@@ -204,30 +205,33 @@ export default function LoginScreen() {
   const badgeSize = isShort ? 74 : 88;
 
   return (
-    <AuthLayout compact={isShort}>
+    <AuthLayout compact={isShort} mode="login">
       <View style={styles.header}>
-        <View
-          style={[
-            styles.logoCircle,
-            {
-              borderColor: colors.glassBorder,
-              height: badgeSize,
-              shadowColor: colors.primary,
-              width: badgeSize,
-            },
-          ]}
-        >
-          <Image
-            resizeMode="cover"
-            source={require("@/assets/images/brand-logo.png")}
-            style={styles.logoImage}
-          />
-        </View>
+        <AppLogoBadge
+          animated
+          glowColor={colors.primary}
+          size={badgeSize}
+          style={{ marginBottom: 12 }}
+        />
 
         <Text style={[styles.title, { fontSize: rf(24) }]}>Toeic Trainer</Text>
         <Text style={[styles.subtitle, { fontSize: rf(14) }]}>
           Học thông minh • Lộ trình cá nhân hóa
         </Text>
+
+        <View style={styles.authSwitchBar}>
+          <View style={[styles.authSwitchTab, styles.authSwitchTabActive]}>
+            <Text style={[styles.authSwitchText, styles.authSwitchTextActive]}>
+              Đăng nhập
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => router.push("/register")}
+            style={({ pressed }) => [styles.authSwitchTab, pressed ? { opacity: 0.78 } : null]}
+          >
+            <Text style={styles.authSwitchText}>Đăng ký</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.form}>
@@ -345,22 +349,6 @@ const createStyles = (colors: LiquidThemeColors) =>
       alignItems: "center",
       marginBottom: 16,
     },
-    logoCircle: {
-      alignItems: "center",
-      borderRadius: 24,
-      borderWidth: 1,
-      elevation: Platform.OS === "android" ? 0 : 6,
-      justifyContent: "center",
-      marginBottom: 12,
-      overflow: "hidden",
-      shadowOffset: { width: 0, height: 10 },
-      shadowOpacity: 0.24,
-      shadowRadius: 16,
-    },
-    logoImage: {
-      height: "100%",
-      width: "100%",
-    },
     title: {
       color: colors.text,
       fontWeight: "900",
@@ -371,6 +359,34 @@ const createStyles = (colors: LiquidThemeColors) =>
       color: colors.textMuted,
       marginTop: 4,
       textAlign: "center",
+    },
+    authSwitchBar: {
+      backgroundColor: colors.surfaceMuted,
+      borderColor: colors.glassBorder,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flexDirection: "row",
+      marginTop: 14,
+      padding: 4,
+      width: "100%",
+    },
+    authSwitchTab: {
+      alignItems: "center",
+      borderRadius: radius.pill,
+      flex: 1,
+      justifyContent: "center",
+      paddingVertical: 8,
+    },
+    authSwitchTabActive: {
+      backgroundColor: colors.primary,
+    },
+    authSwitchText: {
+      color: colors.textMuted,
+      fontSize: 13,
+      fontWeight: "800",
+    },
+    authSwitchTextActive: {
+      color: colors.onPrimary,
     },
     form: {
       gap: 2,

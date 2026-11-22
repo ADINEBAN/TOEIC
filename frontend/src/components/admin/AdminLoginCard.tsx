@@ -1,8 +1,8 @@
 import { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 
 import { colors, radius, spacing } from '@/src/assets/styles/theme';
+import AppLogoBadge from '@/src/components/common/AppLogoBadge';
 
 export default function AdminLoginCard({
   children,
@@ -12,7 +12,7 @@ export default function AdminLoginCard({
   return (
     <View style={styles.card}>
       <View style={styles.badge}>
-        <Ionicons color={colors.primary} name="shield-checkmark" size={16} />
+        <AppLogoBadge size={22} />
         <Text style={styles.badgeText}>TOEIC Trainer Admin</Text>
       </View>
       {children}

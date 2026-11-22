@@ -1,9 +1,10 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useMemo, useState } from "react";
-import { Alert, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
+import AppLogoBadge from "@/src/components/common/AppLogoBadge";
 import PrimaryButton from "@/src/components/common/PrimaryButton";
 import TextField, { FieldIconButton } from "@/src/components/common/TextField";
 import AuthLayout from "@/src/layouts/AuthLayout";
@@ -94,20 +95,30 @@ export default function RegisterScreen() {
   };
 
   return (
-    <AuthLayout compact scrollable>
+    <AuthLayout compact mode="register" scrollable>
       <View style={styles.header}>
         <View style={styles.brandRow}>
-          <Image
-            resizeMode="cover"
-            source={require("@/assets/images/brand-logo.png")}
-            style={styles.brandLogo}
-          />
+          <AppLogoBadge animated glowColor={colors.primary} size={36} />
           <Text style={styles.brandText}>Toeic Trainer</Text>
         </View>
         <Text style={[styles.title, { fontSize: rf(22) }]}>Tạo tài khoản mới</Text>
         <Text style={[styles.subtitle, { fontSize: rf(13.5) }]}>
           Cá nhân hóa lộ trình đạt mục tiêu điểm số của bạn
         </Text>
+
+        <View style={styles.authSwitchBar}>
+          <Pressable
+            onPress={() => router.replace("/")}
+            style={({ pressed }) => [styles.authSwitchTab, pressed ? { opacity: 0.78 } : null]}
+          >
+            <Text style={styles.authSwitchText}>Đăng nhập</Text>
+          </Pressable>
+          <View style={[styles.authSwitchTab, styles.authSwitchTabActive]}>
+            <Text style={[styles.authSwitchText, styles.authSwitchTextActive]}>
+              Đăng ký
+            </Text>
+          </View>
+        </View>
       </View>
 
       <View style={styles.form}>
@@ -202,7 +213,11 @@ export default function RegisterScreen() {
 
         <PrimaryButton label="TẠO TÀI KHOẢN" loading={loading} onPress={handleRegister} />
 
-        <Pressable hitSlop={8} onPress={() => router.back()} style={styles.footerLink}>
+        <Pressable
+          hitSlop={8}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))}
+          style={styles.footerLink}
+        >
           <Text style={styles.footerText}>
             Đã có tài khoản? <Text style={styles.footerHighlight}>Đăng nhập</Text>
           </Text>
@@ -221,19 +236,12 @@ const createStyles = (colors: LiquidThemeColors) =>
     brandRow: {
       alignItems: "center",
       flexDirection: "row",
-      gap: 6,
-      marginBottom: 6,
-    },
-    brandLogo: {
-      borderColor: colors.glassBorder,
-      borderRadius: 10,
-      borderWidth: 1,
-      height: 30,
-      width: 30,
+      gap: 10,
+      marginBottom: 8,
     },
     brandText: {
       color: colors.primary,
-      fontSize: 13,
+      fontSize: 15,
       fontWeight: "900",
     },
     title: {
@@ -245,6 +253,34 @@ const createStyles = (colors: LiquidThemeColors) =>
       color: colors.textMuted,
       marginTop: 4,
       textAlign: "center",
+    },
+    authSwitchBar: {
+      backgroundColor: colors.surfaceMuted,
+      borderColor: colors.glassBorder,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flexDirection: "row",
+      marginTop: 12,
+      padding: 4,
+      width: "100%",
+    },
+    authSwitchTab: {
+      alignItems: "center",
+      borderRadius: radius.pill,
+      flex: 1,
+      justifyContent: "center",
+      paddingVertical: 8,
+    },
+    authSwitchTabActive: {
+      backgroundColor: colors.primary,
+    },
+    authSwitchText: {
+      color: colors.textMuted,
+      fontSize: 13,
+      fontWeight: "800",
+    },
+    authSwitchTextActive: {
+      color: colors.onPrimary,
     },
     form: {
       gap: 2,
