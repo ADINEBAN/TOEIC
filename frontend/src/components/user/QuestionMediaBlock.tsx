@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import { radius, spacing } from "@/src/assets/styles/user-theme";
+import { resolvePlayableMediaUrl } from "@/src/services/user.service";
 import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
 import { useVoiceSettings } from "@/src/store/voice-store";
 import { useResponsiveLayout } from "@/src/utils/responsive";
@@ -153,9 +154,12 @@ export default function QuestionMediaBlock({
     void speakText(text);
   };
 
+  const resolvedAudioUrl = resolvePlayableMediaUrl(audioUrl);
+  const resolvedImageUrl = resolvePlayableMediaUrl(imageUrl);
+
   const hasContent = Boolean(
-    audioUrl?.trim() ||
-      imageUrl?.trim() ||
+    resolvedAudioUrl ||
+      resolvedImageUrl ||
       passageText?.trim() ||
       questionGroupCode?.trim() ||
       (showTranscript && transcript?.trim()),
@@ -177,36 +181,38 @@ export default function QuestionMediaBlock({
         </View>
       ) : null}
 
-      {audioUrl?.trim() ? (
+      {resolvedAudioUrl ? (
         <View style={styles.audioBox}>
           <View style={styles.mediaHeaderRow}>
             <Ionicons color={colors.primary} name="headset-outline" size={16} />
             <Text style={styles.mediaTitle}>Audio Listening</Text>
           </View>
-          {Platform.OS === "web" ? (
+          {!/^https?:\/\//i.test(resolvedAudioUrl) ? (
+            <Text style={styles.errorText}>
+              {`Audio chưa được upload lên server (${resolvedAudioUrl}). Vào Admin → Ngân hàng câu hỏi để upload file .mp3 khớp câu hỏi này.`}
+            </Text>
+          ) : Platform.OS === "web" ? (
             <View style={styles.webAudioWrap}>
               {React.createElement("audio", {
                 controls: true,
                 preload: "metadata",
-                src: audioUrl.trim(),
+                src: resolvedAudioUrl,
                 style: { width: "100%", height: 38 },
               })}
             </View>
-          ) : /^https?:\/\//i.test(audioUrl.trim()) ? (
-            <MediaAudioErrorBoundary fallbackText="Không thể phát trực tiếp audio trên thiết bị này.">
-              <NativeAudioControls key={audioUrl.trim()} audioUrl={audioUrl.trim()} />
-            </MediaAudioErrorBoundary>
           ) : (
-            <Text style={styles.errorText}>Đường dẫn audio chưa hợp lệ.</Text>
+            <MediaAudioErrorBoundary fallbackText="Không thể phát trực tiếp audio trên thiết bị này.">
+              <NativeAudioControls key={resolvedAudioUrl} audioUrl={resolvedAudioUrl} />
+            </MediaAudioErrorBoundary>
           )}
         </View>
       ) : null}
 
-      {imageUrl?.trim() ? (
+      {resolvedImageUrl ? (
         <View style={styles.imageBox}>
           <Image
             resizeMode="contain"
-            source={{ uri: imageUrl.trim() }}
+            source={{ uri: resolvedImageUrl }}
             style={[styles.questionImage, { height: imageHeight }]}
           />
         </View>

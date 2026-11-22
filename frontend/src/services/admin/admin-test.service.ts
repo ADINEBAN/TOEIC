@@ -9,6 +9,8 @@ import {
   UpdateTestPartRequest,
   TestPartQuestionListResponse,
   AssignTestPartQuestionsRequest,
+  AutoPopulateTestRequest,
+  AutoPopulateTestResponse,
   ApiVoidResponse,
 } from '@/src/types/admin-api';
 import { BaseAdminService } from '@/src/services/admin/base-admin.service';
@@ -61,6 +63,13 @@ export class AdminTestService extends BaseAdminService {
   initStandardParts(testId: number) {
     return this.request<TestPartListResponse>(`/api/admin/tests/${testId}/init-standard-parts`, {
       method: 'POST',
+    });
+  }
+
+  autoPopulate(testId: number, request: AutoPopulateTestRequest) {
+    return this.request<AutoPopulateTestResponse>(`/api/admin/tests/${testId}/auto-populate`, {
+      method: 'POST',
+      body: JSON.stringify(request),
     });
   }
 

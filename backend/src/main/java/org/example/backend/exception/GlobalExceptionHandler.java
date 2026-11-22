@@ -8,6 +8,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 
 @ControllerAdvice
 public class GlobalExceptionHandler {
@@ -25,6 +26,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(value = MaxUploadSizeExceededException.class)
     ResponseEntity<ApiResponse<Void>> handleMaxUploadSize(MaxUploadSizeExceededException exception) {
+        return ApiResponseUtil.error(ErrorCode.FILE_SIZE_EXCEEDED);
+    }
+
+    @ExceptionHandler(value = MultipartException.class)
+    ResponseEntity<ApiResponse<Void>> handleMultipartError(MultipartException exception) {
         return ApiResponseUtil.error(ErrorCode.FILE_SIZE_EXCEEDED);
     }
 }

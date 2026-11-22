@@ -24,12 +24,14 @@ public class UserLessonMapper {
         if (progress == null) {
             response.setCompletionPercent(0.0);
             response.setLastPositionSeconds(0);
+            response.setWatchedSeconds(0);
             response.setProgressStatus(ProgressStatus.NOT_STARTED.name());
             return response;
         }
 
         response.setCompletionPercent(progress.getCompletionPercent() == null ? 0.0 : progress.getCompletionPercent());
         response.setLastPositionSeconds(progress.getLastPositionSeconds() == null ? 0 : progress.getLastPositionSeconds());
+        response.setWatchedSeconds(progress.getWatchedSeconds() == null ? 0 : progress.getWatchedSeconds());
         response.setProgressStatus(progress.getStatus() == null ? ProgressStatus.NOT_STARTED.name() : progress.getStatus().name());
         return response;
     }

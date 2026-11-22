@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Alert, Platform } from 'react-native';
 
 function ensureWeb() {
   if (Platform.OS !== 'web' || typeof window === 'undefined') {
@@ -9,6 +9,33 @@ function ensureWeb() {
 export function confirmWeb(message: string) {
   ensureWeb();
   return window.confirm(message);
+}
+
+export function confirmCrossPlatform(
+  title: string,
+  message: string,
+  onConfirm: () => void,
+  confirmLabel = 'Xác nhận',
+  cancelLabel = 'Hủy',
+) {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    if (window.confirm(`${title}\n\n${message}`)) {
+      onConfirm();
+    }
+    return;
+  }
+  Alert.alert(title, message, [
+    { style: 'cancel', text: cancelLabel },
+    { text: confirmLabel, onPress: onConfirm },
+  ]);
+}
+
+export function alertCrossPlatform(title: string, message: string) {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    window.alert(`${title}: ${message}`);
+    return;
+  }
+  Alert.alert(title, message);
 }
 
 export function promptText(message: string, defaultValue = '') {

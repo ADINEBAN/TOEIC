@@ -444,6 +444,26 @@ export type QuestionImportApiResult = {
 };
 
 export type QuestionImportResponse = ApiResponse<QuestionImportApiResult>;
+
+export type QuestionMediaBatchApiResult = {
+  uploadedFileCount: number;
+  storedAssetCount: number;
+  matchedQuestionCount: number;
+  skippedAlreadyLinkedCount: number;
+  unmatchedFiles: string[];
+  items: QuestionApiItem[];
+};
+
+export type QuestionMediaBatchResponse = ApiResponse<QuestionMediaBatchApiResult>;
+
+export type QuestionMediaUploadApiItem = {
+  url: string;
+  mediaType: 'AUDIO' | 'IMAGE' | string;
+  format: string;
+  bytes: number;
+};
+
+export type QuestionMediaUploadResponse = ApiResponse<QuestionMediaUploadApiItem>;
 export type AdminAnalyticsOverviewApiItem = {
   totalUsers: number;
   activeUsers: number;
@@ -536,6 +556,22 @@ export type UpdateTestPartRequest = Partial<CreateTestPartRequest>;
 export type AssignTestPartQuestionsRequest = {
   questionIds: number[];
 };
+
+export type AutoPopulateTestRequest = {
+  groupPrefix?: string;
+  replaceExisting?: boolean;
+};
+
+export type AutoPopulateTestApiItem = {
+  testId: number;
+  testTitle: string;
+  createdPartCount: number;
+  totalAssignedQuestions: number;
+  assignedPerPart: Record<string, number>;
+  parts: TestPartApiItem[];
+};
+
+export type AutoPopulateTestResponse = ApiResponse<AutoPopulateTestApiItem>;
 
 export type TestListResponse = ApiResponse<TestApiItem[]>;
 export type TestPartListResponse = ApiResponse<TestPartApiItem[]>;
