@@ -62,7 +62,7 @@ public class SubscriptionService {
     @Value("${sepay.api-key:}")
     private String sepayApiKey;
 
-    @Value("${sepay.bank-code:Vietcombank}")
+    @Value("${sepay.bank-code:MBBank}")
     private String sepayBankCode;
 
     @Value("${sepay.account-number:0782733887}")
@@ -270,7 +270,7 @@ public class SubscriptionService {
         if (!"PAID".equalsIgnoreCase(order.getStatus())) {
             SepayWebhookRequest simulated = new SepayWebhookRequest();
             simulated.setId(System.currentTimeMillis());
-            simulated.setGateway(sepayBankCode != null ? sepayBankCode : "Vietcombank");
+            simulated.setGateway(sepayBankCode != null ? sepayBankCode : "MBBank");
             simulated.setAccountNumber(sepayAccountNumber);
             simulated.setCode(order.getOrderCode());
             simulated.setContent(order.getOrderCode() + " thanh toan goi " + order.getPlanCode());
@@ -522,7 +522,7 @@ public class SubscriptionService {
     }
 
     private PaymentOrderResponse toPaymentOrderResponse(PaymentOrder order) {
-        String bank = sepayBankCode != null && !sepayBankCode.isBlank() ? sepayBankCode.trim() : "Vietcombank";
+        String bank = sepayBankCode != null && !sepayBankCode.isBlank() ? sepayBankCode.trim() : "MBBank";
         String acc = sepayAccountNumber != null && !sepayAccountNumber.isBlank() ? sepayAccountNumber.trim() : "0782733887";
         String accName = sepayAccountName != null && !sepayAccountName.isBlank() ? sepayAccountName.trim() : "Y A DIN BYA";
         String qrUrl = String.format(

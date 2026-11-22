@@ -74,7 +74,7 @@ public class PaymentController {
     }
 
     @PostMapping("/orders/{orderCode}/simulate-webhook")
-    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<PaymentOrderResponse>> simulateOrderWebhook(
             Authentication authentication,
             @PathVariable String orderCode
