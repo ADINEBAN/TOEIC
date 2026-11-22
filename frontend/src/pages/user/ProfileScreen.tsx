@@ -971,7 +971,22 @@ export default function ProfileScreen() {
 
       <SectionTitle title="Công cụ học tập" />
       <SurfaceCard padding="sm" style={styles.toolsCard}>
-        <Pressable onPress={() => pushRoute("/user/youtube-studio")} style={styles.toolRow}>
+        <Pressable onPress={() => pushRoute("/user/subscription")} style={styles.toolRow}>
+          <ClayIcon3D colors={["#A855F7", "#6D28D9"]} icon="sparkles" size={42} />
+          <View style={styles.toolCopy}>
+            <Text style={styles.toolTitle}>
+              Nâng cấp PLUS & PRO ({(auth.user?.planTier ?? (auth.user?.premium ? "PRO" : "FREE")).toUpperCase()})
+            </Text>
+            <Text style={styles.toolSub}>
+              SePay VietQR tự động • PLUS 10.000đ/30 ngày • PRO 30.000đ/30 ngày
+            </Text>
+          </View>
+          <View style={[styles.chevronMini, { backgroundColor: colors.primarySoft }]}>
+            <Ionicons color={colors.primary} name="chevron-forward" size={15} />
+          </View>
+        </Pressable>
+
+        <Pressable onPress={() => pushRoute("/user/youtube-studio")} style={[styles.toolRow, styles.toolRowBorder]}>
           <ClayIcon3D colors={["#FF7074", "#E53935"]} icon="logo-youtube" size={42} />
           <View style={styles.toolCopy}>
             <Text style={styles.toolTitle}>Thư viện Video AI</Text>

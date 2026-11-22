@@ -29,6 +29,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashMap;
@@ -42,8 +43,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserProgressService {
 
-    private static final double LESSON_COMPLETED_THRESHOLD = 90.0;
-    private static final double MODULE_COMPLETED_THRESHOLD = 90.0;
+    private static final double LESSON_COMPLETED_THRESHOLD = 80.0;
+    private static final double MODULE_COMPLETED_THRESHOLD = 80.0;
 
     private final UserRepository userRepository;
     private final UserLearningPathRepository userLearningPathRepository;
@@ -64,9 +65,16 @@ public class UserProgressService {
             UpdateLessonProgressRequest request
     ) {
         User user = findUser(email);
-        UserLearningPath activePath = getActivePath(user.getId());
         VideoLesson lesson = findPublishedLesson(lessonId);
-        LearningModule module = validateLessonBelongsToActivePath(activePath, lesson);
+        LearningModule module = lesson.getModule();
+        if (module == null) {
+            throw new AppException(ErrorCode.LEARNING_MODULE_NOT_FOUND);
+        }
+
+        Optional<UserLearningPath> activePathInScope = userLearningPathRepository
+                .findTopByUserIdAndStatusOrderByAssignedAtDesc(user.getId(), PathStatus.ACTIVE)
+                .filter(path -> path.getLearningPath() != null
+                        && getAllowedModuleIds(path.getLearningPath().getId()).contains(module.getId()));
 
         UserVideoProgress videoProgress = userVideoProgressRepository
                 .findByUserIdAndLessonId(user.getId(), lessonId)
@@ -77,8 +85,15 @@ public class UserProgressService {
 
         UserModuleProgress moduleProgress = recalculateModuleProgress(user, module);
 
-        List<MilestoneModule> orderedModules = getOrderedModules(activePath.getLearningPath().getId());
-        UnlockResult unlockResult = unlockNextModuleIfNeeded(user, activePath, orderedModules, module.getId(), moduleProgress);
+        UnlockResult unlockResult = activePathInScope
+                .map(activePath -> unlockNextModuleIfNeeded(
+                        user,
+                        activePath,
+                        getOrderedModules(activePath.getLearningPath().getId()),
+                        module.getId(),
+                        moduleProgress
+                ))
+                .orElseGet(() -> new UnlockResult(null, false, false));
 
         int diamondsEarned = 0;
         if (diamondRewardService != null) {
@@ -93,9 +108,9 @@ public class UserProgressService {
                         user, "MODULE_COMPLETE", "module:" + module.getId(), 25, 50, 0,
                         "Hoàn thành mô-đun: " + module.getTitle(), true);
             }
-            if (unlockResult.pathCompleted()) {
+            if (unlockResult.pathCompleted() && activePathInScope.isPresent()) {
                 diamondsEarned += diamondRewardService.grantStudyReward(
-                        user, "PATH_COMPLETE", "path:" + activePath.getLearningPath().getId(), 80, 120, 0,
+                        user, "PATH_COMPLETE", "path:" + activePathInScope.get().getLearningPath().getId(), 80, 120, 0,
                         "Hoàn thành toàn bộ lộ trình TOEIC!", true);
             }
         }
@@ -184,20 +199,6 @@ public class UserProgressService {
         return lesson;
     }
 
-    private LearningModule validateLessonBelongsToActivePath(UserLearningPath activePath, VideoLesson lesson) {
-        LearningModule module = lesson.getModule();
-        if (module == null) {
-            throw new AppException(ErrorCode.LEARNING_MODULE_NOT_FOUND);
-        }
-
-        Set<Long> allowedModuleIds = getAllowedModuleIds(activePath.getLearningPath().getId());
-        if (!allowedModuleIds.contains(module.getId())) {
-            throw new AppException(ErrorCode.LEARNING_MODULE_NOT_FOUND);
-        }
-
-        return module;
-    }
-
     private LearningModule validateModuleBelongsToActivePath(UserLearningPath activePath, Long moduleId) {
         if (moduleId == null) {
             throw new AppException(ErrorCode.LEARNING_MODULE_NOT_FOUND);
@@ -248,17 +249,16 @@ public class UserProgressService {
         LocalDateTime now = LocalDateTime.now();
         int durationSeconds = Math.max(1, lesson.getDurationSeconds() == null ? 1 : lesson.getDurationSeconds());
 
+        int prevPosition = defaultInteger(progress.getLastPositionSeconds());
+        int prevWatched = defaultInteger(progress.getWatchedSeconds());
+        double prevPercent = defaultDouble(progress.getCompletionPercent());
+
         Integer nextLastPosition = payload.getLastPositionSeconds() != null
                 ? payload.getLastPositionSeconds()
-                : defaultInteger(progress.getLastPositionSeconds());
-        Integer nextWatchedSeconds = payload.getWatchedSeconds() != null
-                ? payload.getWatchedSeconds()
-                : Math.max(defaultInteger(progress.getWatchedSeconds()), nextLastPosition);
-        Double nextCompletionPercent = payload.getCompletionPercent() != null
-                ? payload.getCompletionPercent()
-                : defaultDouble(progress.getCompletionPercent());
+                : prevPosition;
+        Integer requestedWatched = payload.getWatchedSeconds();
 
-        if (nextLastPosition < 0 || nextWatchedSeconds < 0) {
+        if (nextLastPosition < 0 || (requestedWatched != null && requestedWatched < 0)) {
             throw new AppException(ErrorCode.INVALID_PROGRESS_DATA);
         }
         if (payload.getCompletionPercent() != null && (payload.getCompletionPercent() < 0 || payload.getCompletionPercent() > 100)) {
@@ -269,16 +269,25 @@ public class UserProgressService {
             nextLastPosition = durationSeconds;
         }
 
-        double fromPosition = (nextLastPosition * 100.0) / durationSeconds;
+        // Accumulate watched seconds monotonically, capped by realistic playback speed when syncing incrementally
+        int nextWatchedSeconds = prevWatched;
+        if (requestedWatched != null && requestedWatched > prevWatched) {
+            int maxAllowedGain = durationSeconds;
+            if (progress.getLastWatchedAt() != null) {
+                long elapsedSec = Math.max(1L, Duration.between(progress.getLastWatchedAt(), now).getSeconds());
+                maxAllowedGain = (int) Math.ceil(elapsedSec * 2.5 + 30.0);
+            }
+            nextWatchedSeconds = Math.min(durationSeconds, Math.min(requestedWatched, prevWatched + maxAllowedGain));
+        }
+
         double fromWatched = (nextWatchedSeconds * 100.0) / durationSeconds;
-        nextCompletionPercent = Math.max(nextCompletionPercent, fromPosition);
-        nextCompletionPercent = Math.max(nextCompletionPercent, Math.min(100.0, fromWatched));
+        double nextCompletionPercent = Math.max(prevPercent, Math.min(100.0, fromWatched));
 
         ProgressStatus requestedStatus = parseRequestedStatus(payload.getStatus());
         if (requestedStatus == ProgressStatus.COMPLETED) {
             nextCompletionPercent = 100.0;
-        }
-        if (requestedStatus == ProgressStatus.NOT_STARTED && nextLastPosition == 0 && nextWatchedSeconds == 0) {
+            nextWatchedSeconds = Math.max(nextWatchedSeconds, durationSeconds);
+        } else if (requestedStatus == ProgressStatus.NOT_STARTED && nextLastPosition == 0 && nextWatchedSeconds == 0) {
             nextCompletionPercent = 0.0;
         }
 
@@ -287,6 +296,7 @@ public class UserProgressService {
         ProgressStatus computedStatus;
         if (nextCompletionPercent >= LESSON_COMPLETED_THRESHOLD) {
             computedStatus = ProgressStatus.COMPLETED;
+            nextCompletionPercent = 100.0;
         } else if (nextCompletionPercent > 0 || nextLastPosition > 0 || nextWatchedSeconds > 0 || requestedStatus == ProgressStatus.IN_PROGRESS) {
             computedStatus = ProgressStatus.IN_PROGRESS;
         } else {

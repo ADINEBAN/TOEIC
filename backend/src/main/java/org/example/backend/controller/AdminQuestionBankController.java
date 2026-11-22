@@ -8,11 +8,16 @@ import org.example.backend.dto.request.UpdateQuestionRequest;
 import org.example.backend.dto.response.AIExplainResponse;
 import org.example.backend.dto.response.ApiResponse;
 import org.example.backend.dto.response.QuestionImportResponse;
+import org.example.backend.dto.response.QuestionMediaBatchResponse;
 import org.example.backend.dto.response.QuestionResponse;
+import org.example.backend.enums.ErrorCode;
 import org.example.backend.enums.SuccessCode;
+import org.example.backend.exception.AppException;
 import org.example.backend.service.AdminQuestionBankService;
+import org.example.backend.service.CloudinaryUploadService;
 import org.example.backend.service.OpenAIAnswerExplainService;
 import org.example.backend.service.QuestionImportService;
+import org.example.backend.service.QuestionMediaBatchService;
 import org.example.backend.util.ApiResponseUtil;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -38,6 +43,8 @@ public class AdminQuestionBankController {
 
     private final AdminQuestionBankService adminQuestionBankService;
     private final QuestionImportService questionImportService;
+    private final QuestionMediaBatchService questionMediaBatchService;
+    private final CloudinaryUploadService cloudinaryUploadService;
     private final OpenAIAnswerExplainService openAIAnswerExplainService;
 
     @PostMapping
@@ -54,6 +61,39 @@ public class AdminQuestionBankController {
     ) {
         QuestionImportResponse response = questionImportService.importFromFile(file, defaultPartNo, autoExplainAi);
         return ApiResponseUtil.success(response, SuccessCode.QUESTIONS_BULK_IMPORTED);
+    }
+
+    @PostMapping(value = "/upload-media-batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<QuestionMediaBatchResponse>> uploadQuestionMediaBatch(
+            @RequestParam("files") List<MultipartFile> files,
+            @RequestParam(value = "groupPrefix", required = false) String groupPrefix,
+            @RequestParam(value = "overwriteExisting", defaultValue = "false") boolean overwriteExisting
+    ) {
+        QuestionMediaBatchResponse response =
+                questionMediaBatchService.uploadMediaBatch(files, groupPrefix, overwriteExisting);
+        return ApiResponseUtil.success(response, SuccessCode.QUESTION_MEDIA_BATCH_UPLOADED);
+    }
+
+    @PostMapping(value = "/upload-media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<CloudinaryUploadService.QuestionMediaAssetResult>> uploadSingleQuestionMedia(
+            @RequestParam("file") MultipartFile file
+    ) {
+        if (file == null || file.isEmpty()) {
+            throw new AppException(ErrorCode.INVALID_QUESTION_MEDIA);
+        }
+        try {
+            CloudinaryUploadService.QuestionMediaAssetResult response =
+                    cloudinaryUploadService.uploadQuestionAsset(
+                            file.getBytes(),
+                            file.getOriginalFilename(),
+                            file.getContentType()
+                    );
+            return ApiResponseUtil.success(response, SuccessCode.QUESTION_MEDIA_UPLOADED);
+        } catch (AppException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new AppException(ErrorCode.INVALID_QUESTION_MEDIA);
+        }
     }
 
     @PostMapping("/ai-explain-draft")

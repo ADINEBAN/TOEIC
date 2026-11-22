@@ -41,6 +41,8 @@ export type AuthUser = {
   nextLevelXp?: number;
   levelProgressPercent?: number;
   levelTitle?: string;
+  planTier?: "FREE" | "PLUS" | "PRO" | string;
+  planExpiresAt?: string | null;
   premium: boolean;
   verified?: boolean;
   profileId: number;

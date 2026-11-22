@@ -41,12 +41,25 @@ public class MediaStorageWebConfig implements WebMvcConfigurer {
             avatarLocation = avatarLocation + "/";
         }
 
+        Path questionMediaDir = Paths.get(resolvedRoot)
+                .toAbsolutePath()
+                .normalize()
+                .resolve("uploads")
+                .resolve("question-media");
+        String questionMediaLocation = questionMediaDir.toUri().toString();
+        if (!questionMediaLocation.endsWith("/")) {
+            questionMediaLocation = questionMediaLocation + "/";
+        }
+
         registry.addResourceHandler("/media/videos/**")
                 .addResourceLocations(videoLocation)
                 .setCacheControl(CacheControl.maxAge(7, TimeUnit.DAYS).cachePublic());
         registry.addResourceHandler("/media/avatars/**")
                 .addResourceLocations(avatarLocation)
                 .setCacheControl(CacheControl.maxAge(30, TimeUnit.DAYS).cachePublic());
+        registry.addResourceHandler("/media/question-media/**")
+                .addResourceLocations(questionMediaLocation)
+                .setCacheControl(CacheControl.maxAge(7, TimeUnit.DAYS).cachePublic());
     }
 
     @Override
@@ -57,5 +70,16 @@ public class MediaStorageWebConfig implements WebMvcConfigurer {
         configurer.mediaType("webm", MediaType.valueOf("video/webm"));
         configurer.mediaType("mkv", MediaType.valueOf("video/x-matroska"));
         configurer.mediaType("avi", MediaType.valueOf("video/x-msvideo"));
+        configurer.mediaType("mp3", MediaType.valueOf("audio/mpeg"));
+        configurer.mediaType("wav", MediaType.valueOf("audio/wav"));
+        configurer.mediaType("m4a", MediaType.valueOf("audio/mp4"));
+        configurer.mediaType("ogg", MediaType.valueOf("audio/ogg"));
+        configurer.mediaType("aac", MediaType.valueOf("audio/aac"));
+        configurer.mediaType("flac", MediaType.valueOf("audio/flac"));
+        configurer.mediaType("jpg", MediaType.IMAGE_JPEG);
+        configurer.mediaType("jpeg", MediaType.IMAGE_JPEG);
+        configurer.mediaType("png", MediaType.IMAGE_PNG);
+        configurer.mediaType("webp", MediaType.valueOf("image/webp"));
+        configurer.mediaType("gif", MediaType.IMAGE_GIF);
     }
 }

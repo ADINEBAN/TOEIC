@@ -5,7 +5,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import type { VideoPlayer } from "expo-video";
 import * as WebBrowser from "expo-web-browser";
 import React, { Component, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
 import { LiquidButton } from "@/src/components/ui/LiquidGlass";
@@ -27,6 +27,7 @@ import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/the
 import { UserLessonApiItem, VideoNoteApiItem } from "@/src/types/user-api";
 import { pushRoute, safeBack } from "@/src/utils/navigation";
 import { useResponsiveLayout } from "@/src/utils/responsive";
+import { alertCrossPlatform } from "@/src/utils/web-dialog";
 
 type NativeVideoHandle = {
   seekToSeconds: (seconds: number) => void;
@@ -71,6 +72,7 @@ class VideoErrorBoundary extends Component<
 }
 
 const LESSON_SPEEDS = [0.75, 1.0, 1.25, 1.5, 2.0] as const;
+const PASS_THRESHOLD_RATIO = 0.8;
 
 function applyLessonPlayerRate(instance: VideoPlayer, rate: number) {
   try {
@@ -82,13 +84,17 @@ function applyLessonPlayerRate(instance: VideoPlayer, rate: number) {
 
 function NativeLessonVideoPlayer({
   durationFallback,
+  initialPositionSeconds = 0,
   onOpenExternal,
+  onPauseOrEnd,
   onProgress,
   playerHandleRef,
   videoUrl,
 }: {
   durationFallback: number;
+  initialPositionSeconds?: number;
   onOpenExternal: () => void;
+  onPauseOrEnd?: (current: number, duration: number) => void;
   onProgress: (current: number, duration: number) => void;
   playerHandleRef: React.MutableRefObject<NativeVideoHandle | null>;
   videoUrl: string;
@@ -98,8 +104,10 @@ function NativeLessonVideoPlayer({
   const colors = theme.colors;
   const styles = useThemedStyles(createStyles);
   const onProgressRef = useRef(onProgress);
+  const onPauseOrEndRef = useRef(onPauseOrEnd);
   const videoViewRef = useRef<VideoView | null>(null);
   const trackWidthRef = useRef(1);
+  const didAutoResumeRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isBuffering, setIsBuffering] = useState(true);
   const [playerError, setPlayerError] = useState<string | null>(null);
@@ -126,6 +134,10 @@ function NativeLessonVideoPlayer({
   useEffect(() => {
     onProgressRef.current = onProgress;
   }, [onProgress]);
+
+  useEffect(() => {
+    onPauseOrEndRef.current = onPauseOrEnd;
+  }, [onPauseOrEnd]);
 
   useEffect(() => {
     playerHandleRef.current = {
@@ -157,6 +169,14 @@ function NativeLessonVideoPlayer({
       if (nextPlaying) {
         setIsBuffering(false);
         setPlayerError(null);
+      } else {
+        try {
+          const cur = Number.isFinite(player.currentTime) ? player.currentTime : 0;
+          const dur = (Number.isFinite(player.duration) && player.duration > 0 ? player.duration : 0) || durationFallback;
+          onPauseOrEndRef.current?.(cur, dur);
+        } catch {
+          // Ignore sync read on pause
+        }
       }
     });
     const subStatus = player.addListener("statusChange", ({ status, error }) => {
@@ -169,6 +189,13 @@ function NativeLessonVideoPlayer({
           setPlayerError(null);
           player.muted = false;
           player.volume = 1.0;
+          if (!didAutoResumeRef.current && initialPositionSeconds > 5) {
+            didAutoResumeRef.current = true;
+            const total = (Number.isFinite(player.duration) && player.duration > 0 ? player.duration : 0) || durationFallback;
+            const resumeAt = Math.min(Math.max(0, total - 3), initialPositionSeconds);
+            player.currentTime = resumeAt;
+            setPosSec(resumeAt);
+          }
           if (!player.playing) {
             player.play();
           }
@@ -203,7 +230,7 @@ function NativeLessonVideoPlayer({
       }
       playerHandleRef.current = null;
     };
-  }, [durationFallback, player, playerHandleRef]);
+  }, [durationFallback, initialPositionSeconds, player, playerHandleRef]);
 
   const togglePlay = () => {
     try {
@@ -253,7 +280,7 @@ function NativeLessonVideoPlayer({
         await videoViewRef.current.enterFullscreen();
       }
     } catch {
-      Alert.alert("Xem ngang", "Không thể mở toàn màn hình trên thiết bị này.");
+      alertCrossPlatform("Xem ngang", "Không thể mở toàn màn hình trên thiết bị này.");
     }
   };
 
@@ -402,9 +429,21 @@ export default function LessonScreen() {
   const [notes, setNotes] = useState<VideoNoteApiItem[]>([]);
   const [noteText, setNoteText] = useState("");
   const [savingNote, setSavingNote] = useState(false);
-  const [currentSecond, setCurrentSecond] = useState(0);
+  const [livePlaybackState, setLivePlaybackState] = useState<{
+    lessonId: number;
+    watchedSeconds: number;
+    durationSeconds: number;
+    currentSecond: number;
+  } | null>(null);
+  const [webSpeedIdx, setWebSpeedIdx] = useState(1);
   const [nativePlayerReady, setNativePlayerReady] = useState(false);
-  const lastSyncedSecondRef = useRef(0);
+  const watchedSecondsRef = useRef(0);
+  const lastSyncedWatchedRef = useRef(0);
+  const prevTickRef = useRef<{ lessonId: number; position: number } | null>(null);
+  const syncInFlightRef = useRef(false);
+  const webResumedLessonIdRef = useRef<number | null>(null);
+  const completionNotifiedLessonRef = useRef<number | null>(null);
+  const initializedLessonIdRef = useRef<number | null>(null);
   const webVideoRef = useRef<HTMLVideoElement | null>(null);
   const nativeVideoRef = useRef<NativeVideoHandle | null>(null);
 
@@ -453,8 +492,54 @@ export default function LessonScreen() {
   }, [auth.accessToken, isHydrated, loadLessons]);
 
   const currentLesson = lessons.find((item) => item.lessonId === selectedLessonId) ?? lessons[0] ?? null;
-  const completionValue = Math.max(0, Math.min(100, Math.round(currentLesson?.completionPercent ?? 0)));
+  const activeLivePlayback =
+    currentLesson && livePlaybackState?.lessonId === currentLesson.lessonId ? livePlaybackState : null;
+  const effectiveDuration = Math.max(
+    1,
+    activeLivePlayback && activeLivePlayback.durationSeconds > 0
+      ? activeLivePlayback.durationSeconds
+      : (currentLesson?.durationSeconds ?? 1),
+  );
+  const currentSecond = activeLivePlayback
+    ? activeLivePlayback.currentSecond
+    : Math.max(0, currentLesson?.lastPositionSeconds ?? 0);
+  const persistedWatched =
+    currentLesson && typeof currentLesson.watchedSeconds === "number" && currentLesson.watchedSeconds > 0
+      ? currentLesson.watchedSeconds
+      : Math.round(((currentLesson?.completionPercent ?? 0) / 100) * Math.max(1, currentLesson?.durationSeconds ?? 1));
+  const displayedWatchedSeconds = Math.max(
+    persistedWatched,
+    activeLivePlayback?.watchedSeconds ?? 0,
+  );
+  const completionValue =
+    currentLesson?.progressStatus === "COMPLETED"
+      ? 100
+      : Math.max(
+          0,
+          Math.min(
+            100,
+            Math.max(
+              Math.round(currentLesson?.completionPercent ?? 0),
+              Math.round((displayedWatchedSeconds / effectiveDuration) * 100),
+            ),
+          ),
+        );
   const allLessonsCompleted = lessons.length > 0 && lessons.every((lesson) => lesson.progressStatus === "COMPLETED");
+
+  useEffect(() => {
+    if (!currentLesson || initializedLessonIdRef.current === currentLesson.lessonId) return;
+    initializedLessonIdRef.current = currentLesson.lessonId;
+    const dur = Math.max(1, currentLesson.durationSeconds || 1);
+    const seedWatched =
+      typeof currentLesson.watchedSeconds === "number" && currentLesson.watchedSeconds > 0
+        ? currentLesson.watchedSeconds
+        : Math.round(((currentLesson.completionPercent ?? 0) / 100) * dur);
+    watchedSecondsRef.current = seedWatched;
+    lastSyncedWatchedRef.current = seedWatched;
+    prevTickRef.current = null;
+    webResumedLessonIdRef.current = null;
+    // Refs only: UI progress derives livePlaybackState keyed by lessonId without effect setState
+  }, [currentLesson]);
 
   const loadNotes = useCallback(
     async (lessonId: number) => {
@@ -480,7 +565,14 @@ export default function LessonScreen() {
 
   const handleSeekToSecond = async (seconds: number) => {
     const target = Math.max(0, Math.floor(seconds));
-    setCurrentSecond(target);
+    if (currentLesson) {
+      setLivePlaybackState({
+        lessonId: currentLesson.lessonId,
+        watchedSeconds: Math.floor(watchedSecondsRef.current),
+        durationSeconds: effectiveDuration,
+        currentSecond: target,
+      });
+    }
     if (Platform.OS === "web" && webVideoRef.current) {
       webVideoRef.current.currentTime = target;
       void webVideoRef.current.play().catch(() => {});
@@ -506,7 +598,7 @@ export default function LessonScreen() {
       setNoteText("");
       await loadNotes(currentLesson.lessonId);
     } catch (error) {
-      Alert.alert("Ghi chú", error instanceof Error ? error.message : "Không lưu được ghi chú.");
+      alertCrossPlatform("Ghi chú", error instanceof Error ? error.message : "Không lưu được ghi chú.");
     } finally {
       setSavingNote(false);
     }
@@ -518,7 +610,7 @@ export default function LessonScreen() {
       await deleteVideoNote(auth.accessToken, noteId);
       await loadNotes(currentLesson.lessonId);
     } catch (error) {
-      Alert.alert("Ghi chú", error instanceof Error ? error.message : "Không xóa được ghi chú.");
+      alertCrossPlatform("Ghi chú", error instanceof Error ? error.message : "Không xóa được ghi chú.");
     }
   };
 
@@ -535,66 +627,141 @@ export default function LessonScreen() {
     try {
       await WebBrowser.openBrowserAsync(resolved);
     } catch (error) {
-      Alert.alert("Video", error instanceof Error ? error.message : "Không mở được video.");
+      alertCrossPlatform("Video", error instanceof Error ? error.message : "Không mở được video.");
     }
   };
 
-  const handleResumeLesson = async () => {
+  const syncProgressToServer = useCallback(
+    async (positionSec: number, durationSec: number, force = false, markCompleted = false) => {
+      if (!auth.accessToken || !currentLesson || syncInFlightRef.current) return;
+      const safeDuration = Math.max(1, Math.floor(durationSec || currentLesson.durationSeconds || 1));
+      const clampedPos = Math.min(safeDuration, Math.max(0, Math.floor(positionSec)));
+      const clampedWatched = Math.min(safeDuration, Math.max(0, Math.floor(watchedSecondsRef.current)));
+      const ratio = clampedWatched / safeDuration;
+      const shouldComplete = markCompleted || ratio >= PASS_THRESHOLD_RATIO;
+      const gainedSinceSync = clampedWatched - lastSyncedWatchedRef.current;
+
+      const needsCompletionSync = shouldComplete && currentLesson.progressStatus !== "COMPLETED";
+      const needsPeriodicSync = gainedSinceSync >= 10;
+      const needsPauseSync = force && (gainedSinceSync > 0 || (clampedPos > 0 && currentLesson.progressStatus === "NOT_STARTED"));
+
+      if (!needsCompletionSync && !needsPeriodicSync && !needsPauseSync && !markCompleted) {
+        return;
+      }
+
+      syncInFlightRef.current = true;
+      lastSyncedWatchedRef.current = clampedWatched;
+      try {
+        const res = await updateLessonProgress(auth.accessToken, currentLesson.lessonId, {
+          completionPercent: shouldComplete ? 100 : Math.min(100, ratio * 100),
+          lastPositionSeconds: clampedPos,
+          status: shouldComplete ? "COMPLETED" : "IN_PROGRESS",
+          watchedSeconds: shouldComplete ? Math.max(clampedWatched, safeDuration) : clampedWatched,
+        });
+        if (res.data) {
+          const updated = res.data;
+          setLessons((prev) =>
+            prev.map((item) =>
+              item.lessonId === updated.lessonId
+                ? {
+                    ...item,
+                    completionPercent: updated.lessonCompletionPercent,
+                    lastPositionSeconds: updated.lastPositionSeconds,
+                    watchedSeconds: updated.watchedSeconds,
+                    progressStatus: updated.lessonStatus,
+                  }
+                : item,
+            ),
+          );
+          if (auth.user && typeof updated.currentDiamonds === "number") {
+            updateUserProfile({ ...auth.user, diamonds: updated.currentDiamonds });
+          }
+          if (
+            updated.lessonStatus === "COMPLETED" &&
+            (updated.diamondsEarned ?? 0) > 0 &&
+            completionNotifiedLessonRef.current !== updated.lessonId
+          ) {
+            completionNotifiedLessonRef.current = updated.lessonId;
+            alertCrossPlatform("Hoàn thành bài học", `Bạn vừa nhận +${updated.diamondsEarned} 💎!`);
+          }
+        }
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : "Không thể đồng bộ tiến độ bài học.",
+        );
+      } finally {
+        syncInFlightRef.current = false;
+      }
+    },
+    [auth.accessToken, auth.user, currentLesson, updateUserProfile],
+  );
+
+  const handlePlaybackTick = useCallback(
+    (seconds: number, duration: number) => {
+      if (!currentLesson || !Number.isFinite(seconds) || !Number.isFinite(duration) || duration <= 0) {
+        return;
+      }
+      const pos = Math.max(0, seconds);
+      const lessonId = currentLesson.lessonId;
+      const prevTick = prevTickRef.current;
+      prevTickRef.current = { lessonId, position: pos };
+
+      // Only count normal forward playback deltas (<= 3.5s/tick covers up to 2.0x speed, skips manual scrubs)
+      if (prevTick && prevTick.lessonId === lessonId) {
+        const delta = pos - prevTick.position;
+        if (delta > 0 && delta <= 3.5) {
+          watchedSecondsRef.current = Math.min(duration, watchedSecondsRef.current + delta);
+        }
+      }
+
+      const nextSecond = Math.floor(pos);
+      const nextDur = Math.floor(duration);
+      const nextWatched = Math.floor(watchedSecondsRef.current);
+      setLivePlaybackState((prev) => {
+        if (
+          prev &&
+          prev.lessonId === lessonId &&
+          prev.currentSecond === nextSecond &&
+          prev.durationSeconds === nextDur &&
+          prev.watchedSeconds === nextWatched
+        ) {
+          return prev;
+        }
+        return {
+          lessonId,
+          watchedSeconds: nextWatched,
+          durationSeconds: nextDur,
+          currentSecond: nextSecond,
+        };
+      });
+
+      void syncProgressToServer(pos, duration, false, false);
+    },
+    [currentLesson, syncProgressToServer],
+  );
+
+  const handleManualCompleteLesson = async () => {
     if (!auth.accessToken || !currentLesson || updatingProgress) return;
     try {
       setUpdatingProgress(true);
-      const safeDuration = currentLesson.durationSeconds > 0 ? currentLesson.durationSeconds : 60;
-      const nextPosition = Math.min(safeDuration, Math.max(0, currentLesson.lastPositionSeconds) + 60);
-      const nextCompletion = Math.min(99, Math.max(currentLesson.completionPercent, (nextPosition / safeDuration) * 100));
-      await updateLessonProgress(auth.accessToken, currentLesson.lessonId, {
-        completionPercent: nextCompletion,
-        lastPositionSeconds: nextPosition,
-        status: "IN_PROGRESS",
-        watchedSeconds: nextPosition,
-      });
-      await loadLessons();
-    } catch (error) {
-      Alert.alert("Lesson", error instanceof Error ? error.message : "Không cập nhật được tiến độ.");
+      await syncProgressToServer(effectiveDuration, effectiveDuration, true, true);
     } finally {
       setUpdatingProgress(false);
     }
   };
 
-  const syncPlaybackProgress = useCallback(
-    async (seconds: number, duration: number) => {
-      if (!auth.accessToken || !currentLesson || updatingProgress) return;
-      if (!Number.isFinite(seconds) || !Number.isFinite(duration) || duration <= 0) return;
+  const handleRestartFromBeginning = async () => {
+    prevTickRef.current = currentLesson ? { lessonId: currentLesson.lessonId, position: 0 } : null;
+    await handleSeekToSecond(0);
+  };
 
-      const normalizedSeconds = Math.min(duration, Math.max(0, Math.floor(seconds)));
-      const normalizedPercent = Math.min(100, Math.max(0, (normalizedSeconds / duration) * 100));
-      const shouldComplete = normalizedPercent >= 90;
-      const shouldSyncByTick = normalizedSeconds - lastSyncedSecondRef.current >= 20;
-      const shouldSyncByComplete = shouldComplete && currentLesson.progressStatus !== "COMPLETED";
-
-      if (!shouldSyncByTick && !shouldSyncByComplete) return;
-
-      lastSyncedSecondRef.current = normalizedSeconds;
-      try {
-        const res = await updateLessonProgress(auth.accessToken, currentLesson.lessonId, {
-          completionPercent: shouldComplete ? 100 : normalizedPercent,
-          lastPositionSeconds: normalizedSeconds,
-          status: shouldComplete ? "COMPLETED" : "IN_PROGRESS",
-          watchedSeconds: normalizedSeconds,
-        });
-        if (res.data) {
-          if (auth.user && typeof res.data.currentDiamonds === "number") {
-            updateUserProfile({ ...auth.user, diamonds: res.data.currentDiamonds });
-          }
-          if ((res.data.diamondsEarned ?? 0) > 0) {
-            Alert.alert("Hoàn thành bài học", `Bạn vừa nhận +${res.data.diamondsEarned} 💎!`);
-          }
-        }
-      } catch (error) {
-        console.log("[lesson] sync progress error", error);
-      }
-    },
-    [auth.accessToken, auth.user, currentLesson, updateUserProfile, updatingProgress],
-  );
+  const cycleWebSpeed = () => {
+    const nextIdx = (webSpeedIdx + 1) % LESSON_SPEEDS.length;
+    setWebSpeedIdx(nextIdx);
+    if (webVideoRef.current) {
+      webVideoRef.current.playbackRate = LESSON_SPEEDS[nextIdx];
+    }
+  };
 
   const handleCompleteVideosAndGoCards = async () => {
     if (!currentLesson?.moduleId) return;
@@ -662,15 +829,58 @@ export default function LessonScreen() {
               controls: true,
               src: safeUrl,
               style: styles.webVideo as unknown as object,
+              onLoadedMetadata: (event: any) => {
+                const videoEl = event?.currentTarget as HTMLVideoElement | undefined;
+                if (!videoEl || !currentLesson) return;
+                const dur = Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? Math.floor(videoEl.duration) : 0;
+                videoEl.playbackRate = LESSON_SPEEDS[webSpeedIdx];
+                let initialSec = Math.floor(videoEl.currentTime || 0);
+                if (
+                  webResumedLessonIdRef.current !== currentLesson.lessonId &&
+                  currentLesson.lastPositionSeconds > 5 &&
+                  currentLesson.progressStatus !== "COMPLETED"
+                ) {
+                  webResumedLessonIdRef.current = currentLesson.lessonId;
+                  const target = dur > 0 ? Math.min(Math.max(0, dur - 3), currentLesson.lastPositionSeconds) : currentLesson.lastPositionSeconds;
+                  prevTickRef.current = { lessonId: currentLesson.lessonId, position: target };
+                  videoEl.currentTime = target;
+                  initialSec = Math.floor(target);
+                }
+                setLivePlaybackState({
+                  lessonId: currentLesson.lessonId,
+                  watchedSeconds: Math.floor(watchedSecondsRef.current),
+                  durationSeconds: dur > 0 ? dur : Math.max(1, currentLesson.durationSeconds || 1),
+                  currentSecond: initialSec,
+                });
+              },
               onTimeUpdate: (event: any) => {
                 const current = Number(event?.currentTarget?.currentTime ?? 0);
                 const duration = Number(event?.currentTarget?.duration ?? currentLesson?.durationSeconds ?? 0);
-                setCurrentSecond(Math.floor(current));
-                void syncPlaybackProgress(current, duration);
+                handlePlaybackTick(current, duration);
+              },
+              onPause: (event: any) => {
+                const current = Number(event?.currentTarget?.currentTime ?? 0);
+                const duration = Number(event?.currentTarget?.duration ?? currentLesson?.durationSeconds ?? 0);
+                void syncProgressToServer(current, duration, true, false);
+              },
+              onEnded: (event: any) => {
+                const duration = Number(event?.currentTarget?.duration ?? currentLesson?.durationSeconds ?? 0);
+                void syncProgressToServer(duration, duration, true, false);
               },
             })}
           </View>
           <View style={styles.externalControlsRow}>
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              <Pressable onPress={cycleWebSpeed} style={styles.extCtrlPill}>
+                <Text style={styles.extCtrlPillText}>{LESSON_SPEEDS[webSpeedIdx]}x</Text>
+              </Pressable>
+              {currentSecond > 10 ? (
+                <Pressable onPress={() => void handleRestartFromBeginning()} style={styles.extCtrlPill}>
+                  <Ionicons color={colors.text} name="refresh" size={13} />
+                  <Text style={styles.extCtrlPillText}>Từ đầu</Text>
+                </Pressable>
+              ) : null}
+            </View>
             <Pressable
               onPress={() => void webVideoRef.current?.requestFullscreen?.()}
               style={[styles.landscapeBtn, { backgroundColor: colors.primarySoft, borderColor: colors.primary }]}
@@ -715,10 +925,17 @@ export default function LessonScreen() {
         <NativeLessonVideoPlayer
           key={`${currentLesson?.lessonId ?? "v"}-${safeUrl}`}
           durationFallback={durationFallback}
+          initialPositionSeconds={
+            currentLesson && currentLesson.progressStatus !== "COMPLETED"
+              ? currentLesson.lastPositionSeconds
+              : 0
+          }
           onOpenExternal={() => void openVideoUrl()}
+          onPauseOrEnd={(current, duration) => {
+            void syncProgressToServer(current, duration, true, false);
+          }}
           onProgress={(current, duration) => {
-            setCurrentSecond(Math.floor(current));
-            void syncPlaybackProgress(current, duration);
+            handlePlaybackTick(current, duration);
           }}
           playerHandleRef={nativeVideoRef}
           videoUrl={safeUrl}
@@ -726,6 +943,10 @@ export default function LessonScreen() {
       </VideoErrorBoundary>
     );
   };
+
+  const isYoutubeLesson = /(?:youtube\.com|youtu\.be)/i.test(
+    resolvePlayableMediaUrl(currentLesson?.videoUrl),
+  );
 
   return (
     <UserScreen hasTabDock={false}>
@@ -742,7 +963,7 @@ export default function LessonScreen() {
 
         <View style={styles.metaRow}>
           <Text style={styles.metaText}>
-            {currentLesson ? formatDuration(currentLesson.durationSeconds) : "--"} •{" "}
+            {currentLesson ? formatDuration(effectiveDuration) : "--"} •{" "}
             {formatStatus(currentLesson?.progressStatus ?? "NOT_STARTED")}
           </Text>
           <Text style={styles.percentText}>{completionValue}%</Text>
@@ -750,11 +971,20 @@ export default function LessonScreen() {
 
         <ProgressBar accentColor={colors.success} value={completionValue} />
 
+        {currentLesson && !isYoutubeLesson ? (
+          <Text style={styles.watchRuleHint}>
+            Đã xem thực tế {formatTimestampBadge(displayedWatchedSeconds)} / {formatTimestampBadge(effectiveDuration)} •{" "}
+            {currentLesson.progressStatus === "COMPLETED"
+              ? "Đã đạt yêu cầu qua bài ✓"
+              : "Đạt ≥80% thời lượng thực để qua bài (kéo tua không tính giờ)"}
+          </Text>
+        ) : null}
+
         {currentLesson?.lessonDescription ? (
           <Text style={styles.descText}>{currentLesson.lessonDescription}</Text>
         ) : null}
 
-        <View style={styles.actionRow}>
+        <View style={[styles.actionRow, { flexWrap: "wrap" }]}>
           <Pressable onPress={openVideoUrl} style={styles.toolBtn}>
             <Ionicons color={colors.primaryDark} name="open-outline" size={15} />
             <Text style={styles.toolBtnText}>Mở link</Text>
@@ -767,14 +997,17 @@ export default function LessonScreen() {
             <Ionicons color={colors.primaryDark} name="bookmarks-outline" size={15} />
             <Text style={styles.toolBtnText}>Sổ tay</Text>
           </Pressable>
-          <LiquidButton
-            compact
-            disabled={updatingProgress}
-            label="+1p"
-            onPress={handleResumeLesson}
-            style={{ flex: 1 }}
-            variant="primary"
-          />
+          {(isYoutubeLesson || (completionValue >= 80 && currentLesson?.progressStatus !== "COMPLETED")) &&
+          currentLesson?.progressStatus !== "COMPLETED" ? (
+            <LiquidButton
+              compact
+              disabled={updatingProgress}
+              label="Hoàn thành bài"
+              onPress={() => void handleManualCompleteLesson()}
+              style={{ flex: 1, minWidth: 130 }}
+              variant="primary"
+            />
+          ) : null}
         </View>
       </SurfaceCard>
 
@@ -833,12 +1066,23 @@ export default function LessonScreen() {
         </SurfaceCard>
       ) : (
         <View style={styles.lessonList}>
-          {lessons.map((lesson) => {
+          {lessons.map((lesson, idx) => {
             const active = lesson.lessonId === currentLesson?.lessonId;
+            const userTier = (auth.user?.planTier ?? (auth.user?.premium ? "PRO" : "FREE")).toUpperCase();
+            const isLockedForFree =
+              userTier === "FREE" && idx > 0 && lesson.free === false;
             return (
               <Pressable
                 key={lesson.lessonId}
                 onPress={() => {
+                  if (isLockedForFree) {
+                    alertCrossPlatform(
+                      "Bài giảng dành cho gói PLUS / PRO",
+                      "Bài giảng video nâng cao này yêu cầu nâng cấp gói PLUS (10.000đ/30 ngày) hoặc PRO. Đang chuyển tới trang nâng cấp..."
+                    );
+                    pushRoute("/user/subscription");
+                    return;
+                  }
                   setNativePlayerReady(false);
                   setSelectedLessonId(lesson.lessonId);
                 }}
@@ -854,10 +1098,15 @@ export default function LessonScreen() {
                     {lesson.lessonTitle}
                   </Text>
                   <Text style={styles.lessonSub}>
-                    {formatStatus(lesson.progressStatus)} • {formatDuration(lesson.durationSeconds)}
+                    {isLockedForFree
+                      ? "🔒 Gói PLUS / PRO"
+                      : formatStatus(lesson.progressStatus)}{" "}
+                    • {formatDuration(lesson.durationSeconds)}
                   </Text>
                 </View>
-                {lesson.progressStatus === "COMPLETED" ? (
+                {isLockedForFree ? (
+                  <Ionicons color="#7C3AED" name="lock-closed" size={17} />
+                ) : lesson.progressStatus === "COMPLETED" ? (
                   <Ionicons color={colors.success} name="checkmark-circle" size={18} />
                 ) : null}
               </Pressable>
@@ -876,7 +1125,7 @@ export default function LessonScreen() {
         />
       ) : (
         <Text style={styles.requirementHint}>
-          Xem tất cả video trong module ({"\u2265"}90%) để mở khóa bước từ vựng.
+          Xem tất cả video trong module ({"\u2265"}80%) để mở khóa bước từ vựng.
         </Text>
       )}
     </UserScreen>
@@ -1097,6 +1346,11 @@ const createStyles = (colors: LiquidThemeColors) =>
       color: colors.text,
       fontSize: 13.5,
       lineHeight: 20,
+    },
+    watchRuleHint: {
+      color: colors.textMuted,
+      fontSize: 12,
+      fontWeight: "600",
     },
     actionRow: {
       alignItems: "center",

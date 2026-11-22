@@ -8,7 +8,9 @@ import org.example.backend.dto.response.ImportedDocumentResponse;
 import org.example.backend.dto.response.TestResponse;
 import org.example.backend.enums.SuccessCode;
 import org.example.backend.service.DocumentExamService;
+import org.example.backend.service.SubscriptionService;
 import org.example.backend.util.ApiResponseUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,11 +28,17 @@ public class UserDocumentController {
 
     private final DocumentExamService documentExamService;
 
+    @Autowired(required = false)
+    private SubscriptionService subscriptionService;
+
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<ImportedDocumentResponse>> uploadDocument(
             Authentication authentication,
             @RequestParam("file") MultipartFile file
     ) {
+        if (subscriptionService != null && authentication != null) {
+            subscriptionService.consumeQuotaOrThrow(authentication.getName(), SubscriptionService.FEATURE_DOCUMENT_IMPORT);
+        }
         ImportedDocumentResponse response = documentExamService.uploadAndExtractDocument(authentication.getName(), file);
         return ApiResponseUtil.success(response, SuccessCode.DOCUMENT_IMPORTED);
     }
@@ -86,6 +94,13 @@ public class UserDocumentController {
             Authentication authentication,
             @PathVariable Long documentId
     ) {
+        if (subscriptionService != null && authentication != null) {
+            subscriptionService.requireMinimumTierOrThrow(
+                    authentication.getName(),
+                    "PLUS",
+                    "Tính năng AI phân tích đáp án đề thi tài liệu yêu cầu nâng cấp gói PLUS (10.000đ/30 ngày) hoặc PRO."
+            );
+        }
         ImportedDocumentResponse response = documentExamService.analyzeAnswersWithAi(
                 authentication.getName(), documentId
         );

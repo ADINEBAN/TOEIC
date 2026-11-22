@@ -21,6 +21,8 @@ public class UserResponse {
     private Integer targetScore;
     private Boolean premium;
     private Boolean verified;
+    private String planTier;
+    private LocalDateTime planExpiresAt;
     private Integer diamonds;
     private Integer arenaWins;
     private Integer arenaLosses;

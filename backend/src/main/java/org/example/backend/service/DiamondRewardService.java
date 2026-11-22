@@ -75,7 +75,13 @@ public class DiamondRewardService {
         int currentXp = user.getLearningXp() != null ? user.getLearningXp() : 0;
         int currentMinutes = user.getTotalStudyMinutes() != null ? user.getTotalStudyMinutes() : 0;
 
-        user.setDiamonds(Math.max(0, currentDiamonds + diamonds));
+        int awardedDiamonds = diamonds;
+        if ("PRO".equalsIgnoreCase(user.getActivePlanTier())
+                && !"SUBSCRIPTION_BONUS".equalsIgnoreCase(normSource)) {
+            awardedDiamonds = Math.max(diamonds, (int) Math.round(diamonds * 1.5));
+        }
+
+        user.setDiamonds(Math.max(0, currentDiamonds + awardedDiamonds));
         user.setLearningXp(Math.max(0, currentXp + Math.max(0, xpGain)));
         user.setTotalStudyMinutes(Math.max(0, currentMinutes + Math.max(0, studyMinutesGain)));
         userRepository.save(user);
@@ -84,7 +90,7 @@ public class DiamondRewardService {
         tx.setUser(user);
         tx.setSourceType(normSource);
         tx.setReferenceKey(referenceKey != null && !referenceKey.isBlank() ? referenceKey.trim() : null);
-        tx.setDiamondsDelta(diamonds);
+        tx.setDiamondsDelta(awardedDiamonds);
         tx.setStudyReward(true);
         tx.setDescriptionVi(descriptionVi != null ? descriptionVi : "Hoàn thành hoạt động học tập");
         tx.setWeekStartDate(getWeekStartDate(0));
@@ -98,7 +104,7 @@ public class DiamondRewardService {
                 // Keep core learning action resilient
             }
         }
-        return diamonds;
+        return awardedDiamonds;
     }
 
     @Transactional

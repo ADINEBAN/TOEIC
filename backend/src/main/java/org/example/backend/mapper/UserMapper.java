@@ -34,6 +34,8 @@ public interface UserMapper {
         target.setNextLevelXp(lp.nextLevelXp());
         target.setLevelProgressPercent(lp.progressPercent());
         target.setLevelTitle(lp.levelTitle());
+        target.setPlanTier(entity.getActivePlanTier());
+        target.setPlanExpiresAt(entity.getPlanExpiresAt());
         if (target.getUsername() == null || target.getUsername().isBlank()) {
             String raw = entity.getEmail() != null ? entity.getEmail().split("@")[0] : "learner";
             String clean = raw.replaceAll("[^a-zA-Z0-9._]", "_").toLowerCase(Locale.ROOT);

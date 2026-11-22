@@ -44,6 +44,7 @@ import {
   AdminVideoLessonService,
   AdminTestService,
 } from "@/src/services/admin";
+import type { QuestionImportFileInput } from "@/src/services/admin/admin-question.service";
 import {
   AdminAnalyticsOverviewApiItem,
   AdminFlashcardApiItem,
@@ -227,6 +228,7 @@ const practiceSetFields: AdminField[] = [
 
 const buildQuestionFields = (
   onExplainDraft?: (values: FormValues) => Promise<Partial<FormValues> | null>,
+  onUploadSingleMedia?: (kind: "AUDIO" | "IMAGE") => Promise<Partial<FormValues> | null>,
 ): AdminField[] => [
   {
     name: "partNo",
@@ -252,12 +254,26 @@ const buildQuestionFields = (
     label: "Audio URL (Listening Part 1–4)",
     type: "text",
     visibleWhen: (v) => ["1", "2", "3", "4"].includes(String(v.partNo ?? "")),
+    actionButton: onUploadSingleMedia
+      ? {
+          label: "Upload audio",
+          loadingLabel: "Đang tải...",
+          onPress: () => onUploadSingleMedia("AUDIO"),
+        }
+      : undefined,
   },
   {
     name: "imageUrl",
-    label: "Image URL (Part 1 / Part 6–7)",
+    label: "Image URL (Part 1 / Part 3–4 / Part 6–7)",
     type: "text",
-    visibleWhen: (v) => ["1", "6", "7"].includes(String(v.partNo ?? "")),
+    visibleWhen: (v) => ["1", "3", "4", "6", "7"].includes(String(v.partNo ?? "")),
+    actionButton: onUploadSingleMedia
+      ? {
+          label: "Upload ảnh",
+          loadingLabel: "Đang tải...",
+          onPress: () => onUploadSingleMedia("IMAGE"),
+        }
+      : undefined,
   },
   {
     name: "passageText",
@@ -498,11 +514,19 @@ export default function AdminDashboardScreen() {
   const [importingQuestions, setImportingQuestions] = useState(false);
   const [questionImportAutoExplainAi, setQuestionImportAutoExplainAi] = useState(false);
   const [questionImportSummary, setQuestionImportSummary] = useState<string | null>(null);
+  const [uploadingQuestionMediaBatch, setUploadingQuestionMediaBatch] = useState(false);
+  const [questionMediaGroupPrefix, setQuestionMediaGroupPrefix] = useState("");
+  const [questionMediaOverwrite, setQuestionMediaOverwrite] = useState(false);
+  const [questionMediaBatchSummary, setQuestionMediaBatchSummary] = useState<string | null>(null);
   const [showPracticePickerModal, setShowPracticePickerModal] = useState(false);
   const [savingPracticeQuestions, setSavingPracticeQuestions] = useState(false);
   const [testsSubTab, setTestsSubTab] = useState<"list" | "builder">("list");
   const [showTestPartPickerModal, setShowTestPartPickerModal] = useState(false);
   const [savingTestPartQuestions, setSavingTestPartQuestions] = useState(false);
+  const [autoPopulatePrefix, setAutoPopulatePrefix] = useState("");
+  const [autoPopulateReplace, setAutoPopulateReplace] = useState(true);
+  const [autoPopulateSummary, setAutoPopulateSummary] = useState<string | null>(null);
+  const [autoPopulatingTest, setAutoPopulatingTest] = useState(false);
 
   const services = useMemo(() => {
     if (!auth.accessToken) return null;
@@ -896,7 +920,7 @@ export default function AdminDashboardScreen() {
     if (Platform.OS === "web") {
       const picker = document.createElement("input");
       picker.type = "file";
-      picker.accept = ".xlsx,.xls,.docx,.doc,.pdf,.csv,.tsv,.txt";
+      picker.accept = ".xlsx,.xls,.docx,.doc,.pdf,.csv,.tsv,.txt,.zip";
       picker.onchange = () => {
         const file = picker.files?.[0];
         if (!file) return;
@@ -921,6 +945,178 @@ export default function AdminDashboardScreen() {
       asset.name,
     );
   }, [handleError, loadBaseData, loadUsersAndAnalytics, questionImportAutoExplainAi, questionPartFilter, services]);
+
+  const pickFilesForUpload = useCallback(
+    async (accept: string, multiple: boolean): Promise<QuestionImportFileInput[]> => {
+      if (Platform.OS === "web") {
+        return new Promise((resolve) => {
+          const picker = document.createElement("input");
+          picker.type = "file";
+          picker.accept = accept;
+          picker.multiple = multiple;
+          picker.style.display = "none";
+          document.body.appendChild(picker);
+
+          let settled = false;
+          let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+          const finish = (files: File[]) => {
+            if (settled) return;
+            settled = true;
+            if (fallbackTimer) clearTimeout(fallbackTimer);
+            window.removeEventListener("focus", onFocusBack);
+            picker.remove();
+            resolve(files);
+          };
+          const onFocusBack = () => {
+            // Only settle after generous delay if browser doesn't fire 'cancel' and still has 0 files
+            fallbackTimer = setTimeout(() => {
+              if (!settled && (!picker.files || picker.files.length === 0)) {
+                finish([]);
+              }
+            }, 3000);
+          };
+          picker.onchange = () => finish(Array.from(picker.files ?? []));
+          picker.addEventListener("cancel", () => finish([]));
+          window.addEventListener("focus", onFocusBack, { once: true });
+          picker.click();
+        });
+      }
+
+      const picked = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple,
+        type: "*/*",
+      });
+      if (picked.canceled || !picked.assets?.length) return [];
+      return picked.assets.map((asset) => ({
+        name: asset.name,
+        type: asset.mimeType ?? "application/octet-stream",
+        uri: asset.uri,
+      }));
+    },
+    [],
+  );
+
+  const handleUploadSingleQuestionMedia = useCallback(
+    async (kind: "AUDIO" | "IMAGE"): Promise<Partial<FormValues> | null> => {
+      if (!services) return null;
+      const accept =
+        kind === "AUDIO"
+          ? ".mp3,.wav,.m4a,.ogg,.aac,.flac,.mp4,.webm,.mov,audio/*"
+          : ".jpg,.jpeg,.png,.webp,.gif,image/*";
+      const picked = await pickFilesForUpload(accept, false);
+      if (!picked.length) return null;
+
+      const uploaded = await services.questions.uploadMedia(picked[0]);
+      const url = uploaded.data?.url?.trim();
+      if (!url) {
+        throw new Error("Upload xong nhưng không nhận được URL media.");
+      }
+      return kind === "AUDIO" ? { audioUrl: url } : { imageUrl: url };
+    },
+    [pickFilesForUpload, services],
+  );
+
+  const runBatchMediaUpload = useCallback(
+    async (files: QuestionImportFileInput[]) => {
+      if (!services || !files.length) return;
+      try {
+        setUploadingQuestionMediaBatch(true);
+        setErrorMessage(null);
+        setQuestionMediaBatchSummary(`Đang chuẩn bị ${files.length} file media...`);
+        const res = await services.questions.uploadMediaBatch(files, {
+          groupPrefix: questionMediaGroupPrefix,
+          overwriteExisting: questionMediaOverwrite,
+          onProgress: (batchIdx, totalBatches) => {
+            setQuestionMediaBatchSummary(
+              totalBatches > 1
+                ? `Đang upload ${files.length} file (đợt ${batchIdx}/${totalBatches})...`
+                : `Đang upload ${files.length} file & khớp câu hỏi...`,
+            );
+          },
+        });
+        const stats = res.data;
+        const uploaded = stats?.uploadedFileCount ?? files.length;
+        const stored = stats?.storedAssetCount ?? 0;
+        const matched = stats?.matchedQuestionCount ?? 0;
+        const skipped = stats?.skippedAlreadyLinkedCount ?? 0;
+        const unmatched = stats?.unmatchedFiles ?? [];
+        const unmatchedPreview =
+          unmatched.length > 0
+            ? ` Chưa khớp (${unmatched.length}): ${unmatched.slice(0, 5).join(", ")}${
+                unmatched.length > 5 ? "..." : ""
+              }.`
+            : "";
+        const summary = `Đã quét ${uploaded} file media (lưu ${stored} file) -> khớp & cập nhật ${matched} câu hỏi${
+          skipped > 0 ? `, giữ nguyên ${skipped} link http cũ` : ""
+        }.${unmatchedPreview}`;
+        setQuestionMediaBatchSummary(summary);
+        await Promise.all([loadBaseData(), loadUsersAndAnalytics()]);
+      } catch (error) {
+        setQuestionMediaBatchSummary(null);
+        handleError(error);
+      } finally {
+        setUploadingQuestionMediaBatch(false);
+      }
+    },
+    [
+      handleError,
+      loadBaseData,
+      loadUsersAndAnalytics,
+      questionMediaGroupPrefix,
+      questionMediaOverwrite,
+      services,
+    ],
+  );
+
+  const handleUploadQuestionMediaBatch = useCallback(
+    async (useDirectory = false) => {
+      if (!services) return;
+      if (Platform.OS !== "web") {
+        const picked = await pickFilesForUpload("*/*", true);
+        if (picked.length) await runBatchMediaUpload(picked);
+        return;
+      }
+
+      const picker = document.createElement("input");
+      picker.type = "file";
+      picker.multiple = true;
+      picker.style.display = "none";
+      if (useDirectory) {
+        (picker as HTMLInputElement & { webkitdirectory?: boolean }).webkitdirectory = true;
+      } else {
+        picker.accept =
+          ".mp3,.wav,.m4a,.ogg,.aac,.flac,.jpg,.jpeg,.png,.webp,.gif,.zip,audio/*,image/*";
+      }
+      document.body.appendChild(picker);
+
+      const cleanup = () => {
+        picker.remove();
+      };
+      picker.addEventListener("cancel", cleanup);
+      picker.onchange = () => {
+        const rawFiles = Array.from(picker.files ?? []);
+        cleanup();
+        if (!rawFiles.length) return;
+        const filtered = useDirectory
+          ? rawFiles.filter((f) => {
+              const name = f.name.toLowerCase();
+              const isMedia = /\.(mp3|wav|m4a|ogg|aac|flac|mp4|webm|mov|jpg|jpeg|png|webp|gif|zip)$/i.test(name);
+              const isMergedFullTrack =
+                name === "00_listening_full_100cau.mp3" || /^part\d+_full\.mp3$/i.test(name);
+              return isMedia && !isMergedFullTrack;
+            })
+          : rawFiles;
+        if (!filtered.length) {
+          setErrorMessage("Không tìm thấy file audio/ảnh hợp lệ trong thư mục vừa chọn.");
+          return;
+        }
+        void runBatchMediaUpload(filtered);
+      };
+      picker.click();
+    },
+    [pickFilesForUpload, runBatchMediaUpload, services],
+  );
 
   const openPracticeQuestionPicker = () => {
     if (!selectedPracticeSetId) {
@@ -957,11 +1153,62 @@ export default function AdminDashboardScreen() {
       setErrorMessage(null);
       await services.tests.syncPartQuestions(selectedTestPartId, selectedIds);
       setShowTestPartPickerModal(false);
-      await Promise.all([loadTestParts(), loadTestPartQuestions()]);
+      await Promise.all([loadTests(), loadTestParts(), loadTestPartQuestions()]);
     } catch (error) {
       handleError(error);
     } finally {
       setSavingTestPartQuestions(false);
+    }
+  };
+
+  const clearTestPartQuestions = async () => {
+    if (!services || !selectedTestPartId || !selectedTestPart) return;
+    if (
+      !confirmWeb(
+        `Gỡ toàn bộ ${testPartQuestions.length} câu hỏi khỏi "${selectedTestPart.partName}"?`,
+      )
+    ) {
+      return;
+    }
+    await runAction(
+      () => services.tests.syncPartQuestions(selectedTestPartId, []).then(() => undefined),
+      async () => {
+        await Promise.all([loadTests(), loadTestParts(), loadTestPartQuestions()]);
+      },
+    );
+  };
+
+  const handleAutoPopulateTest = async () => {
+    if (!services || !selectedTestId) return;
+    try {
+      setAutoPopulatingTest(true);
+      setErrorMessage(null);
+      setAutoPopulateSummary(null);
+      const res = await services.tests.autoPopulate(selectedTestId, {
+        groupPrefix: autoPopulatePrefix.trim() || undefined,
+        replaceExisting: autoPopulateReplace,
+      });
+      const stats = res.data;
+      const total = stats?.totalAssignedQuestions ?? 0;
+      if (total === 0) {
+        setAutoPopulateSummary(
+          `Không tìm thấy câu hỏi nào khớp${
+            autoPopulatePrefix.trim() ? ` prefix "${autoPopulatePrefix.trim()}"` : ""
+          } trong Ngân hàng câu hỏi.`,
+        );
+      } else {
+        const partBreakdown = Object.entries(stats?.assignedPerPart ?? {})
+          .map(([p, cnt]) => `P${p}: ${cnt}`)
+          .join(" · ");
+        setAutoPopulateSummary(
+          `Đã cấu hình ${stats?.parts?.length ?? 0} Part, gán tổng ${total} câu (${partBreakdown}).`,
+        );
+      }
+      await Promise.all([loadTests(), loadTestParts(), loadTestPartQuestions()]);
+    } catch (error) {
+      handleError(error);
+    } finally {
+      setAutoPopulatingTest(false);
     }
   };
 
@@ -992,7 +1239,7 @@ export default function AdminDashboardScreen() {
     await runAction(
       () => services.tests.removeQuestion(selectedTestPartId, item.id).then(() => undefined),
       async () => {
-        await Promise.all([loadTestParts(), loadTestPartQuestions()]);
+        await Promise.all([loadTests(), loadTestParts(), loadTestPartQuestions()]);
       },
     );
   };
@@ -1945,33 +2192,36 @@ export default function AdminDashboardScreen() {
       return true;
     });
 
-    const dynamicQuestionFields = buildQuestionFields(async (values) => {
-      if (!services) return null;
-      const correctLabel = String(values.correctLabel ?? "A").trim() || "A";
-      const res = await services.questions.explainDraft({
-        correctLabel,
-        explanation: nullableText(values, "explanation"),
-        optionA: String(values.optionA ?? "").trim(),
-        optionB: String(values.optionB ?? "").trim(),
-        optionC: String(values.optionC ?? "").trim(),
-        optionD: String(values.optionD ?? "").trim(),
-        partNo: numberValue(values, "partNo"),
-        passageText: nullableText(values, "passageText"),
-        questionText: String(values.questionText ?? "").trim(),
-        transcript: nullableText(values, "transcript"),
-      });
-      if (!res.data?.explanation) return null;
-      return { explanation: res.data.explanation };
-    });
+    const dynamicQuestionFields = buildQuestionFields(
+      async (values) => {
+        if (!services) return null;
+        const correctLabel = String(values.correctLabel ?? "A").trim() || "A";
+        const res = await services.questions.explainDraft({
+          correctLabel,
+          explanation: nullableText(values, "explanation"),
+          optionA: String(values.optionA ?? "").trim(),
+          optionB: String(values.optionB ?? "").trim(),
+          optionC: String(values.optionC ?? "").trim(),
+          optionD: String(values.optionD ?? "").trim(),
+          partNo: numberValue(values, "partNo"),
+          passageText: nullableText(values, "passageText"),
+          questionText: String(values.questionText ?? "").trim(),
+          transcript: nullableText(values, "transcript"),
+        });
+        if (!res.data?.explanation) return null;
+        return { explanation: res.data.explanation };
+      },
+      handleUploadSingleQuestionMedia,
+    );
 
     return (
       <View style={styles.stack}>
         <View style={styles.uploadBox}>
           <View style={styles.uploadHeaderRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.uploadTitle}>Import câu hỏi TOEIC (Excel / Word / PDF)</Text>
+              <Text style={styles.uploadTitle}>Import câu hỏi TOEIC (Excel / Word / PDF / ZIP)</Text>
               <Text style={styles.uploadSubtitle}>
-                Hỗ trợ .xlsx, .xls, .docx, .doc, .pdf, .csv, .txt. Hoặc dùng dán JSON/CSV nhanh nếu đã chuẩn bị sẵn.
+                Hỗ trợ .xlsx, .xls, .docx, .doc, .pdf, .csv, .txt hoặc file .zip đóng gói kèm audio & ảnh.
               </Text>
             </View>
             {questionImportSummary ? (
@@ -1990,7 +2240,7 @@ export default function AdminDashboardScreen() {
               <Text style={styles.uploadButtonText}>
                 {importingQuestions
                   ? "Đang đọc file & tạo câu hỏi..."
-                  : "Chọn file Excel / Word / PDF & Import"}
+                  : "Chọn file Excel / Word / PDF / ZIP"}
               </Text>
             </Pressable>
 
@@ -2017,6 +2267,72 @@ export default function AdminDashboardScreen() {
           {questionImportSummary ? (
             <Text style={[styles.uploadHint, { color: colors.primaryDark, fontWeight: "700" }]}>
               {questionImportSummary}
+            </Text>
+          ) : null}
+
+          <View style={styles.mediaBatchDivider} />
+
+          <View style={styles.uploadHeaderRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.uploadTitle}>Upload Audio / Ảnh hàng loạt & Tự khớp câu hỏi</Text>
+              <Text style={styles.uploadSubtitle}>
+                Chọn nhiều file (.mp3, .wav, .jpg, .png...) hoặc 1 file .zip. Hệ thống tự khớp theo tên file/nhóm đã import (Part 3–4 dùng chung audio tự gán đủ 3 câu).
+              </Text>
+            </View>
+            {questionMediaBatchSummary ? (
+              <View style={styles.uploadStatusPill}>
+                <Text style={styles.uploadStatusText}>Đã cập nhật media ✓</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.uploadActionRow}>
+            <Pressable
+              disabled={!services || uploadingQuestionMediaBatch || working}
+              onPress={() => void handleUploadQuestionMediaBatch(false)}
+              style={[styles.uploadButton, { marginTop: 0, backgroundColor: "#0F766E" }]}
+            >
+              <Text style={styles.uploadButtonText}>
+                {uploadingQuestionMediaBatch
+                  ? "Đang tải & khớp media..."
+                  : "Chọn Audio / Ảnh / ZIP & Tự khớp"}
+              </Text>
+            </Pressable>
+
+            {Platform.OS === "web" ? (
+              <Pressable
+                disabled={!services || uploadingQuestionMediaBatch || working}
+                onPress={() => void handleUploadQuestionMediaBatch(true)}
+                style={styles.uploadClearBtn}
+              >
+                <Text style={styles.uploadClearText}>📁 Chọn cả thư mục</Text>
+              </Pressable>
+            ) : null}
+
+            <TextInput
+              onChangeText={setQuestionMediaGroupPrefix}
+              placeholder="Lọc prefix nhóm / đề (vd: T1_ hoặc Test 1)"
+              placeholderTextColor={colors.textMuted}
+              style={styles.mediaPrefixInput}
+              value={questionMediaGroupPrefix}
+            />
+
+            <View style={styles.importToggleRow}>
+              <Switch
+                onValueChange={setQuestionMediaOverwrite}
+                thumbColor={colors.surface}
+                trackColor={{ false: "#CBD5E1", true: "#0F766E" }}
+                value={questionMediaOverwrite}
+              />
+              <Text style={styles.importToggleText}>
+                Ghi đè link http cũ
+              </Text>
+            </View>
+          </View>
+
+          {questionMediaBatchSummary ? (
+            <Text style={[styles.uploadHint, { color: "#0F766E", fontWeight: "700" }]}>
+              {questionMediaBatchSummary}
             </Text>
           ) : null}
         </View>
@@ -2442,8 +2758,25 @@ export default function AdminDashboardScreen() {
 
   const renderTests = () => {
     const validTestTypeValues = new Set(testTypeOptions.map((o) => o.value));
+    const detectedGroupPrefixes = Array.from(
+      new Set(
+        questions
+          .map((q) => q.questionGroupCode?.trim() ?? "")
+          .map((code) => {
+            const m = code.match(/^([A-Za-z0-9]+_)P\d+/i);
+            return m ? m[1] : "";
+          })
+          .filter(Boolean),
+      ),
+    );
     return (
       <View style={styles.stack}>
+        <View style={styles.infoFlow}>
+          <Text style={styles.infoFlowTitle}>Quy trình tạo Đề thi TOEIC chuẩn 3 bước</Text>
+          <Text style={styles.infoFlowText}>
+            1) Import câu hỏi & media (MP3 + ảnh) ở mục Ngân hàng câu hỏi → 2) Bấm “+ Thêm mới” chọn FULL_TEST (120 phút) → 3) Chọn prefix bộ đề (vd T1_) rồi bấm “⚡ Tự tạo 7 Part & Gán câu” để chia đúng Part 1–7 tự động.
+          </Text>
+        </View>
         <View style={styles.contentTabRow}>
           <Pressable
             onPress={() => setTestsSubTab("list")}
@@ -2574,7 +2907,7 @@ export default function AdminDashboardScreen() {
                         style={[styles.selectorChip, active ? styles.selectorChipActive : null]}
                       >
                         <Text style={[styles.selectorText, active ? styles.selectorTextActive : null]}>
-                          {`#${t.id} ${t.title} (${t.testType}) →`}
+                          {`#${t.id} ${t.title} (${t.testType} · ${t.partCount} Part · ${t.questionCount} câu) →`}
                         </Text>
                       </Pressable>
                     );
@@ -2640,6 +2973,78 @@ export default function AdminDashboardScreen() {
                       </Pressable>
                     );
                   })}
+                </View>
+              ) : null}
+
+              {selectedTestId ? (
+                <View style={styles.autoPopulateBox}>
+                  <Text style={styles.autoPopulateLabel}>
+                    Gán tự động vào đúng Part 1–7 từ Kho (không cần tick tay từng Part):
+                  </Text>
+                  {detectedGroupPrefixes.length > 0 ? (
+                    <View style={styles.chipRow}>
+                      {detectedGroupPrefixes.map((prefix) => {
+                        const selected = autoPopulatePrefix.trim() === prefix;
+                        return (
+                          <Pressable
+                            key={prefix}
+                            onPress={() => setAutoPopulatePrefix(prefix)}
+                            style={[
+                              styles.selectorChip,
+                              selected ? styles.selectorChipActive : null,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.selectorText,
+                                selected ? styles.selectorTextActive : null,
+                              ]}
+                            >
+                              {`Dùng prefix "${prefix}"`}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  ) : null}
+                  <View style={styles.uploadActionRow}>
+                    <TextInput
+                      onChangeText={setAutoPopulatePrefix}
+                      placeholder="Prefix / từ khóa (vd: T1_, T2_, bỏ trống = mọi câu)"
+                      placeholderTextColor={colors.textMuted}
+                      style={styles.mediaPrefixInput}
+                      value={autoPopulatePrefix}
+                    />
+                    <View style={styles.importToggleRow}>
+                      <Switch
+                        onValueChange={setAutoPopulateReplace}
+                        thumbColor={colors.surface}
+                        trackColor={{ false: "#CBD5E1", true: "#0F766E" }}
+                        value={autoPopulateReplace}
+                      />
+                      <Text style={styles.importToggleText}>Thay câu cũ trong Part</Text>
+                    </View>
+                    <Pressable
+                      disabled={autoPopulatingTest || working}
+                      onPress={() => void handleAutoPopulateTest()}
+                      style={[
+                        styles.uploadButton,
+                        { marginTop: 0, backgroundColor: "#0F766E" },
+                        autoPopulatingTest || working ? { opacity: 0.6 } : null,
+                      ]}
+                    >
+                      <Text style={styles.uploadButtonText}>
+                        {autoPopulatingTest
+                          ? "Đang chia Part & gán..."
+                          : "⚡ Tự tạo Part & Gán câu"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                  {autoPopulateSummary ? (
+                    <Text style={[styles.uploadHint, { color: "#0F766E", fontWeight: "700" }]}>
+                      {autoPopulateSummary}
+                    </Text>
+                  ) : null}
                 </View>
               ) : null}
             </View>
@@ -2733,16 +3138,33 @@ export default function AdminDashboardScreen() {
                     Chọn hàng loạt câu hỏi bằng checkbox (tự lọc theo đúng Part) và sắp xếp thứ tự nhanh.
                   </Text>
                 </View>
-                <Pressable
-                  disabled={!selectedTestPartId || working}
-                  onPress={() => setShowTestPartPickerModal(true)}
-                  style={[
-                    styles.bulkOpenBtn,
-                    (!selectedTestPartId || working) ? { opacity: 0.55 } : null,
-                  ]}
-                >
-                  <Text style={styles.bulkOpenBtnText}>+ Chọn câu hỏi (Checkbox)</Text>
-                </Pressable>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {testPartQuestions.length > 0 ? (
+                    <Pressable
+                      disabled={working}
+                      onPress={() => void clearTestPartQuestions()}
+                      style={[
+                        styles.miniDangerBtn,
+                        { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
+                        working ? { opacity: 0.55 } : null,
+                      ]}
+                    >
+                      <Text style={styles.miniDangerBtnText}>
+                        {`Gỡ toàn bộ (${testPartQuestions.length})`}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    disabled={!selectedTestPartId || working}
+                    onPress={() => setShowTestPartPickerModal(true)}
+                    style={[
+                      styles.bulkOpenBtn,
+                      (!selectedTestPartId || working) ? { opacity: 0.55 } : null,
+                    ]}
+                  >
+                    <Text style={styles.bulkOpenBtnText}>+ Chọn câu hỏi (Checkbox)</Text>
+                  </Pressable>
+                </View>
               </View>
 
               {testParts.length > 0 ? (
@@ -2781,9 +3203,25 @@ export default function AdminDashboardScreen() {
                     </View>
                     <View style={{ flex: 1, gap: 2 }}>
                       <View style={{ flexDirection: "row", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                        <View style={styles.partPill}>
-                          <Text style={styles.partPillText}>
-                            {`Part ${item.partNo ?? "-"}`}
+                        <View
+                          style={[
+                            styles.partPill,
+                            selectedTestPart && item.partNo !== selectedTestPart.partNumber
+                              ? { backgroundColor: "#FEE2E2" }
+                              : null,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.partPillText,
+                              selectedTestPart && item.partNo !== selectedTestPart.partNumber
+                                ? { color: "#B91C1C" }
+                                : null,
+                            ]}
+                          >
+                            {selectedTestPart && item.partNo !== selectedTestPart.partNumber
+                              ? `⚠️ Lệch Part (${item.partNo ?? "-"} ≠ Part ${selectedTestPart.partNumber})`
+                              : `Part ${item.partNo ?? "-"}`}
                           </Text>
                         </View>
                         <Text style={styles.uploadHint}>#{item.questionId}</Text>
@@ -3519,6 +3957,34 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 13,
     fontWeight: "600",
+  },
+  mediaBatchDivider: {
+    backgroundColor: colors.border,
+    height: 1,
+    marginVertical: 4,
+  },
+  mediaPrefixInput: {
+    backgroundColor: colors.surface,
+    borderColor: colors.borderStrong,
+    borderRadius: 10,
+    borderWidth: 1,
+    color: colors.text,
+    fontSize: 13,
+    minWidth: 230,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  autoPopulateBox: {
+    borderTopColor: "#BFDBFE",
+    borderTopWidth: 1,
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 12,
+  },
+  autoPopulateLabel: {
+    color: colors.primaryDark,
+    fontSize: 13,
+    fontWeight: "700",
   },
   uploadSubtitle: {
     color: colors.textMuted,

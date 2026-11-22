@@ -40,6 +40,15 @@ function QuestionPickerModalBody({
   const [partFilter, setPartFilter] = useState(defaultPartFilter);
   const [selectedIds, setSelectedIds] = useState<number[]>(initialSelectedIds);
 
+  const partCounts = useMemo(() => {
+    const counts: Record<string, number> = { ALL: questions.length };
+    for (const q of questions) {
+      const key = String(q.partNo ?? "");
+      if (key) counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
+  }, [questions]);
+
   const visibleQuestions = useMemo(() => {
     const qLower = search.trim().toLowerCase();
     return questions.filter((q) => {
@@ -49,10 +58,14 @@ function QuestionPickerModalBody({
       if (!qLower) return true;
       return (
         q.questionText.toLowerCase().includes(qLower) ||
+        (q.questionGroupCode ?? "").toLowerCase().includes(qLower) ||
         String(q.id).includes(qLower)
       );
     });
   }, [partFilter, questions, search]);
+
+  const partFilterMismatch =
+    defaultPartFilter !== "ALL" && partFilter !== defaultPartFilter;
 
   const toggleQuestion = (questionId: number) => {
     setSelectedIds((prev) =>
@@ -77,7 +90,7 @@ function QuestionPickerModalBody({
 
         <TextInput
           onChangeText={setSearch}
-          placeholder="Tìm nội dung câu hỏi hoặc #ID..."
+          placeholder="Tìm nội dung, mã nhóm (vd: T1_, P03) hoặc #ID..."
           placeholderTextColor={colors.textMuted}
           style={styles.searchInput}
           value={search}
@@ -86,6 +99,7 @@ function QuestionPickerModalBody({
         <View style={styles.chipRow}>
           {["ALL", "1", "2", "3", "4", "5", "6", "7"].map((partKey) => {
             const active = partFilter === partKey;
+            const count = partCounts[partKey] ?? 0;
             return (
               <Pressable
                 key={partKey}
@@ -93,12 +107,22 @@ function QuestionPickerModalBody({
                 style={[styles.chip, active ? styles.chipActive : null]}
               >
                 <Text style={[styles.chipText, active ? styles.chipTextActive : null]}>
-                  {partKey === "ALL" ? "Tất cả Part" : `Part ${partKey}`}
+                  {partKey === "ALL"
+                    ? `Tất cả Part (${count})`
+                    : `Part ${partKey} (${count})`}
                 </Text>
               </Pressable>
             );
           })}
         </View>
+
+        {partFilterMismatch ? (
+          <View style={styles.mismatchBanner}>
+            <Text style={styles.mismatchText}>
+              ⚠️ Bạn đang lọc khác Part {defaultPartFilter}. Nên giữ đúng Part {defaultPartFilter} để tránh gán nhầm câu Part khác vào Part này.
+            </Text>
+          </View>
+        ) : null}
 
         <View style={styles.actionRow}>
           <Pressable
@@ -146,7 +170,9 @@ function QuestionPickerModalBody({
                       </Text>
                     </View>
                     <Text style={styles.metaHint}>
-                      #{q.id} • {q.sourceType ?? "INTERNAL"} • Đáp án {correct}
+                      #{q.id}
+                      {q.questionGroupCode ? ` • ${q.questionGroupCode}` : ""} •{" "}
+                      {q.sourceType ?? "INTERNAL"} • Đáp án {correct}
                     </Text>
                   </View>
                   <Text numberOfLines={2} style={styles.questionText}>
@@ -349,6 +375,19 @@ const styles = StyleSheet.create({
   metaHint: {
     color: colors.textMuted,
     fontSize: 12.5,
+  },
+  mismatchBanner: {
+    backgroundColor: "#FEF3C7",
+    borderColor: "#FCD34D",
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  mismatchText: {
+    color: "#92400E",
+    fontSize: 12.5,
+    fontWeight: "700",
   },
   questionText: {
     color: colors.text,

@@ -8,7 +8,9 @@ import org.example.backend.dto.response.MistakeItemResponse;
 import org.example.backend.enums.SuccessCode;
 import org.example.backend.service.MistakeBankService;
 import org.example.backend.service.OpenAIAnswerExplainService;
+import org.example.backend.service.SubscriptionService;
 import org.example.backend.util.ApiResponseUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -29,6 +31,9 @@ public class UserMistakeController {
     private final MistakeBankService mistakeBankService;
     private final OpenAIAnswerExplainService openAIAnswerExplainService;
 
+    @Autowired(required = false)
+    private SubscriptionService subscriptionService;
+
     @GetMapping
     public ResponseEntity<ApiResponse<List<MistakeItemResponse>>> getMyMistakes(Authentication authentication) {
         return ApiResponseUtil.success(
@@ -38,7 +43,13 @@ public class UserMistakeController {
     }
 
     @PostMapping("/explain")
-    public ResponseEntity<ApiResponse<AIExplainResponse>> explainMistake(@RequestBody AskAIExplainRequest request) {
+    public ResponseEntity<ApiResponse<AIExplainResponse>> explainMistake(
+            Authentication authentication,
+            @RequestBody AskAIExplainRequest request
+    ) {
+        if (subscriptionService != null && authentication != null) {
+            subscriptionService.consumeQuotaOrThrow(authentication.getName(), SubscriptionService.FEATURE_AI_EXPLAIN);
+        }
         String type = request != null && request.getType() != null ? request.getType() : "BOTH";
         return ApiResponseUtil.success(
                 openAIAnswerExplainService.explainRawQuestion(

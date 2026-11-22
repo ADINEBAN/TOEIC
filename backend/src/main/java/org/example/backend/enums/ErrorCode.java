@@ -134,7 +134,13 @@ public enum ErrorCode {
     COSMETIC_NOT_OWNED(7063, "Bạn chưa sở hữu vật phẩm này", HttpStatus.BAD_REQUEST),
     CHAT_MESSAGE_INVALID(7064, "Nội dung tin nhắn không hợp lệ hoặc quá dài", HttpStatus.BAD_REQUEST),
     FRIENDSHIP_ACTION_INVALID(7065, "Thao tác kết bạn không hợp lệ", HttpStatus.BAD_REQUEST),
-    USER_BLOCKED_COMMUNICATION(7066, "Không thể nhắn tin vì người dùng đã bị chặn", HttpStatus.FORBIDDEN);
+    USER_BLOCKED_COMMUNICATION(7066, "Không thể nhắn tin vì người dùng đã bị chặn", HttpStatus.FORBIDDEN),
+    INVALID_QUESTION_MEDIA(7067, "Chỉ hỗ trợ file audio (.mp3, .wav, .m4a, .ogg, .aac, .flac) hoặc ảnh (.jpg, .png, .webp, .gif)", HttpStatus.BAD_REQUEST),
+    PLAN_UPGRADE_REQUIRED(7068, "Tính năng này yêu cầu nâng cấp gói PLUS hoặc PRO để mở khóa", HttpStatus.FORBIDDEN),
+    FEATURE_QUOTA_EXCEEDED(7069, "Bạn đã hết lượt sử dụng miễn phí trong kỳ. Nâng cấp gói PLUS hoặc PRO để mở thêm lượt!", HttpStatus.FORBIDDEN),
+    INVALID_SUBSCRIPTION_PLAN(7070, "Gói đăng ký không hợp lệ", HttpStatus.BAD_REQUEST),
+    PAYMENT_ORDER_NOT_FOUND(7071, "Không tìm thấy đơn thanh toán", HttpStatus.NOT_FOUND),
+    SEPAY_WEBHOOK_UNAUTHORIZED(7072, "SePay Webhook API Key không hợp lệ", HttpStatus.UNAUTHORIZED);
 
     int code;
     String message;

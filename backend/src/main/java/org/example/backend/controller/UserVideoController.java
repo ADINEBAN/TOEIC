@@ -10,8 +10,10 @@ import org.example.backend.dto.response.ImportedVideoDetailResponse;
 import org.example.backend.dto.response.VideoBookmarkResponse;
 import org.example.backend.dto.response.VideoProcessingJobResponse;
 import org.example.backend.enums.SuccessCode;
+import org.example.backend.service.SubscriptionService;
 import org.example.backend.service.VideoLearningService;
 import org.example.backend.util.ApiResponseUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -32,6 +34,9 @@ public class UserVideoController {
 
     private final VideoLearningService videoLearningService;
 
+    @Autowired(required = false)
+    private SubscriptionService subscriptionService;
+
     @PostMapping("/import")
     @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<ImportedVideoDetailResponse>> importVideo(
@@ -47,6 +52,9 @@ public class UserVideoController {
             Authentication authentication,
             @RequestBody VideoImportRequest request
     ) {
+        if (subscriptionService != null && authentication != null) {
+            subscriptionService.consumeQuotaOrThrow(authentication.getName(), SubscriptionService.FEATURE_PERSONAL_VIDEO);
+        }
         ImportedVideoDetailResponse response = videoLearningService.importPersonalVideo(authentication.getName(), request);
         return ApiResponseUtil.success(response, SuccessCode.VIDEO_IMPORT_STARTED);
     }

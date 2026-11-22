@@ -2,10 +2,12 @@ package org.example.backend.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.request.AssignTestPartQuestionsRequest;
+import org.example.backend.dto.request.AutoPopulateTestRequest;
 import org.example.backend.dto.request.CreateTestPartRequest;
 import org.example.backend.dto.request.CreateTestRequest;
 import org.example.backend.dto.request.UpdateTestPartRequest;
 import org.example.backend.dto.request.UpdateTestRequest;
+import org.example.backend.dto.response.AutoPopulateTestResponse;
 import org.example.backend.dto.response.TestResponse;
 import org.example.backend.dto.response.TestPartResponse;
 import org.example.backend.dto.response.TestPartQuestionResponse;
@@ -24,6 +26,7 @@ import org.example.backend.repository.TestPartQuestionRepository;
 import org.example.backend.repository.QuestionRepository;
 import org.example.backend.repository.UserTestAnswerRepository;
 import org.example.backend.repository.UserTestAttemptRepository;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +37,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -185,6 +189,82 @@ public class AdminTestService {
     public List<TestPartResponse> getTestParts(Long testId) {
         findTest(testId); // Validate test exists
         return testPartMapper.toResponseList(testPartRepository.findByTestIdOrderBySortOrderAsc(testId));
+    }
+
+    @Transactional
+    public AutoPopulateTestResponse autoPopulateTest(Long testId, AutoPopulateTestRequest request) {
+        Test test = findTest(testId);
+        int existingCount = testPartRepository.findByTestIdOrderBySortOrderAsc(testId).size();
+        List<TestPart> partsAfterInit;
+        initStandardToeicParts(testId);
+        partsAfterInit = testPartRepository.findByTestIdOrderBySortOrderAsc(testId);
+        int createdPartCount = Math.max(0, partsAfterInit.size() - existingCount);
+
+        String needle = request != null && request.getGroupPrefix() != null
+                ? request.getGroupPrefix().trim().toLowerCase(Locale.ROOT)
+                : "";
+        boolean replaceExisting = request == null || request.getReplaceExisting() == null
+                || request.getReplaceExisting();
+
+        List<Question> allQuestions = questionRepository.findAll(Sort.by(Sort.Direction.ASC, "id"));
+        Map<Integer, List<Long>> matchedByPart = new LinkedHashMap<>();
+        int matchedTotal = 0;
+
+        for (Question q : allQuestions) {
+            Integer partNo = q.getPartNo();
+            if (partNo == null || partNo < 1 || partNo > 7) {
+                continue;
+            }
+            if (!needle.isEmpty()) {
+                String group = q.getQuestionGroupCode() == null
+                        ? ""
+                        : q.getQuestionGroupCode().trim().toLowerCase(Locale.ROOT);
+                String text = q.getQuestionText() == null
+                        ? ""
+                        : q.getQuestionText().toLowerCase(Locale.ROOT);
+                if (!group.startsWith(needle) && !text.contains(needle)) {
+                    continue;
+                }
+            }
+            matchedByPart.computeIfAbsent(partNo, ignored -> new ArrayList<>()).add(q.getId());
+            matchedTotal++;
+        }
+
+        Map<Integer, Integer> assignedPerPart = new TreeMap<>();
+        int totalAssigned = 0;
+
+        if (matchedTotal > 0) {
+            for (TestPart part : partsAfterInit) {
+                List<Long> partQuestionIds = matchedByPart.getOrDefault(part.getPartNumber(), List.of());
+                AssignTestPartQuestionsRequest assignReq = new AssignTestPartQuestionsRequest();
+                assignReq.setQuestionIds(partQuestionIds);
+
+                if (replaceExisting) {
+                    List<TestPartQuestionResponse> synced = syncTestPartQuestions(part.getId(), assignReq);
+                    assignedPerPart.put(part.getPartNumber(), synced.size());
+                    totalAssigned += synced.size();
+                } else if (!partQuestionIds.isEmpty()) {
+                    List<TestPartQuestionResponse> assigned = assignQuestionsToTestPart(part.getId(), assignReq);
+                    assignedPerPart.put(part.getPartNumber(), assigned.size());
+                    totalAssigned += assigned.size();
+                } else {
+                    assignedPerPart.put(part.getPartNumber(), part.getQuestionCount());
+                    totalAssigned += part.getQuestionCount();
+                }
+            }
+        }
+
+        List<TestPartResponse> refreshedParts = testPartMapper.toResponseList(
+                testPartRepository.findByTestIdOrderBySortOrderAsc(testId)
+        );
+        return AutoPopulateTestResponse.builder()
+                .testId(test.getId())
+                .testTitle(test.getTitle())
+                .createdPartCount(createdPartCount)
+                .totalAssignedQuestions(totalAssigned)
+                .assignedPerPart(assignedPerPart)
+                .parts(refreshedParts)
+                .build();
     }
 
     @Transactional

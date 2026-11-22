@@ -188,6 +188,13 @@ public enum SuccessCode {
     CHAT_MESSAGE_SENT(1172, "Chat message sent successfully", HttpStatus.CREATED),
     FRIENDSHIP_UPDATED(1173, "Friendship updated successfully", HttpStatus.OK),
     STREAK_CHECKED_IN(1174, "Daily streak check-in succeeded", HttpStatus.OK),
+    QUESTION_MEDIA_BATCH_UPLOADED(1175, "Question media batch uploaded and matched successfully", HttpStatus.OK),
+    QUESTION_MEDIA_UPLOADED(1176, "Question media uploaded successfully", HttpStatus.OK),
+    SUBSCRIPTION_PLANS_RETRIEVED(1177, "Subscription plans and user quotas retrieved successfully", HttpStatus.OK),
+    PAYMENT_ORDER_CREATED(1178, "SePay VietQR payment order created successfully", HttpStatus.CREATED),
+    PAYMENT_ORDER_RETRIEVED(1179, "Payment order status retrieved successfully", HttpStatus.OK),
+    PAYMENT_ORDERS_LISTED(1180, "User payment orders listed successfully", HttpStatus.OK),
+    SEPAY_WEBHOOK_PROCESSED(1181, "SePay payment webhook processed successfully", HttpStatus.OK),
 
     PATIENT_CLASSIFICATION_DELETED(1023, "Xóa phân loại bệnh nhân thành công", HttpStatus.OK),
     CLASSIFICATION_RETRIEVED(1022, "Lấy thông tin phân loại thành công", HttpStatus.OK),

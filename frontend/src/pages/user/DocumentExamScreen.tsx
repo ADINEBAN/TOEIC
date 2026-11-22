@@ -30,6 +30,7 @@ import {
   uploadToeicDocument,
 } from "@/src/services/user.service";
 import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
+import { confirmCrossPlatform } from "@/src/utils/web-dialog";
 import {
   ImportedDocumentItem,
   ImportedDocumentQuestionItem,
@@ -358,13 +359,13 @@ export default function DocumentExamScreen() {
       });
       if (res.data?.id) {
         await refreshLibrary();
-        Alert.alert("Đã tạo đề thi TOEIC!", "Bắt đầu làm bài thi tương tác ngay bây giờ?", [
-          { text: "Để sau", style: "cancel" },
-          {
-            text: "Làm bài ngay",
-            onPress: () => pushRoute(`/user/exam?testId=${res.data.id}`),
-          },
-        ]);
+        confirmCrossPlatform(
+          "Đã tạo đề thi TOEIC!",
+          "Bắt đầu làm bài thi tương tác ngay bây giờ?",
+          () => pushRoute(`/user/exam?testId=${res.data.id}`),
+          "Làm bài ngay",
+          "Để sau",
+        );
       }
     } catch (err) {
       Alert.alert("Không thể tạo đề", err instanceof Error ? err.message : "Vui lòng kiểm tra câu hỏi đã chọn.");

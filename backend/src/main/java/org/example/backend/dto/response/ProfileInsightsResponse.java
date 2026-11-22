@@ -18,6 +18,8 @@ public class ProfileInsightsResponse {
     private Integer targetScore;
     private Boolean premium;
     private boolean verified;
+    private String planTier;
+    private LocalDateTime planExpiresAt;
     private int diamonds;
     private int weeklyStudyDiamonds;
     private int level;

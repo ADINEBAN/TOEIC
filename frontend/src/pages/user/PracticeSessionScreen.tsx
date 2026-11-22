@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
 import { LiquidButton, LiquidIconButton } from "@/src/components/ui/LiquidGlass";
@@ -19,6 +19,7 @@ import {
 } from "@/src/types/user-api";
 import { replaceRoute, safeBack } from "@/src/utils/navigation";
 import { useResponsiveLayout } from "@/src/utils/responsive";
+import { alertCrossPlatform, confirmCrossPlatform } from "@/src/utils/web-dialog";
 
 export default function PracticeSessionScreen() {
   const { practiceSetId, moduleId } = useLocalSearchParams<{ practiceSetId?: string; moduleId?: string }>();
@@ -65,7 +66,7 @@ export default function PracticeSessionScreen() {
         setAttempt(attemptResp.data ?? null);
         setTimeLeft((detailResp.data?.durationMinutes ?? 0) * 60);
       } catch (error) {
-        Alert.alert("Practice", error instanceof Error ? error.message : "Không thể bắt đầu bài tập.");
+        alertCrossPlatform("Practice", error instanceof Error ? error.message : "Không thể bắt đầu bài tập.");
         safeBack(parsedModuleId ? `/user/practice-module?moduleId=${parsedModuleId}` : "/user/practice");
       } finally {
         setLoading(false);
@@ -107,7 +108,7 @@ export default function PracticeSessionScreen() {
         }
 
         if (!auto) {
-          Alert.alert(
+          alertCrossPlatform(
             "Hoàn thành luyện tập",
             earned > 0
               ? `Đã nộp bài thành công (+${earned} 💎)!`
@@ -119,7 +120,7 @@ export default function PracticeSessionScreen() {
           `/user/practice-attempt-review?attemptId=${response.data?.attemptId ?? attempt.id}&moduleId=${parsedModuleId ?? ""}`,
         );
       } catch (error) {
-        Alert.alert("Practice", error instanceof Error ? error.message : "Không thể nộp bài.");
+        alertCrossPlatform("Practice", error instanceof Error ? error.message : "Không thể nộp bài.");
       } finally {
         setLoading(false);
       }
@@ -145,10 +146,13 @@ export default function PracticeSessionScreen() {
   }, [attempt, handleSubmit, loading, timeLeft]);
 
   const confirmSubmit = () => {
-    Alert.alert("Nộp bài", "Bạn có chắc muốn nộp bài ngay bây giờ?", [
-      { text: "Hủy", style: "cancel" },
-      { text: "Nộp bài", onPress: () => void handleSubmit(false) },
-    ]);
+    confirmCrossPlatform(
+      "Nộp bài",
+      "Bạn có chắc muốn nộp bài ngay bây giờ?",
+      () => void handleSubmit(false),
+      "Nộp bài",
+      "Hủy",
+    );
   };
 
   if (loading || !practiceSet || !currentQuestion) {

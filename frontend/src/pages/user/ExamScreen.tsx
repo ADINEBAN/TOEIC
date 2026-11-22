@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
 import { LiquidButton, LiquidIconButton } from "@/src/components/ui/LiquidGlass";
@@ -15,6 +15,7 @@ import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/the
 import { TestAttemptResponse, UserTestResponse } from "@/src/types/user-api";
 import { replaceRoute, safeBack } from "@/src/utils/navigation";
 import { useResponsiveLayout } from "@/src/utils/responsive";
+import { alertCrossPlatform } from "@/src/utils/web-dialog";
 
 type ExamDraft = {
   answers: Record<number, string>;
@@ -80,6 +81,9 @@ export default function ExamScreen() {
   const [userAnswers, setUserAnswers] = useState<Record<number, string>>({});
   const [flaggedIds, setFlaggedIds] = useState<number[]>([]);
   const [showNavigator, setShowNavigator] = useState(false);
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
   const draftStorageKey = `toeic_exam_draft_${testId ?? "unknown"}`;
 
@@ -140,7 +144,7 @@ export default function ExamScreen() {
         }
       } catch (error) {
         console.error("Failed to start test", error);
-        Alert.alert("Lỗi", "Không thể bắt đầu bài thi. Vui lòng thử lại sau.");
+        alertCrossPlatform("Lỗi", "Không thể bắt đầu bài thi. Vui lòng thử lại sau.");
         safeBack("/user/test");
       } finally {
         setLoading(false);
@@ -151,32 +155,35 @@ export default function ExamScreen() {
   }, [draftStorageKey, service, testId]);
 
   const performSubmit = useCallback(async () => {
-    if (!service || !attempt) return;
+    if (!service || !attempt) {
+      setSubmitError("Không tìm thấy phiên làm bài. Vui lòng tải lại trang và thử lại.");
+      return;
+    }
 
     try {
-      setLoading(true);
+      setSubmitting(true);
+      setSubmitError(null);
       const answers = Object.entries(userAnswers).map(([id, label]) => ({
         selectedLabel: label,
         testPartQuestionId: Number.parseInt(id, 10),
       }));
       const res = await service.submitAttempt(attempt.attemptId, { answers });
       clearExamDraft(draftStorageKey);
+      setShowSubmitConfirm(false);
       const earned = res.data?.diamondsEarned ?? 0;
       if (auth.user && typeof res.data?.currentDiamonds === "number") {
         updateUserProfile({ ...auth.user, diamonds: res.data.currentDiamonds });
       }
-      Alert.alert(
-        "Thành công",
-        earned > 0
-          ? `Bài thi của bạn đã được nộp (+${earned} 💎)!`
-          : "Bài thi của bạn đã được nộp.",
-      );
+      if (earned > 0 && Platform.OS !== "web") {
+        alertCrossPlatform("Thành công", `Bài thi của bạn đã được nộp (+${earned} 💎)!`);
+      }
       replaceRoute(`/user/attempt-review?attemptId=${res.data?.attemptId ?? attempt.attemptId}`);
     } catch (error) {
       console.error("Failed to submit test", error);
-      Alert.alert("Lỗi", "Nộp bài thất bại. Vui lòng thử lại.");
+      const msg = error instanceof Error ? error.message : "Nộp bài thất bại. Vui lòng thử lại.";
+      setSubmitError(msg);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }, [attempt, auth.user, draftStorageKey, service, updateUserProfile, userAnswers]);
 
@@ -187,7 +194,7 @@ export default function ExamScreen() {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          Alert.alert("Hết giờ", "Thời gian làm bài đã hết. Hệ thống sẽ tự động nộp bài.");
+          alertCrossPlatform("Hết giờ", "Thời gian làm bài đã hết. Hệ thống sẽ tự động nộp bài.");
           void performSubmit();
           return 0;
         }
@@ -225,10 +232,8 @@ export default function ExamScreen() {
   };
 
   const handleSubmit = () => {
-    Alert.alert("Nộp bài", "Bạn có chắc chắn muốn nộp bài ngay bây giờ?", [
-      { text: "Hủy", style: "cancel" },
-      { text: "Nộp bài", onPress: () => void performSubmit() },
-    ]);
+    setSubmitError(null);
+    setShowSubmitConfirm(true);
   };
 
   if (loading || !test || !currentQuestion) {
@@ -395,12 +400,53 @@ export default function ExamScreen() {
         />
         <LiquidButton
           compact
-          label="Nộp bài"
+          disabled={submitting}
+          label={submitting ? "Đang nộp..." : "Nộp bài"}
           onPress={handleSubmit}
           style={{ flex: 0.9 }}
           variant="accent"
         />
       </View>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => {
+          if (!submitting) setShowSubmitConfirm(false);
+        }}
+        transparent
+        visible={showSubmitConfirm}
+      >
+        <View style={styles.confirmBackdrop}>
+          <View style={styles.confirmPanel}>
+            <Text style={styles.confirmTitle}>Xác nhận nộp bài</Text>
+            <Text style={styles.confirmBody}>
+              Bạn đã làm {Object.keys(userAnswers).length} / {allQuestions.length} câu.
+              {Object.keys(userAnswers).length < allQuestions.length
+                ? ` Còn ${allQuestions.length - Object.keys(userAnswers).length} câu chưa chọn đáp án.`
+                : ""}
+            </Text>
+            {submitError ? <Text style={styles.confirmError}>{submitError}</Text> : null}
+            <View style={styles.confirmActions}>
+              <LiquidButton
+                compact
+                disabled={submitting}
+                label="Làm tiếp"
+                onPress={() => setShowSubmitConfirm(false)}
+                style={{ flex: 1 }}
+                variant="glass"
+              />
+              <LiquidButton
+                compact
+                disabled={submitting}
+                label={submitting ? "Đang nộp..." : "Nộp bài ngay"}
+                onPress={() => void performSubmit()}
+                style={{ flex: 1.2 }}
+                variant="accent"
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </UserScreen>
   );
 }
@@ -572,5 +618,42 @@ const createStyles = (colors: LiquidThemeColors) =>
     bottomActions: {
       flexDirection: "row",
       gap: 8,
+    },
+    confirmBackdrop: {
+      alignItems: "center",
+      backgroundColor: "rgba(15, 23, 42, 0.55)",
+      flex: 1,
+      justifyContent: "center",
+      padding: 20,
+    },
+    confirmPanel: {
+      backgroundColor: colors.surface,
+      borderColor: colors.glassBorder,
+      borderRadius: 20,
+      borderWidth: 1,
+      gap: 12,
+      maxWidth: 420,
+      padding: 20,
+      width: "100%",
+    },
+    confirmTitle: {
+      color: colors.text,
+      fontSize: 17,
+      fontWeight: "900",
+    },
+    confirmBody: {
+      color: colors.textMuted,
+      fontSize: 14,
+      lineHeight: 21,
+    },
+    confirmError: {
+      color: colors.danger,
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    confirmActions: {
+      flexDirection: "row",
+      gap: 10,
+      marginTop: 4,
     },
   });

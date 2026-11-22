@@ -42,6 +42,9 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class CloudinaryUploadService {
 
+    public record QuestionMediaAssetResult(String url, String mediaType, String format, long bytes) {
+    }
+
     private static final Logger logger = LoggerFactory.getLogger(CloudinaryUploadService.class);
 
     private final ObjectMapper objectMapper;
@@ -56,6 +59,10 @@ public class CloudinaryUploadService {
     private String apiSecret;
 
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("mp4", "mov", "webm", "m4v", "mkv", "avi");
+    private static final Set<String> ALLOWED_QUESTION_AUDIO_EXTENSIONS =
+            Set.of("mp3", "wav", "m4a", "ogg", "aac", "flac", "mp4", "webm", "mov");
+    private static final Set<String> ALLOWED_QUESTION_IMAGE_EXTENSIONS =
+            Set.of("jpg", "jpeg", "png", "webp", "gif");
 
     @Value("${cloudinary.upload-folder:toeic-trainer/videos}")
     private String uploadFolder;
@@ -93,24 +100,99 @@ public class CloudinaryUploadService {
         return uploadToCloudinary(file);
     }
 
+    public QuestionMediaAssetResult uploadQuestionAsset(byte[] bytes, String originalFilename, String contentType) {
+        if (bytes == null || bytes.length == 0) {
+            throw new AppException(ErrorCode.INVALID_QUESTION_MEDIA);
+        }
+
+        String resolvedName = originalFilename == null ? "asset" : originalFilename.trim();
+        String mediaType = classifyQuestionMediaType(resolvedName);
+        if (mediaType == null) {
+            throw new AppException(ErrorCode.INVALID_QUESTION_MEDIA);
+        }
+
+        String ext = extractAllowedQuestionExtension(resolvedName, mediaType);
+        if (!hasCloudinaryConfig()) {
+            return storeQuestionAssetLocally(bytes, resolvedName, mediaType, ext);
+        }
+
+        String resourceType = "IMAGE".equals(mediaType) ? "image" : "video";
+        String targetFolder = resolveQuestionMediaFolder(mediaType);
+        JsonNode root = executeCloudinaryUpload(
+                bytes,
+                resolvedName,
+                contentType,
+                resourceType,
+                targetFolder,
+                ErrorCode.INVALID_QUESTION_MEDIA
+        );
+        String secureUrl = asText(root, "secure_url");
+        if (isBlank(secureUrl)) {
+            throw new AppException(ErrorCode.INVALID_QUESTION_MEDIA);
+        }
+        String format = asText(root, "format");
+        long size = root.path("bytes").isNumber() ? root.path("bytes").asLong() : bytes.length;
+        return new QuestionMediaAssetResult(secureUrl, mediaType, isBlank(format) ? ext : format, size);
+    }
+
+    public static String classifyQuestionMediaType(String filename) {
+        String ext = extractExtension(filename);
+        if (ALLOWED_QUESTION_AUDIO_EXTENSIONS.contains(ext)) {
+            return "AUDIO";
+        }
+        if (ALLOWED_QUESTION_IMAGE_EXTENSIONS.contains(ext)) {
+            return "IMAGE";
+        }
+        return null;
+    }
+
     private VideoUploadResponse uploadToCloudinary(MultipartFile file) {
-
         String originalName = file.getOriginalFilename() == null ? "video" : file.getOriginalFilename();
-        long timestamp = Instant.now().getEpochSecond();
         String folder = uploadFolder == null ? "" : uploadFolder.trim();
-        String signatureBase = folder.isEmpty()
-                ? "timestamp=" + timestamp + apiSecret
-                : "folder=" + folder + "&timestamp=" + timestamp + apiSecret;
-        String signature = sha1Hex(signatureBase);
-        String endpoint = "https://api.cloudinary.com/v1_1/" + cloudName + "/video/upload";
-
-        MediaType mediaType = MediaType.parse(defaultMimeType(file.getContentType()));
-        RequestBody fileBody;
+        byte[] bytes;
         try {
-            fileBody = RequestBody.create(file.getBytes(), mediaType);
+            bytes = file.getBytes();
         } catch (IOException exception) {
             throw new AppException(ErrorCode.VIDEO_UPLOAD_FAILED);
         }
+
+        JsonNode root = executeCloudinaryUpload(
+                bytes,
+                originalName,
+                file.getContentType(),
+                "video",
+                folder,
+                ErrorCode.VIDEO_UPLOAD_FAILED
+        );
+        VideoUploadResponse result = new VideoUploadResponse();
+        result.setPublicId(asText(root, "public_id"));
+        result.setResourceType(asText(root, "resource_type"));
+        result.setFormat(asText(root, "format"));
+        result.setSecureUrl(asText(root, "secure_url"));
+        result.setPlaybackUrl(result.getSecureUrl());
+        result.setDurationSeconds(asIntSeconds(root, "duration"));
+        result.setBytes(root.path("bytes").isNumber() ? root.path("bytes").asLong() : null);
+        return result;
+    }
+
+    private JsonNode executeCloudinaryUpload(
+            byte[] bytes,
+            String originalName,
+            String contentType,
+            String resourceType,
+            String folder,
+            ErrorCode failureCode
+    ) {
+        long timestamp = Instant.now().getEpochSecond();
+        String normalizedFolder = folder == null ? "" : folder.trim();
+        String signatureBase = normalizedFolder.isEmpty()
+                ? "timestamp=" + timestamp + apiSecret
+                : "folder=" + normalizedFolder + "&timestamp=" + timestamp + apiSecret;
+        String signature = sha1Hex(signatureBase);
+        String endpoint = "https://api.cloudinary.com/v1_1/" + cloudName + "/" + resourceType + "/upload";
+
+        MediaType mediaType = MediaType.parse(defaultMimeType(contentType));
+        RequestBody fileBody = RequestBody.create(bytes, mediaType);
 
         MultipartBody.Builder bodyBuilder = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
@@ -118,8 +200,8 @@ public class CloudinaryUploadService {
                 .addFormDataPart("api_key", apiKey)
                 .addFormDataPart("timestamp", String.valueOf(timestamp))
                 .addFormDataPart("signature", signature);
-        if (!folder.isEmpty()) {
-            bodyBuilder.addFormDataPart("folder", folder);
+        if (!normalizedFolder.isEmpty()) {
+            bodyBuilder.addFormDataPart("folder", normalizedFolder);
         }
 
         Request request = new Request.Builder()
@@ -131,33 +213,21 @@ public class CloudinaryUploadService {
         try (Response response = client.newCall(request).execute()) {
             String raw = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
-                // Log Cloudinary error body for easier debugging
                 logger.error("Cloudinary upload failed. HTTP {} - response: {}", response.code(), raw);
-                // Check if it's an invalid cloud_name error
                 if (response.code() == 401 && raw.contains("Invalid cloud_name")) {
                     logger.error("Cloud name '{}' is invalid or does not exist in Cloudinary account. Check your CLOUDINARY_CLOUD_NAME env var.", cloudName);
                 }
-                throw new AppException(ErrorCode.VIDEO_UPLOAD_FAILED);
+                throw new AppException(failureCode);
             }
 
-            JsonNode root;
             try {
-                root = objectMapper.readTree(raw);
+                return objectMapper.readTree(raw);
             } catch (IOException parseEx) {
                 logger.error("Failed to parse Cloudinary response: {}", raw, parseEx);
-                throw new AppException(ErrorCode.VIDEO_UPLOAD_FAILED);
+                throw new AppException(failureCode);
             }
-            VideoUploadResponse result = new VideoUploadResponse();
-            result.setPublicId(asText(root, "public_id"));
-            result.setResourceType(asText(root, "resource_type"));
-            result.setFormat(asText(root, "format"));
-            result.setSecureUrl(asText(root, "secure_url"));
-            result.setPlaybackUrl(result.getSecureUrl());
-            result.setDurationSeconds(asIntSeconds(root, "duration"));
-            result.setBytes(root.path("bytes").isNumber() ? root.path("bytes").asLong() : null);
-            return result;
         } catch (IOException exception) {
-            throw new AppException(ErrorCode.VIDEO_UPLOAD_FAILED);
+            throw new AppException(failureCode);
         }
     }
 
@@ -204,14 +274,77 @@ public class CloudinaryUploadService {
         return Paths.get(root).toAbsolutePath().normalize().resolve("uploads").resolve("videos");
     }
 
-    private String buildLocalPlaybackUrl(String storedFileName) {
+    private QuestionMediaAssetResult storeQuestionAssetLocally(
+            byte[] bytes,
+            String originalName,
+            String mediaType,
+            String ext
+    ) {
+        try {
+            String subDir = "IMAGE".equals(mediaType) ? "images" : "audio";
+            String root = isBlank(storageDir) ? "./data" : storageDir.trim();
+            Path targetDir = Paths.get(root).toAbsolutePath().normalize()
+                    .resolve("uploads")
+                    .resolve("question-media")
+                    .resolve(subDir);
+            Files.createDirectories(targetDir);
+
+            String safeBase = sanitizeBaseName(originalName);
+            String token = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+            String storedFileName = token + "_" + safeBase + "." + ext;
+            Path targetPath = targetDir.resolve(storedFileName);
+            Files.write(targetPath, bytes);
+
+            String playbackUrl = buildLocalMediaUrl("question-media/" + subDir + "/" + storedFileName);
+            return new QuestionMediaAssetResult(playbackUrl, mediaType, ext, Files.size(targetPath));
+        } catch (IOException exception) {
+            logger.error("Failed to store question media locally", exception);
+            throw new AppException(ErrorCode.INVALID_QUESTION_MEDIA);
+        }
+    }
+
+    private String resolveQuestionMediaFolder(String mediaType) {
+        String base = isBlank(uploadFolder) ? "toeic-trainer" : uploadFolder.trim();
+        if (base.endsWith("/videos")) {
+            base = base.substring(0, base.length() - "/videos".length());
+        }
+        return base + "/question-media/" + ("IMAGE".equals(mediaType) ? "images" : "audio");
+    }
+
+    private static String extractExtension(String filename) {
+        if (filename == null) {
+            return "";
+        }
+        int dotIdx = filename.lastIndexOf('.');
+        if (dotIdx < 0 || dotIdx == filename.length() - 1) {
+            return "";
+        }
+        return filename.substring(dotIdx + 1).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+    }
+
+    private String extractAllowedQuestionExtension(String originalName, String mediaType) {
+        String ext = extractExtension(originalName);
+        if ("IMAGE".equals(mediaType) && ALLOWED_QUESTION_IMAGE_EXTENSIONS.contains(ext)) {
+            return ext;
+        }
+        if ("AUDIO".equals(mediaType) && ALLOWED_QUESTION_AUDIO_EXTENSIONS.contains(ext)) {
+            return ext;
+        }
+        throw new AppException(ErrorCode.INVALID_QUESTION_MEDIA);
+    }
+
+    private String buildLocalMediaUrl(String relativeMediaPath) {
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes) {
             return ServletUriComponentsBuilder.fromCurrentContextPath()
-                    .path("/media/videos/")
-                    .path(storedFileName)
+                    .path("/media/")
+                    .path(relativeMediaPath)
                     .toUriString();
         }
-        return "/api/media/videos/" + storedFileName;
+        return "/api/media/" + relativeMediaPath;
+    }
+
+    private String buildLocalPlaybackUrl(String storedFileName) {
+        return buildLocalMediaUrl("videos/" + storedFileName);
     }
 
     private String resolveVideoExtension(String originalName, String contentType) {

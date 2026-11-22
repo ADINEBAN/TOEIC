@@ -8,7 +8,9 @@ import org.example.backend.dto.response.SemanticDictionaryResponse;
 import org.example.backend.dto.response.SemanticDictionaryResponse.SemanticNode;
 import org.example.backend.enums.SuccessCode;
 import org.example.backend.service.SmartDictionaryService;
+import org.example.backend.service.SubscriptionService;
 import org.example.backend.util.ApiResponseUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -31,6 +33,9 @@ import java.util.List;
 public class UserDictionaryController {
 
     private final SmartDictionaryService smartDictionaryService;
+
+    @Autowired(required = false)
+    private SubscriptionService subscriptionService;
 
     @GetMapping("/suggest")
     public ResponseEntity<ApiResponse<List<SemanticNode>>> suggestWords(
@@ -87,8 +92,12 @@ public class UserDictionaryController {
 
     @PostMapping(value = "/recognize-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<ImageObjectRecognitionResponse>> recognizeObjectImage(
+            Authentication authentication,
             @RequestParam("file") MultipartFile file
     ) {
+        if (subscriptionService != null && authentication != null) {
+            subscriptionService.consumeQuotaOrThrow(authentication.getName(), SubscriptionService.FEATURE_CAMERA_AI);
+        }
         return ApiResponseUtil.success(
                 smartDictionaryService.recognizeObjectsFromImage(file),
                 SuccessCode.IMAGE_OBJECT_RECOGNIZED

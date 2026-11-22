@@ -17,5 +17,6 @@ public class UserLessonResponse {
     private Boolean free;
     private Double completionPercent;
     private Integer lastPositionSeconds;
+    private Integer watchedSeconds;
     private String progressStatus;
 }

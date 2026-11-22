@@ -46,6 +46,8 @@ export type UserProfile = {
   providerUserId: string | null;
   currentLevel: string;
   targetScore: number;
+  planTier?: "FREE" | "PLUS" | "PRO" | string;
+  planExpiresAt?: string | null;
   premium: boolean;
   verified?: boolean;
   diamonds?: number;
@@ -112,6 +114,7 @@ export type UserLessonApiItem = {
   free: boolean;
   completionPercent: number;
   lastPositionSeconds: number;
+  watchedSeconds?: number;
   progressStatus: string;
 };
 

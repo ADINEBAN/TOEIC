@@ -2,11 +2,13 @@ package org.example.backend.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.request.AssignTestPartQuestionsRequest;
+import org.example.backend.dto.request.AutoPopulateTestRequest;
 import org.example.backend.dto.request.CreateTestPartRequest;
 import org.example.backend.dto.request.CreateTestRequest;
 import org.example.backend.dto.request.UpdateTestPartRequest;
 import org.example.backend.dto.request.UpdateTestRequest;
 import org.example.backend.dto.response.ApiResponse;
+import org.example.backend.dto.response.AutoPopulateTestResponse;
 import org.example.backend.dto.response.TestResponse;
 import org.example.backend.dto.response.TestPartResponse;
 import org.example.backend.dto.response.TestPartQuestionResponse;
@@ -92,6 +94,15 @@ public class AdminTestController {
     ) {
         List<TestPartResponse> response = adminTestService.initStandardToeicParts(testId);
         return ApiResponseUtil.success(response, SuccessCode.TEST_PART_CREATED);
+    }
+
+    @PostMapping("/{testId}/auto-populate")
+    public ResponseEntity<ApiResponse<AutoPopulateTestResponse>> autoPopulateTest(
+            @PathVariable Long testId,
+            @RequestBody(required = false) AutoPopulateTestRequest request
+    ) {
+        AutoPopulateTestResponse response = adminTestService.autoPopulateTest(testId, request);
+        return ApiResponseUtil.success(response, SuccessCode.TEST_PART_QUESTION_ASSIGNED);
     }
 
     @GetMapping("/{testId}/parts")
