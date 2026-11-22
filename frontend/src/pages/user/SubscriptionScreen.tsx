@@ -26,6 +26,7 @@ import {
   getSubscriptionPlansOverview,
   PaymentOrderData,
   PlanOptionDto,
+  redeemSubscriptionWithDiamonds,
   SubscriptionPlansOverviewData,
 } from "@/src/services/subscription.service";
 import { getMyProfile } from "@/src/services/user.service";
@@ -81,6 +82,7 @@ export default function SubscriptionScreen() {
 
   const [loading, setLoading] = useState(true);
   const [creatingPlanCode, setCreatingPlanCode] = useState<string | null>(null);
+  const [redeemingPlanCode, setRedeemingPlanCode] = useState<string | null>(null);
   const [checkingPayment, setCheckingPayment] = useState(false);
   const [overview, setOverview] = useState<SubscriptionPlansOverviewData | null>(null);
   const [orders, setOrders] = useState<PaymentOrderData[]>([]);
@@ -185,6 +187,69 @@ export default function SubscriptionScreen() {
       return;
     }
     void startCreateOrder(plan);
+  };
+
+  const executeDiamondRedeem = async (plan: PlanOptionDto) => {
+    if (!auth.accessToken || !plan.diamondCost) return;
+    try {
+      setRedeemingPlanCode(plan.planCode);
+      setErrorMessage(null);
+      const updatedOverview = await redeemSubscriptionWithDiamonds(
+        auth.accessToken,
+        plan.planCode,
+      );
+      setOverview(updatedOverview);
+      try {
+        const profileRes = await getMyProfile(auth.accessToken);
+        if (profileRes.data) {
+          updateUserProfile(profileRes.data);
+        }
+      } catch {
+        // ignore profile sync failure
+      }
+      alertCrossPlatform(
+        `Đổi gói ${plan.tier} thành công 💎`,
+        `Đã trừ ${plan.diamondCost.toLocaleString("vi-VN")} 💎 và mở khóa ${plan.title}. Hạn sử dụng mới: ${formatDateTimeVi(updatedOverview.planExpiresAt)}.`
+      );
+    } catch (error) {
+      alertCrossPlatform(
+        "Không thể đổi bằng Kim cương",
+        extractErrorText(error, "Vui lòng thử lại.")
+      );
+    } finally {
+      setRedeemingPlanCode(null);
+    }
+  };
+
+  const handleRedeemWithDiamonds = (plan: PlanOptionDto) => {
+    const cost = plan.diamondCost ?? 0;
+    if (cost <= 0) return;
+    const balance = overview?.diamonds ?? auth.user?.diamonds ?? 0;
+    if (balance < cost) {
+      const missing = cost - balance;
+      alertCrossPlatform(
+        "Chưa đủ kim cương để đổi",
+        `Để đổi ${plan.title} bạn cần tích đủ ${cost.toLocaleString("vi-VN")} 💎.\n` +
+          `Hiện có: ${balance.toLocaleString("vi-VN")} 💎 (cần thêm ${missing.toLocaleString("vi-VN")} 💎).\n\n` +
+          `Hãy học bài, luyện đề, đấu Solo hoặc thanh toán VietQR để mở khóa ngay!`
+      );
+      return;
+    }
+
+    const projectedDate = computeProjectedExpiryVi(overview?.planExpiresAt, plan.durationDays);
+    const remaining = balance - cost;
+    confirmCrossPlatform(
+      `Đổi ${cost.toLocaleString("vi-VN")} 💎 lấy ${plan.title}`,
+      `Số dư hiện tại: ${balance.toLocaleString("vi-VN")} 💎\n` +
+        `Số kim cương sẽ dùng: -${cost.toLocaleString("vi-VN")} 💎 (còn ${remaining.toLocaleString("vi-VN")} 💎)\n` +
+        `Quyền lợi: Cộng +${plan.durationDays} ngày gói ${plan.tier} (đến ${projectedDate}).\n\n` +
+        `Xác nhận đổi ngay?`,
+      () => {
+        void executeDiamondRedeem(plan);
+      },
+      `Đổi ngay (${cost.toLocaleString("vi-VN")} 💎)`,
+      "Hủy"
+    );
   };
 
   const handleCheckPaymentStatusNow = async () => {
@@ -294,8 +359,8 @@ export default function SubscriptionScreen() {
 
             <Text style={styles.expiryText}>
               {currentTier === "FREE"
-                ? "Đang dùng gói FREE • Nâng cấp PLUS (10.000đ) hoặc PRO (30.000đ) mở khóa AI & bài giảng."
-                : `Hiệu lực đến ngày ${formatDateTimeVi(overview.planExpiresAt)} • Mua thêm sẽ tự động cộng dồn ngày & Kim cương 💎.`}
+                ? "Đang dùng gói FREE • Nâng cấp PLUS (10.000đ hoặc 10.000 💎) hoặc PRO (30.000đ hoặc 20.000 💎)."
+                : `Hiệu lực đến ngày ${formatDateTimeVi(overview.planExpiresAt)} • Mua QR hoặc đổi 💎 sẽ tự động cộng dồn ngày.`}
             </Text>
 
             <View style={styles.compactQuotaGrid}>
@@ -366,8 +431,16 @@ export default function SubscriptionScreen() {
             {filteredPlans.map((plan) => {
               const isPro = plan.tier === "PRO";
               const isBusy = creatingPlanCode === plan.planCode;
+              const isRedeeming = redeemingPlanCode === plan.planCode;
               const isStacking = currentTier !== "FREE";
               const projectedExpiry = computeProjectedExpiryVi(overview.planExpiresAt, plan.durationDays);
+              const diamondCost = plan.diamondCost ?? 0;
+              const supportsDiamondRedeem = diamondCost > 0;
+              const canAffordDiamonds = supportsDiamondRedeem && overview.diamonds >= diamondCost;
+              const diamondRatio = supportsDiamondRedeem
+                ? Math.max(0.03, Math.min(1, overview.diamonds / diamondCost))
+                : 0;
+              const missingDiamonds = Math.max(0, diamondCost - overview.diamonds);
               return (
                 <SurfaceCard
                   key={plan.planCode}
@@ -417,9 +490,9 @@ export default function SubscriptionScreen() {
                     style={[
                       styles.buyButton,
                       isPro ? styles.buyButtonPro : styles.buyButtonPlus,
-                      isBusy && styles.buttonDisabled,
+                      (isBusy || isRedeeming) && styles.buttonDisabled,
                     ]}
-                    disabled={isBusy}
+                    disabled={isBusy || isRedeeming}
                     onPress={() => handleSelectPlan(plan)}
                   >
                     {isBusy ? (
@@ -435,6 +508,67 @@ export default function SubscriptionScreen() {
                       </>
                     )}
                   </Pressable>
+
+                  {supportsDiamondRedeem ? (
+                    <View style={styles.diamondRedeemBox}>
+                      <View style={styles.diamondRedeemTop}>
+                        <Text style={styles.diamondRedeemLabel}>
+                          💎 Đổi bằng Kim cương tích lũy
+                        </Text>
+                        <Text
+                          style={[
+                            styles.diamondRedeemCounter,
+                            canAffordDiamonds && styles.diamondRedeemCounterReady,
+                          ]}
+                        >
+                          {overview.diamonds.toLocaleString("vi-VN")} /{" "}
+                          {diamondCost.toLocaleString("vi-VN")} 💎
+                        </Text>
+                      </View>
+                      <View style={styles.diamondTrack}>
+                        <View
+                          style={[
+                            styles.diamondFill,
+                            canAffordDiamonds && styles.diamondFillReady,
+                            { width: `${Math.round(diamondRatio * 100)}%` },
+                          ]}
+                        />
+                      </View>
+                      <Pressable
+                        disabled={isBusy || isRedeeming}
+                        onPress={() => handleRedeemWithDiamonds(plan)}
+                        style={[
+                          styles.diamondRedeemBtn,
+                          canAffordDiamonds
+                            ? styles.diamondRedeemBtnReady
+                            : styles.diamondRedeemBtnPending,
+                          (isBusy || isRedeeming) && styles.buttonDisabled,
+                        ]}
+                      >
+                        {isRedeeming ? (
+                          <ActivityIndicator color="#FFFFFF" size="small" />
+                        ) : (
+                          <>
+                            <Ionicons
+                              name={canAffordDiamonds ? "diamond" : "lock-closed-outline"}
+                              size={15}
+                              color={canAffordDiamonds ? "#FFFFFF" : "#0369A1"}
+                            />
+                            <Text
+                              style={[
+                                styles.diamondRedeemBtnText,
+                                !canAffordDiamonds && styles.diamondRedeemBtnTextPending,
+                              ]}
+                            >
+                              {canAffordDiamonds
+                                ? `Đổi ngay bằng ${diamondCost.toLocaleString("vi-VN")} 💎`
+                                : `Cần thêm ${missingDiamonds.toLocaleString("vi-VN")} 💎 để đổi`}
+                            </Text>
+                          </>
+                        )}
+                      </Pressable>
+                    </View>
+                  ) : null}
                 </SurfaceCard>
               );
             })}
@@ -828,6 +962,73 @@ const createStyles = (colors: LiquidThemeColors) =>
     },
     buttonDisabled: {
       opacity: 0.65,
+    },
+    diamondRedeemBox: {
+      backgroundColor: "#F0F9FF",
+      borderColor: "#BAE6FD",
+      borderRadius: radius.md,
+      borderWidth: 1,
+      gap: 7,
+      padding: 10,
+    },
+    diamondRedeemTop: {
+      alignItems: "center",
+      flexDirection: "row",
+      justifyContent: "space-between",
+      gap: 6,
+    },
+    diamondRedeemLabel: {
+      color: "#0369A1",
+      fontSize: 11.5,
+      fontWeight: "800",
+    },
+    diamondRedeemCounter: {
+      color: "#0284C7",
+      fontSize: 11.5,
+      fontWeight: "900",
+    },
+    diamondRedeemCounterReady: {
+      color: "#059669",
+    },
+    diamondTrack: {
+      backgroundColor: "#E0F2FE",
+      borderRadius: 99,
+      height: 6,
+      overflow: "hidden",
+      width: "100%",
+    },
+    diamondFill: {
+      backgroundColor: "#0EA5E9",
+      borderRadius: 99,
+      height: "100%",
+    },
+    diamondFillReady: {
+      backgroundColor: "#10B981",
+    },
+    diamondRedeemBtn: {
+      alignItems: "center",
+      borderRadius: radius.md,
+      flexDirection: "row",
+      gap: 6,
+      justifyContent: "center",
+      minHeight: 38,
+      paddingHorizontal: 12,
+    },
+    diamondRedeemBtnReady: {
+      backgroundColor: "#059669",
+    },
+    diamondRedeemBtnPending: {
+      backgroundColor: "#E0F2FE",
+      borderColor: "#7DD3FC",
+      borderWidth: 1,
+    },
+    diamondRedeemBtnText: {
+      color: "#FFFFFF",
+      fontSize: 12.5,
+      fontWeight: "800",
+    },
+    diamondRedeemBtnTextPending: {
+      color: "#0369A1",
     },
     orderHistoryRow: {
       alignItems: "center",

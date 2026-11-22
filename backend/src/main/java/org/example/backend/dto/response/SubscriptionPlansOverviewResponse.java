@@ -32,6 +32,7 @@ public class SubscriptionPlansOverviewResponse {
         private int durationDays;
         private long priceVnd;
         private int bonusDiamonds;
+        private Integer diamondCost;
         private String badgeText;
         private List<String> highlights;
     }

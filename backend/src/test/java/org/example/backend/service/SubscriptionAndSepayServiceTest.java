@@ -21,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 
@@ -80,6 +81,81 @@ class SubscriptionAndSepayServiceTest {
         assertEquals(49_000L, prices.get("PLUS_YEARLY"));
         assertEquals(30_000L, prices.get("PRO_MONTHLY"));
         assertEquals(1_000_000L, prices.get("PRO_YEARLY"));
+
+        Map<String, Integer> diamondCosts = overview.getPlans().stream()
+                .filter(p -> p.getDiamondCost() != null)
+                .collect(java.util.stream.Collectors.toMap(
+                        SubscriptionPlansOverviewResponse.PlanOptionDto::getPlanCode,
+                        SubscriptionPlansOverviewResponse.PlanOptionDto::getDiamondCost
+                ));
+        assertEquals(10_000, diamondCosts.get("PLUS_MONTHLY"));
+        assertEquals(20_000, diamondCosts.get("PRO_MONTHLY"));
+        assertEquals(2, diamondCosts.size());
+    }
+
+    @Test
+    void redeemPlanWithDiamondsActivatesPlusAndStacksProUpgrade() {
+        User plusCandidate = buildUser(31L, "diamond-plus@toeic.local", "FREE");
+        plusCandidate.setDiamonds(10_000);
+        when(userRepository.findByEmailForUpdate("diamond-plus@toeic.local")).thenReturn(Optional.of(plusCandidate));
+        when(userFeatureQuotaRepository.findByUserIdAndFeatureKeyAndPeriodKey(anyLong(), anyString(), anyString()))
+                .thenReturn(Optional.empty());
+
+        SubscriptionPlansOverviewResponse afterPlus = subscriptionService.redeemPlanWithDiamonds("diamond-plus@toeic.local", "PLUS_MONTHLY");
+        assertEquals("PLUS", afterPlus.getCurrentTier());
+        assertEquals(0, afterPlus.getDiamonds());
+        assertFalse(afterPlus.isVerified());
+        assertNotNull(afterPlus.getPlanExpiresAt());
+        assertTrue(afterPlus.getPlanExpiresAt().isAfter(LocalDateTime.now().plusDays(29)));
+
+        User proCandidate = buildUser(32L, "diamond-pro@toeic.local", "PLUS");
+        proCandidate.setDiamonds(20_500);
+        proCandidate.setPlanExpiresAt(LocalDateTime.now().plusDays(15));
+        when(userRepository.findByEmailForUpdate("diamond-pro@toeic.local")).thenReturn(Optional.of(proCandidate));
+
+        SubscriptionPlansOverviewResponse afterPro = subscriptionService.redeemPlanWithDiamonds("diamond-pro@toeic.local", "PRO_MONTHLY");
+        assertEquals("PRO", afterPro.getCurrentTier());
+        assertEquals(500, afterPro.getDiamonds());
+        assertTrue(afterPro.isVerified());
+        assertNotNull(afterPro.getPlanExpiresAt());
+        assertTrue(afterPro.getPlanExpiresAt().isAfter(LocalDateTime.now().plusDays(44)));
+
+        verify(diamondTransactionRepository, times(2)).save(any(DiamondTransaction.class));
+    }
+
+    @Test
+    void redeemPlanWithDiamondsRejectsInsufficientBalanceAndYearlyPlans() {
+        User almostPlus = buildUser(41L, "short-plus@toeic.local", "FREE");
+        almostPlus.setDiamonds(9_999);
+        when(userRepository.findByEmailForUpdate("short-plus@toeic.local")).thenReturn(Optional.of(almostPlus));
+
+        AppException errPlus = assertThrows(
+                AppException.class,
+                () -> subscriptionService.redeemPlanWithDiamonds("short-plus@toeic.local", "PLUS_MONTHLY")
+        );
+        assertEquals(ErrorCode.INSUFFICIENT_DIAMONDS, errPlus.getErrorCode());
+        assertEquals(9_999, almostPlus.getDiamonds());
+
+        User almostPro = buildUser(42L, "short-pro@toeic.local", "FREE");
+        almostPro.setDiamonds(19_999);
+        when(userRepository.findByEmailForUpdate("short-pro@toeic.local")).thenReturn(Optional.of(almostPro));
+
+        AppException errPro = assertThrows(
+                AppException.class,
+                () -> subscriptionService.redeemPlanWithDiamonds("short-pro@toeic.local", "PRO_MONTHLY")
+        );
+        assertEquals(ErrorCode.INSUFFICIENT_DIAMONDS, errPro.getErrorCode());
+
+        User whaleUser = buildUser(43L, "whale@toeic.local", "FREE");
+        whaleUser.setDiamonds(50_000);
+        when(userRepository.findByEmailForUpdate("whale@toeic.local")).thenReturn(Optional.of(whaleUser));
+
+        AppException errYearly = assertThrows(
+                AppException.class,
+                () -> subscriptionService.redeemPlanWithDiamonds("whale@toeic.local", "PRO_YEARLY")
+        );
+        assertEquals(ErrorCode.INVALID_SUBSCRIPTION_PLAN, errYearly.getErrorCode());
+        verify(diamondTransactionRepository, never()).save(any(DiamondTransaction.class));
     }
 
     @Test

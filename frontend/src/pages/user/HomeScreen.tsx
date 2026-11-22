@@ -709,7 +709,7 @@ export default function HomeScreen() {
                     Gói {(auth.user?.planTier ?? (auth.user?.premium ? "PRO" : "FREE")).toUpperCase()} • Nâng cấp PLUS & PRO
                   </Text>
                   <Text style={{ color: colors.textMuted, fontSize: rf(12), fontWeight: "600" }}>
-                    PLUS chỉ 10.000đ/30 ngày • PRO 30.000đ/30 ngày (MBBank VietQR tự động)
+                    PLUS 10.000đ (10.000 💎) • PRO 30.000đ (20.000 💎) / 30 ngày
                   </Text>
                 </View>
                 <Ionicons color="#7C3AED" name="chevron-forward" size={18} />

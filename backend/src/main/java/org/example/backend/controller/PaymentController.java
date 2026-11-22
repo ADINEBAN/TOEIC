@@ -50,6 +50,21 @@ public class PaymentController {
         );
     }
 
+    @PostMapping("/redeem-diamonds")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
+    public ResponseEntity<ApiResponse<SubscriptionPlansOverviewResponse>> redeemPlanWithDiamonds(
+            Authentication authentication,
+            @RequestBody CreatePaymentOrderRequest request
+    ) {
+        return ApiResponseUtil.success(
+                subscriptionService.redeemPlanWithDiamonds(
+                        authentication.getName(),
+                        request != null ? request.getPlanCode() : null
+                ),
+                SuccessCode.PLAN_REDEEMED_WITH_DIAMONDS
+        );
+    }
+
     @GetMapping("/orders/mine")
     @PreAuthorize("hasAnyRole('USER', 'ADMIN', 'CONTENT_MANAGER')")
     public ResponseEntity<ApiResponse<List<PaymentOrderResponse>>> getMyOrders(

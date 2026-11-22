@@ -23,11 +23,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -53,6 +55,9 @@ public class SubscriptionService {
     public static final String PLAN_PLUS_YEARLY = "PLUS_YEARLY";
     public static final String PLAN_PRO_MONTHLY = "PRO_MONTHLY";
     public static final String PLAN_PRO_YEARLY = "PRO_YEARLY";
+
+    public static final int DIAMOND_COST_PLUS_MONTHLY = 10_000;
+    public static final int DIAMOND_COST_PRO_MONTHLY = 20_000;
 
     private final UserRepository userRepository;
     private final PaymentOrderRepository paymentOrderRepository;
@@ -85,11 +90,12 @@ public class SubscriptionService {
                 .durationDays(30)
                 .priceVnd(10_000L)
                 .bonusDiamonds(100)
+                .diamondCost(DIAMOND_COST_PLUS_MONTHLY)
                 .badgeText("Phổ biến")
                 .highlights(List.of(
                         "Mở khóa 100% Video bài giảng & Full Test 200 câu",
                         "30 lượt AI Giải thích & 20 lượt Camera AI / ngày",
-                        "10 đề PDF/Word + 5 Video AI / tháng • Tặng +100 💎"
+                        "10 đề PDF/Word + 5 Video AI / tháng • Đổi được bằng 10.000 💎"
                 ))
                 .build());
 
@@ -101,6 +107,7 @@ public class SubscriptionService {
                 .durationDays(365)
                 .priceVnd(49_000L)
                 .bonusDiamonds(500)
+                .diamondCost(null)
                 .badgeText("Tiết kiệm 59%")
                 .highlights(List.of(
                         "Trọn bộ quyền lợi gói PLUS suốt 365 ngày",
@@ -117,11 +124,12 @@ public class SubscriptionService {
                 .durationDays(30)
                 .priceVnd(30_000L)
                 .bonusDiamonds(300)
+                .diamondCost(DIAMOND_COST_PRO_MONTHLY)
                 .badgeText("Không giới hạn AI")
                 .highlights(List.of(
                         "KHÔNG GIỚI HẠN AI Giải thích, Đề tài liệu, Video & Camera AI",
                         "Giọng đọc Speechify AI cao cấp + Nhân x1.5 💎 học tập",
-                        "Tích xanh Verified ✓ + Tặng ngay +300 Kim cương 💎"
+                        "Tích xanh Verified ✓ • Đổi được bằng 20.000 💎"
                 ))
                 .build());
 
@@ -133,6 +141,7 @@ public class SubscriptionService {
                 .durationDays(365)
                 .priceVnd(1_000_000L)
                 .bonusDiamonds(1_500)
+                .diamondCost(null)
                 .badgeText("VIP Trọn Năm")
                 .highlights(List.of(
                         "Đầy đủ đặc quyền PRO Không giới hạn suốt 365 ngày",
@@ -145,6 +154,48 @@ public class SubscriptionService {
     @Transactional(readOnly = true)
     public SubscriptionPlansOverviewResponse getPlansOverview(String email) {
         User user = findUserByEmail(email);
+        return buildPlansOverview(user);
+    }
+
+    @Transactional
+    public SubscriptionPlansOverviewResponse redeemPlanWithDiamonds(String email, String planCodeRaw) {
+        User user = userRepository.findByEmailForUpdate(email)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        String normPlanCode = planCodeRaw != null ? planCodeRaw.trim().toUpperCase(Locale.ROOT) : "";
+        PlanOptionDto plan = PLAN_CATALOG.get(normPlanCode);
+        if (plan == null || plan.getDiamondCost() == null || plan.getDiamondCost() <= 0) {
+            throw new AppException(
+                    ErrorCode.INVALID_SUBSCRIPTION_PLAN,
+                    "Gói này chưa hỗ trợ đổi bằng Kim cương. Chỉ áp dụng đổi 10.000 💎 (PLUS 30 ngày) hoặc 20.000 💎 (PRO 30 ngày)."
+            );
+        }
+
+        int diamondCost = plan.getDiamondCost();
+        int currentDiamonds = user.getDiamonds() != null ? user.getDiamonds() : 50;
+        if (currentDiamonds < diamondCost) {
+            throw new AppException(
+                    ErrorCode.INSUFFICIENT_DIAMONDS,
+                    String.format(Locale.US, "Bạn cần %,d 💎 để đổi %s (hiện có %,d 💎).", diamondCost, plan.getTitle(), currentDiamonds)
+            );
+        }
+
+        user.setDiamonds(currentDiamonds - diamondCost);
+        LocalDateTime now = LocalDateTime.now();
+        applyPlanActivationToUser(user, plan.getTier(), plan.getDurationDays(), now);
+        userRepository.save(user);
+
+        recordDiamondTransaction(
+                user,
+                "DIAMOND_PLAN_REDEEM",
+                plan.getPlanCode() + "-" + System.currentTimeMillis(),
+                -diamondCost,
+                String.format(Locale.US, "Đổi %,d 💎 lấy %s", diamondCost, plan.getTitle())
+        );
+
+        return buildPlansOverview(user);
+    }
+
+    private SubscriptionPlansOverviewResponse buildPlansOverview(User user) {
         String activeTier = user.getActivePlanTier();
         return SubscriptionPlansOverviewResponse.builder()
                 .currentTier(activeTier)
@@ -347,14 +398,38 @@ public class SubscriptionService {
         paymentOrderRepository.save(order);
 
         User user = order.getUser();
+        applyPlanActivationToUser(
+                user,
+                order.getPlanTier(),
+                order.getDurationDays() != null ? order.getDurationDays() : 30,
+                now
+        );
+
+        int bonus = order.getBonusDiamonds() != null ? order.getBonusDiamonds() : 0;
+        if (bonus > 0) {
+            int currentDiamonds = user.getDiamonds() != null ? user.getDiamonds() : 50;
+            user.setDiamonds(currentDiamonds + bonus);
+            recordDiamondTransaction(
+                    user,
+                    "SUBSCRIPTION_BONUS",
+                    order.getOrderCode(),
+                    bonus,
+                    "Thưởng nâng cấp " + order.getPlanCode() + " (" + order.getOrderCode() + ")"
+            );
+        }
+
+        userRepository.save(user);
+    }
+
+    private void applyPlanActivationToUser(User user, String purchasedTierRaw, int durationDays, LocalDateTime now) {
         String currentActiveTier = user.getActivePlanTier();
-        String purchasedTier = order.getPlanTier() != null ? order.getPlanTier().trim().toUpperCase(Locale.ROOT) : "PLUS";
+        String purchasedTier = purchasedTierRaw != null ? purchasedTierRaw.trim().toUpperCase(Locale.ROOT) : "PLUS";
 
         LocalDateTime baseExpiry = user.getPlanExpiresAt();
         if (baseExpiry == null || baseExpiry.isBefore(now)) {
             baseExpiry = now;
         }
-        user.setPlanExpiresAt(baseExpiry.plusDays(order.getDurationDays() != null ? order.getDurationDays() : 30));
+        user.setPlanExpiresAt(baseExpiry.plusDays(durationDays > 0 ? durationDays : 30));
 
         if (tierRank(purchasedTier) >= tierRank(currentActiveTier)) {
             user.setPlanTier(purchasedTier);
@@ -363,26 +438,28 @@ public class SubscriptionService {
         if ("PRO".equalsIgnoreCase(user.getPlanTier())) {
             user.setVerified(true);
         }
+    }
 
-        int bonus = order.getBonusDiamonds() != null ? order.getBonusDiamonds() : 0;
-        if (bonus > 0) {
-            int currentDiamonds = user.getDiamonds() != null ? user.getDiamonds() : 50;
-            user.setDiamonds(currentDiamonds + bonus);
-
-            if (diamondTransactionRepository != null) {
-                DiamondTransaction tx = new DiamondTransaction();
-                tx.setUser(user);
-                tx.setSourceType("SUBSCRIPTION_BONUS");
-                tx.setReferenceKey(order.getOrderCode());
-                tx.setDiamondsDelta(bonus);
-                tx.setStudyReward(false);
-                tx.setDescriptionVi("Thưởng nâng cấp " + order.getPlanCode() + " (" + order.getOrderCode() + ")");
-                tx.setWeekStartDate(LocalDate.now(VN_ZONE));
-                diamondTransactionRepository.save(tx);
-            }
+    private void recordDiamondTransaction(
+            User user,
+            String sourceType,
+            String referenceKey,
+            int diamondsDelta,
+            String descriptionVi
+    ) {
+        if (diamondTransactionRepository == null) {
+            return;
         }
-
-        userRepository.save(user);
+        DiamondTransaction tx = new DiamondTransaction();
+        tx.setUser(user);
+        tx.setSourceType(sourceType);
+        tx.setReferenceKey(referenceKey);
+        tx.setDiamondsDelta(diamondsDelta);
+        tx.setStudyReward(false);
+        tx.setDescriptionVi(descriptionVi);
+        tx.setWeekStartDate(LocalDate.now(VN_ZONE).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)));
+        tx.setCreatedAt(LocalDateTime.now(VN_ZONE));
+        diamondTransactionRepository.save(tx);
     }
 
     private void verifySepayAuthorizationIfNeeded(String authorizationHeader) {
