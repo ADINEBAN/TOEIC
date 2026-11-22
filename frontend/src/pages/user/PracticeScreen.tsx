@@ -50,7 +50,7 @@ const TILE_PALETTES = [
 export default function PracticeScreen() {
   const { auth, isHydrated } = useAuth();
   const { theme } = useAppTheme();
-  const { rf, isNarrow } = useResponsiveLayout();
+  const { rf, isNarrow, isDesktopWeb } = useResponsiveLayout();
   const colors = theme.colors;
   const styles = useThemedStyles(createStyles);
 
@@ -327,7 +327,12 @@ export default function PracticeScreen() {
         </SurfaceCard>
       ) : null}
 
-      <View style={styles.moduleList}>
+      <View
+        style={[
+          styles.moduleList,
+          isDesktopWeb ? { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" } : null,
+        ]}
+      >
         {filteredNodes.map((item, idx) => {
           const palette = TILE_PALETTES[idx % TILE_PALETTES.length];
           const isPrioritized =
@@ -366,7 +371,10 @@ export default function PracticeScreen() {
             <Pressable
               key={`${item.module.moduleId}-${idx}`}
               onPress={() => openModule(item.module.moduleId)}
-              style={({ pressed }) => [pressed ? { opacity: 0.92, transform: [{ scale: 0.985 }] } : null]}
+              style={({ pressed }) => [
+                isDesktopWeb ? { width: "49%" } : null,
+                pressed ? { opacity: 0.92, transform: [{ scale: 0.985 }] } : null,
+              ]}
             >
               <SurfaceCard padding="sm" style={styles.moduleCard}>
                 <View style={styles.moduleRow}>

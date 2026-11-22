@@ -46,7 +46,7 @@ function TabIcon({ focused, label, icon }: TabIconProps) {
 
 export default function UserTabsLayout() {
   const { theme } = useAppTheme();
-  const { dockHeight, dockBottom, screenPadding, isTablet } = useResponsiveLayout();
+  const { dockHeight, dockBottom, screenPadding, isTablet, isDesktopWeb } = useResponsiveLayout();
   const c = theme.colors;
   const iconSize = 19;
 
@@ -55,34 +55,37 @@ export default function UserTabsLayout() {
       screenOptions={{
         headerShown: false,
         sceneStyle: { backgroundColor: c.background },
-        tabBarBackground: () => (
-          <View
-            style={[
-              styles.dockBg,
-              {
-                backgroundColor: c.tabBarBg,
-                borderColor: c.glassBorder,
-                elevation: Platform.OS === "android" ? 8 : 0,
-                shadowColor: c.shadow,
-              },
-            ]}
-          />
-        ),
+        tabBarBackground: () =>
+          isDesktopWeb ? null : (
+            <View
+              style={[
+                styles.dockBg,
+                {
+                  backgroundColor: c.tabBarBg,
+                  borderColor: c.glassBorder,
+                  elevation: Platform.OS === "android" ? 8 : 0,
+                  shadowColor: c.shadow,
+                },
+              ]}
+            />
+          ),
         tabBarHideOnKeyboard: true,
         tabBarIconStyle: styles.tabBarIconSlot,
         tabBarItemStyle: [styles.tabBarItem, { height: dockHeight - 6 }],
         tabBarShowLabel: false,
-        tabBarStyle: [
-          styles.tabBar,
-          {
-            bottom: dockBottom,
-            height: dockHeight,
-            left: isTablet ? "50%" : screenPadding,
-            marginLeft: isTablet ? -260 : 0,
-            right: isTablet ? undefined : screenPadding,
-            width: isTablet ? 520 : undefined,
-          },
-        ],
+        tabBarStyle: isDesktopWeb
+          ? { display: "none" }
+          : [
+              styles.tabBar,
+              {
+                bottom: dockBottom,
+                height: dockHeight,
+                left: isTablet ? "50%" : screenPadding,
+                marginLeft: isTablet ? -260 : 0,
+                right: isTablet ? undefined : screenPadding,
+                width: isTablet ? 520 : undefined,
+              },
+            ],
       }}
     >
       <Tabs.Screen

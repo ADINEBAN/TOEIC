@@ -57,7 +57,7 @@ export default function HomeScreen() {
   const { auth, updateUserProfile } = useAuth();
   const { openDirectChat } = useFloatingChat();
   const { theme } = useAppTheme();
-  const { gridItemWidth, rf, isNarrow } = useResponsiveLayout();
+  const { gridItemWidth, rf, isNarrow, isDesktopWeb } = useResponsiveLayout();
   const colors = theme.colors;
   const styles = useThemedStyles(createStyles);
 
@@ -179,7 +179,7 @@ export default function HomeScreen() {
   const progressValue = Math.round(roadmap?.progressPercent ?? 0);
 
   const featureGap = isNarrow ? 10 : 12;
-  const featureCardW = gridItemWidth(2, featureGap);
+  const featureCardW = gridItemWidth(isDesktopWeb ? 4 : 2, featureGap);
 
   const handleChoosePath = async () => {
     if (!auth.accessToken || !selectedPath) return;
@@ -321,223 +321,278 @@ export default function HomeScreen() {
         }
       />
 
-      <View style={styles.welcomeRow}>
-        <View style={styles.welcomeTextCol}>
-          <Text style={[styles.welcomeHeadline, { fontSize: rf(isNarrow ? 19 : 21) }]}>
-            Sẵn sàng chinh phục TOEIC hôm nay!
-          </Text>
-          <View style={styles.welcomeChipsRow}>
-            <View style={styles.welcomeStatChip}>
-              <Ionicons color={colors.primary} name="flag" size={12} />
-              <Text style={styles.welcomeStatText}>Mục tiêu {targetScore || "---"}+</Text>
-            </View>
-            <View style={styles.welcomeStatChip}>
-              <Ionicons color="#F59E0B" name="flame" size={12} />
-              <Text style={styles.welcomeStatText}>{streakDays} ngày</Text>
-            </View>
-          </View>
-        </View>
-        <Image
-          resizeMode="contain"
-          source={require("@/assets/images/mascot-home.png")}
-          style={{ height: mascotSize, marginBottom: -12, width: mascotSize }}
-        />
-      </View>
-
-      <SurfaceCard padding="sm" style={styles.categoryDock}>
-        <View style={styles.categoryRow}>
-          {quickCategories.map((item) => (
-            <Pressable
-              key={item.label}
-              onPress={() => pushRoute(item.route)}
-              style={({ pressed }) => [styles.catTile, pressed ? { opacity: 0.85, transform: [{ scale: 0.96 }] } : null]}
-            >
-              <ClayIcon3D colors={item.clayColors} icon={item.icon} size={50} />
-              <Text numberOfLines={1} style={[styles.catLabel, { fontSize: rf(11.5) }]}>
-                {item.label}
+      <View style={isDesktopWeb ? { alignItems: "flex-start", flexDirection: "row", gap: 20, marginBottom: 8 } : undefined}>
+        <View style={isDesktopWeb ? { flex: 1.12, minWidth: 0 } : undefined}>
+          <View style={styles.welcomeRow}>
+            <View style={styles.welcomeTextCol}>
+              <Text style={[styles.welcomeHeadline, { fontSize: rf(isNarrow ? 19 : 21) }]}>
+                Sẵn sàng chinh phục TOEIC hôm nay!
               </Text>
-            </Pressable>
-          ))}
-        </View>
-      </SurfaceCard>
-
-      <Pressable
-        onPress={() => pushRoute(hasNoAssignedPath ? "/user/onboarding" : "/user/practice")}
-        style={({ pressed }) => [pressed ? { opacity: 0.95 } : null]}
-      >
-        <LiquidCard hero style={styles.dailyGoalCard}>
-          <View style={styles.dailyGoalRow}>
-            <View style={styles.dailyGoalCopy}>
-              <Text style={[styles.dailyGoalTitle, { fontSize: rf(16) }]}>
-                Mục tiêu {targetScore || "---"}+
-              </Text>
-              <Text numberOfLines={1} style={styles.dailyGoalSub}>
-                {hasNoAssignedPath
-                  ? "Chưa chọn lộ trình"
-                  : roadmap?.learningPathTitle ?? "Lộ trình TOEIC"}
-              </Text>
-
-              <View style={styles.goalProgressRow}>
-                <View style={styles.goalTrack}>
-                  <View
-                    style={[
-                      styles.goalFill,
-                      { width: `${Math.max(6, Math.min(100, progressValue))}%` },
-                    ]}
-                  />
+              <View style={styles.welcomeChipsRow}>
+                <View style={styles.welcomeStatChip}>
+                  <Ionicons color={colors.primary} name="flag" size={12} />
+                  <Text style={styles.welcomeStatText}>Mục tiêu {targetScore || "---"}+</Text>
                 </View>
-                <Text style={styles.goalFraction}>
-                  {completedModules}/{roadmapModules.length} bài
-                </Text>
+                <View style={styles.welcomeStatChip}>
+                  <Ionicons color="#F59E0B" name="flame" size={12} />
+                  <Text style={styles.welcomeStatText}>{streakDays} ngày</Text>
+                </View>
               </View>
             </View>
-
-            <View style={styles.starBadgeWrap}>
-              <LinearGradient
-                colors={["#FFD66B", "#FFA82E"]}
-                end={{ x: 1, y: 1 }}
-                start={{ x: 0, y: 0 }}
-                style={styles.starBadge}
-              >
-                <Ionicons color="#FFFFFF" name="star" size={26} />
-              </LinearGradient>
-              <Text style={styles.streakPillText}>{streakDays} ngày</Text>
-            </View>
-          </View>
-        </LiquidCard>
-      </Pressable>
-
-      <SectionTitle
-        actionLabel="Xem tất cả"
-        onActionPress={() => pushRoute(hasNoAssignedPath ? "/user/onboarding" : "/user/practice")}
-        title="Tiếp tục học"
-      />
-      <Pressable
-        onPress={() =>
-          pushRoute(
-            latestModule
-              ? `/user/roadmap?moduleId=${latestModule.moduleId}`
-              : hasNoAssignedPath
-                ? "/user/onboarding"
-                : "/user/practice",
-          )
-        }
-        style={({ pressed }) => [pressed ? { opacity: 0.92 } : null]}
-      >
-        <SurfaceCard padding="sm" style={styles.continueCard}>
-          <View style={styles.continueRow}>
-            <ClayIcon3D
-              colors={[colors.accentGradient[0], colors.accentGradient[1]]}
-              icon="book"
-              size={54}
+            <Image
+              resizeMode="contain"
+              source={require("@/assets/images/mascot-home.png")}
+              style={{ height: mascotSize, marginBottom: -12, width: mascotSize }}
             />
-
-            <View style={styles.continueCopy}>
-              <Text numberOfLines={1} style={[styles.continueTitle, { fontSize: rf(15.5) }]}>
-                {latestModule?.title ?? roadmap?.learningPathTitle ?? "Chọn lộ trình đầu tiên"}
-              </Text>
-              <View style={styles.continueProgressWrap}>
-                <View style={{ flex: 1 }}>
-                  <ProgressBar accentColor={colors.primary} value={progressValue} />
-                </View>
-                <Text style={styles.continuePct}>{progressValue}%</Text>
-              </View>
-            </View>
-
-            <View style={[styles.playCircleBtn, { backgroundColor: colors.primary, shadowColor: colors.primary }]}>
-              <Ionicons color="#FFFFFF" name="play" size={18} style={{ marginLeft: 2 }} />
-            </View>
-          </View>
-        </SurfaceCard>
-      </Pressable>
-
-      {recommendations &&
-      (recommendations.dailyPlan.length > 0 ||
-        recommendations.weakestPartNo !== null ||
-        recommendations.dueVocabCount > 0 ||
-        recommendations.mistakeCount > 0) ? (
-        <SurfaceCard style={styles.adaptiveCard}>
-          <View style={styles.adaptiveHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.adaptiveTitle, { fontSize: rf(15.5) }]}>
-                Kế hoạch học hôm nay
-              </Text>
-            </View>
-            <Pressable hitSlop={8} onPress={() => pushRoute("/user/onboarding")}>
-              <Text style={styles.adaptiveTestLink}>Test trình độ →</Text>
-            </Pressable>
           </View>
 
-          <View style={styles.adaptiveChipsRow}>
-            {recommendations.weakestPartNo ? (
-              <View style={styles.adaptiveChipWarn}>
-                <Text style={styles.adaptiveChipWarnText}>
-                  Cần cải thiện: Part {recommendations.weakestPartNo} (
-                  {Math.round(recommendations.weakestPartAccuracy ?? 0)}%)
-                </Text>
-              </View>
-            ) : null}
-            {recommendations.dueVocabCount > 0 ? (
-              <View style={styles.adaptiveChipInfo}>
-                <Text style={styles.adaptiveChipInfoText}>
-                  {recommendations.dueVocabCount} từ đến hạn ôn
-                </Text>
-              </View>
-            ) : null}
-            {recommendations.mistakeCount > 0 ? (
-              <View style={styles.adaptiveChipInfo}>
-                <Text style={styles.adaptiveChipInfoText}>
-                  {recommendations.mistakeCount} lỗi sai cần sửa
-                </Text>
-              </View>
-            ) : null}
-          </View>
-
-          {recommendations.dailyPlan.length > 0 ? (
-            <View style={styles.adaptivePlanList}>
-              {recommendations.dailyPlan.slice(0, 3).map((task) => (
+          <SurfaceCard padding="sm" style={styles.categoryDock}>
+            <View style={styles.categoryRow}>
+              {quickCategories.map((item) => (
                 <Pressable
-                  key={task.id}
-                  onPress={() => pushRoute(task.route as never)}
-                  style={({ pressed }) => [styles.adaptiveTaskRow, pressed ? { opacity: 0.88 } : null]}
+                  key={item.label}
+                  onPress={() => pushRoute(item.route)}
+                  style={({ pressed }) => [styles.catTile, pressed ? { opacity: 0.85, transform: [{ scale: 0.96 }] } : null]}
                 >
-                  <View style={styles.adaptiveTaskCopy}>
-                    <Text numberOfLines={1} style={styles.adaptiveTaskTitle}>
-                      {task.title}
-                    </Text>
-                    <Text numberOfLines={1} style={styles.adaptiveTaskSub}>
-                      {task.subtitle}
-                    </Text>
-                  </View>
-                  <View style={styles.adaptiveTaskBadge}>
-                    <Text style={styles.adaptiveTaskBadgeText}>{task.badge}</Text>
-                  </View>
+                  <ClayIcon3D colors={item.clayColors} icon={item.icon} size={50} />
+                  <Text numberOfLines={1} style={[styles.catLabel, { fontSize: rf(11.5) }]}>
+                    {item.label}
+                  </Text>
                 </Pressable>
               ))}
             </View>
-          ) : null}
-        </SurfaceCard>
-      ) : null}
+          </SurfaceCard>
 
-      <Pressable
-        onPress={() => pushRoute("/user/subscription")}
-        style={({ pressed }) => [pressed ? { opacity: 0.92 } : null]}
-      >
-        <SurfaceCard style={{ borderColor: "#8B5CF6", borderWidth: 1.5, marginBottom: 4 }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: 12, justifyContent: "space-between" }}>
-            <ClayIcon3D colors={["#A855F7", "#6D28D9"]} icon="sparkles" size={42} />
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text style={{ color: colors.text, fontSize: rf(14), fontWeight: "900" }}>
-                Gói {(auth.user?.planTier ?? (auth.user?.premium ? "PRO" : "FREE")).toUpperCase()} • Nâng cấp PLUS & PRO
-              </Text>
-              <Text style={{ color: colors.textMuted, fontSize: rf(12), fontWeight: "600" }}>
-                PLUS chỉ 10.000đ/30 ngày • PRO 30.000đ/30 ngày (SePay VietQR tự động)
-              </Text>
-            </View>
-            <Ionicons color="#7C3AED" name="chevron-forward" size={18} />
-          </View>
-        </SurfaceCard>
-      </Pressable>
+          <Pressable
+            onPress={() => pushRoute(hasNoAssignedPath ? "/user/onboarding" : "/user/practice")}
+            style={({ pressed }) => [pressed ? { opacity: 0.95 } : null]}
+          >
+            <LiquidCard hero style={styles.dailyGoalCard}>
+              <View style={styles.dailyGoalRow}>
+                <View style={styles.dailyGoalCopy}>
+                  <Text style={[styles.dailyGoalTitle, { fontSize: rf(16) }]}>
+                    Mục tiêu {targetScore || "---"}+
+                  </Text>
+                  <Text numberOfLines={1} style={styles.dailyGoalSub}>
+                    {hasNoAssignedPath
+                      ? "Chưa chọn lộ trình"
+                      : roadmap?.learningPathTitle ?? "Lộ trình TOEIC"}
+                  </Text>
+
+                  <View style={styles.goalProgressRow}>
+                    <View style={styles.goalTrack}>
+                      <View
+                        style={[
+                          styles.goalFill,
+                          { width: `${Math.max(6, Math.min(100, progressValue))}%` },
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.goalFraction}>
+                      {completedModules}/{roadmapModules.length} bài
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.starBadgeWrap}>
+                  <LinearGradient
+                    colors={["#FFD66B", "#FFA82E"]}
+                    end={{ x: 1, y: 1 }}
+                    start={{ x: 0, y: 0 }}
+                    style={styles.starBadge}
+                  >
+                    <Ionicons color="#FFFFFF" name="star" size={26} />
+                  </LinearGradient>
+                  <Text style={styles.streakPillText}>{streakDays} ngày</Text>
+                </View>
+              </View>
+            </LiquidCard>
+          </Pressable>
+
+          <SectionTitle
+            actionLabel="Xem tất cả"
+            onActionPress={() => pushRoute(hasNoAssignedPath ? "/user/onboarding" : "/user/practice")}
+            title="Tiếp tục học"
+          />
+          <Pressable
+            onPress={() =>
+              pushRoute(
+                latestModule
+                  ? `/user/roadmap?moduleId=${latestModule.moduleId}`
+                  : hasNoAssignedPath
+                    ? "/user/onboarding"
+                    : "/user/practice",
+              )
+            }
+            style={({ pressed }) => [pressed ? { opacity: 0.92 } : null]}
+          >
+            <SurfaceCard padding="sm" style={styles.continueCard}>
+              <View style={styles.continueRow}>
+                <ClayIcon3D
+                  colors={[colors.accentGradient[0], colors.accentGradient[1]]}
+                  icon="book"
+                  size={54}
+                />
+
+                <View style={styles.continueCopy}>
+                  <Text numberOfLines={1} style={[styles.continueTitle, { fontSize: rf(15.5) }]}>
+                    {latestModule?.title ?? roadmap?.learningPathTitle ?? "Chọn lộ trình đầu tiên"}
+                  </Text>
+                  <View style={styles.continueProgressWrap}>
+                    <View style={{ flex: 1 }}>
+                      <ProgressBar accentColor={colors.primary} value={progressValue} />
+                    </View>
+                    <Text style={styles.continuePct}>{progressValue}%</Text>
+                  </View>
+                </View>
+
+                <View style={[styles.playCircleBtn, { backgroundColor: colors.primary, shadowColor: colors.primary }]}>
+                  <Ionicons color="#FFFFFF" name="play" size={18} style={{ marginLeft: 2 }} />
+                </View>
+              </View>
+            </SurfaceCard>
+          </Pressable>
+        </View>
+
+        <View style={isDesktopWeb ? { flex: 0.96, gap: 14, minWidth: 0 } : undefined}>
+          {recommendations &&
+          (recommendations.dailyPlan.length > 0 ||
+            recommendations.weakestPartNo !== null ||
+            recommendations.dueVocabCount > 0 ||
+            recommendations.mistakeCount > 0) ? (
+            <SurfaceCard style={styles.adaptiveCard}>
+              <View style={styles.adaptiveHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.adaptiveTitle, { fontSize: rf(15.5) }]}>
+                    Kế hoạch học hôm nay
+                  </Text>
+                </View>
+                <Pressable hitSlop={8} onPress={() => pushRoute("/user/onboarding")}>
+                  <Text style={styles.adaptiveTestLink}>Test trình độ →</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.adaptiveChipsRow}>
+                {recommendations.weakestPartNo ? (
+                  <View style={styles.adaptiveChipWarn}>
+                    <Text style={styles.adaptiveChipWarnText}>
+                      Cần cải thiện: Part {recommendations.weakestPartNo} (
+                      {Math.round(recommendations.weakestPartAccuracy ?? 0)}%)
+                    </Text>
+                  </View>
+                ) : null}
+                {recommendations.dueVocabCount > 0 ? (
+                  <View style={styles.adaptiveChipInfo}>
+                    <Text style={styles.adaptiveChipInfoText}>
+                      {recommendations.dueVocabCount} từ đến hạn ôn
+                    </Text>
+                  </View>
+                ) : null}
+                {recommendations.mistakeCount > 0 ? (
+                  <View style={styles.adaptiveChipInfo}>
+                    <Text style={styles.adaptiveChipInfoText}>
+                      {recommendations.mistakeCount} lỗi sai cần sửa
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+
+              {recommendations.dailyPlan.length > 0 ? (
+                <View style={styles.adaptivePlanList}>
+                  {recommendations.dailyPlan.slice(0, 3).map((task) => (
+                    <Pressable
+                      key={task.id}
+                      onPress={() => pushRoute(task.route as never)}
+                      style={({ pressed }) => [styles.adaptiveTaskRow, pressed ? { opacity: 0.88 } : null]}
+                    >
+                      <View style={styles.adaptiveTaskCopy}>
+                        <Text numberOfLines={1} style={styles.adaptiveTaskTitle}>
+                          {task.title}
+                        </Text>
+                        <Text numberOfLines={1} style={styles.adaptiveTaskSub}>
+                          {task.subtitle}
+                        </Text>
+                      </View>
+                      <View style={styles.adaptiveTaskBadge}>
+                        <Text style={styles.adaptiveTaskBadgeText}>{task.badge}</Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+            </SurfaceCard>
+          ) : null}
+
+          <Pressable
+            onPress={() => pushRoute("/user/subscription")}
+            style={({ pressed }) => [pressed ? { opacity: 0.92 } : null]}
+          >
+            <SurfaceCard style={{ borderColor: "#8B5CF6", borderWidth: 1.5, marginBottom: 4 }}>
+              <View style={{ alignItems: "center", flexDirection: "row", gap: 12, justifyContent: "space-between" }}>
+                <ClayIcon3D colors={["#A855F7", "#6D28D9"]} icon="sparkles" size={42} />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ color: colors.text, fontSize: rf(14), fontWeight: "900" }}>
+                    Gói {(auth.user?.planTier ?? (auth.user?.premium ? "PRO" : "FREE")).toUpperCase()} • Nâng cấp PLUS & PRO
+                  </Text>
+                  <Text style={{ color: colors.textMuted, fontSize: rf(12), fontWeight: "600" }}>
+                    PLUS chỉ 10.000đ/30 ngày • PRO 30.000đ/30 ngày (MBBank VietQR tự động)
+                  </Text>
+                </View>
+                <Ionicons color="#7C3AED" name="chevron-forward" size={18} />
+              </View>
+            </SurfaceCard>
+          </Pressable>
+
+          {isDesktopWeb ? (
+            <>
+              <SectionTitle
+                actionLabel="Xem tất cả"
+                onActionPress={() => pushRoute("/user/leaderboard")}
+                title="Bảng xếp hạng tuần"
+              />
+              <SurfaceCard>
+                {weeklyLeaders.length > 0 ? (
+                  weeklyLeaders.slice(0, 3).map((entry, idx) => (
+                    <Pressable
+                      key={entry.userId}
+                      onPress={() => setInspectUserId(entry.userId)}
+                      style={[styles.rankRow, idx === 0 ? styles.rankRowFirst : null]}
+                    >
+                      <Text style={styles.rankIndex}>#{entry.rank}</Text>
+                      <UserAvatarWithFrame
+                        avatarUrl={entry.avatarUrl}
+                        frameId={entry.equippedFrameId}
+                        fullName={entry.fullName}
+                        level={entry.level}
+                        showCornerBadge={false}
+                        size={36}
+                      />
+                      <View style={styles.rankInfo}>
+                        <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                          <Text numberOfLines={1} style={[styles.rankName, { flexShrink: 1, fontSize: rf(13.5) }]}>
+                            {entry.fullName} <Text style={styles.rankHandle}>@{entry.username}</Text>
+                          </Text>
+                          <VerifiedBadge size={14} verified={entry.verified} />
+                        </View>
+                        <Text numberOfLines={1} style={styles.rankMeta}>
+                          {entry.activitiesCount} bài học • 🔥 {entry.currentStreak} ngày
+                        </Text>
+                      </View>
+                      <View style={styles.rankScoreChip}>
+                        <Text style={styles.rankScoreText}>+{entry.weeklyStudyDiamonds} 💎</Text>
+                      </View>
+                    </Pressable>
+                  ))
+                ) : (
+                  <View style={styles.emptyRankWrap}>
+                    <Text style={styles.feedbackText}>Hoàn thành bài học đầu tiên để lên bảng xếp hạng tuần!</Text>
+                  </View>
+                )}
+              </SurfaceCard>
+            </>
+          ) : null}
+        </View>
+      </View>
 
       <SectionTitle
         actionLabel="Xem tất cả"
@@ -670,53 +725,57 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      <SectionTitle
-        actionLabel="Xem tất cả"
-        onActionPress={() => pushRoute("/user/leaderboard")}
-        title="Bảng xếp hạng tuần"
-      />
-      <SurfaceCard>
-        {weeklyLeaders.length > 0 ? (
-          weeklyLeaders.map((entry, idx) => (
-            <Pressable
-              key={entry.userId}
-              onPress={() => setInspectUserId(entry.userId)}
-              style={[styles.rankRow, idx === 0 ? styles.rankRowFirst : null]}
-            >
-              <Text style={styles.rankIndex}>#{entry.rank}</Text>
-              <UserAvatarWithFrame
-                avatarUrl={entry.avatarUrl}
-                frameId={entry.equippedFrameId}
-                fullName={entry.fullName}
-                level={entry.level}
-                showCornerBadge={false}
-                size={36}
-              />
-              <View style={styles.rankInfo}>
-                <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
-                  <Text numberOfLines={1} style={[styles.rankName, { flexShrink: 1, fontSize: rf(13.5) }]}>
-                    {entry.fullName} <Text style={styles.rankHandle}>@{entry.username}</Text>
-                  </Text>
-                  <VerifiedBadge size={14} verified={entry.verified} />
-                </View>
-                <Text numberOfLines={1} style={styles.rankMeta}>
-                  {entry.activitiesCount} bài học • 🔥 {entry.currentStreak} ngày
-                </Text>
+      {!isDesktopWeb ? (
+        <>
+          <SectionTitle
+            actionLabel="Xem tất cả"
+            onActionPress={() => pushRoute("/user/leaderboard")}
+            title="Bảng xếp hạng tuần"
+          />
+          <SurfaceCard>
+            {weeklyLeaders.length > 0 ? (
+              weeklyLeaders.map((entry, idx) => (
+                <Pressable
+                  key={entry.userId}
+                  onPress={() => setInspectUserId(entry.userId)}
+                  style={[styles.rankRow, idx === 0 ? styles.rankRowFirst : null]}
+                >
+                  <Text style={styles.rankIndex}>#{entry.rank}</Text>
+                  <UserAvatarWithFrame
+                    avatarUrl={entry.avatarUrl}
+                    frameId={entry.equippedFrameId}
+                    fullName={entry.fullName}
+                    level={entry.level}
+                    showCornerBadge={false}
+                    size={36}
+                  />
+                  <View style={styles.rankInfo}>
+                    <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                      <Text numberOfLines={1} style={[styles.rankName, { flexShrink: 1, fontSize: rf(13.5) }]}>
+                        {entry.fullName} <Text style={styles.rankHandle}>@{entry.username}</Text>
+                      </Text>
+                      <VerifiedBadge size={14} verified={entry.verified} />
+                    </View>
+                    <Text numberOfLines={1} style={styles.rankMeta}>
+                      {entry.activitiesCount} bài học • 🔥 {entry.currentStreak} ngày
+                    </Text>
+                  </View>
+                  <View style={styles.rankScoreChip}>
+                    <Text style={styles.rankScoreText}>+{entry.weeklyStudyDiamonds} 💎</Text>
+                  </View>
+                </Pressable>
+              ))
+            ) : (
+              <View style={styles.emptyRankWrap}>
+                <Text style={styles.feedbackText}>Hoàn thành bài học đầu tiên để lên bảng xếp hạng tuần!</Text>
+                <Pressable onPress={() => pushRoute("/user/leaderboard")} style={styles.emptyRankBtn}>
+                  <Text style={styles.emptyRankBtnText}>Mở Bảng Xếp Hạng ›</Text>
+                </Pressable>
               </View>
-              <View style={styles.rankScoreChip}>
-                <Text style={styles.rankScoreText}>+{entry.weeklyStudyDiamonds} 💎</Text>
-              </View>
-            </Pressable>
-          ))
-        ) : (
-          <View style={styles.emptyRankWrap}>
-            <Text style={styles.feedbackText}>Hoàn thành bài học đầu tiên để lên bảng xếp hạng tuần!</Text>
-            <Pressable onPress={() => pushRoute("/user/leaderboard")} style={styles.emptyRankBtn}>
-              <Text style={styles.emptyRankBtnText}>Mở Bảng Xếp Hạng ›</Text>
-            </Pressable>
-          </View>
-        )}
-      </SurfaceCard>
+            )}
+          </SurfaceCard>
+        </>
+      ) : null}
 
       <PublicProfileModal
         onClose={() => setInspectUserId(null)}

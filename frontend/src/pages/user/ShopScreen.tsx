@@ -31,7 +31,7 @@ const RARITY_STYLES: Record<string, { bg: string; text: string }> = {
 export default function ShopScreen() {
   const { auth, updateUserProfile } = useAuth();
   const { theme } = useAppTheme();
-  const { gridItemWidth } = useResponsiveLayout();
+  const { gridItemWidth, isDesktopWeb } = useResponsiveLayout();
   const colors = theme.colors;
   const styles = useThemedStyles(createStyles);
 
@@ -40,7 +40,7 @@ export default function ShopScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [shop, setShop] = useState<CosmeticShopData | null>(null);
 
-  const cardWidth = gridItemWidth(2, 10);
+  const cardWidth = gridItemWidth(isDesktopWeb ? 4 : 2, 10);
 
   const loadShop = useCallback(async () => {
     if (!auth.accessToken) return;

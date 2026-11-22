@@ -30,6 +30,7 @@ import {
 } from "@/src/services/subscription.service";
 import { getMyProfile } from "@/src/services/user.service";
 import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
+import { useResponsiveLayout } from "@/src/utils/responsive";
 import { alertCrossPlatform, confirmCrossPlatform } from "@/src/utils/web-dialog";
 
 function formatVnd(amount: number): string {
@@ -74,6 +75,7 @@ function extractErrorText(error: unknown, fallback: string): string {
 export default function SubscriptionScreen() {
   const { auth, updateUserProfile } = useAuth();
   const { theme } = useAppTheme();
+  const { isDesktopWeb } = useResponsiveLayout();
   const colors = theme.colors;
   const styles = useThemedStyles(createStyles);
 
@@ -298,7 +300,13 @@ export default function SubscriptionScreen() {
 
             <View style={styles.compactQuotaGrid}>
               {overview.quotas.map((q) => (
-                <View key={q.featureKey} style={styles.compactQuotaChip}>
+                <View
+                  key={q.featureKey}
+                  style={[
+                    styles.compactQuotaChip,
+                    isDesktopWeb ? { flexBasis: "23%" } : null,
+                  ]}
+                >
                   <Text numberOfLines={1} style={styles.compactQuotaName}>
                     {q.featureTitle.replace(" nhận diện đồ vật", "").replace(" phụ đề song ngữ", "")}
                   </Text>
@@ -349,7 +357,12 @@ export default function SubscriptionScreen() {
             </Pressable>
           </View>
 
-          <View style={styles.planCardsWrap}>
+          <View
+            style={[
+              styles.planCardsWrap,
+              isDesktopWeb ? { alignItems: "stretch", flexDirection: "row", gap: 18 } : null,
+            ]}
+          >
             {filteredPlans.map((plan) => {
               const isPro = plan.tier === "PRO";
               const isBusy = creatingPlanCode === plan.planCode;
@@ -360,6 +373,7 @@ export default function SubscriptionScreen() {
                   key={plan.planCode}
                   style={[
                     styles.planCard,
+                    isDesktopWeb ? { flex: 1, justifyContent: "space-between" } : null,
                     isPro ? styles.planCardPro : styles.planCardPlus,
                   ]}
                 >

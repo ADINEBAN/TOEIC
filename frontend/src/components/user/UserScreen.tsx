@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import AppErrorBoundary from "@/src/components/common/AppErrorBoundary";
 import DiamondRewardToastHost from "@/src/components/common/DiamondRewardToast";
+import WebDesktopSidebar from "@/src/components/user/WebDesktopSidebar";
 import { useAppTheme } from "@/src/store/theme-store";
 import { useResponsiveLayout } from "@/src/utils/responsive";
 
@@ -16,6 +17,7 @@ type UserScreenProps = {
   scrollable?: boolean;
   contentStyle?: ViewStyle;
   hasTabDock?: boolean;
+  hideDesktopSidebar?: boolean;
 };
 
 export default function UserScreen({
@@ -23,17 +25,19 @@ export default function UserScreen({
   scrollable = true,
   contentStyle,
   hasTabDock,
+  hideDesktopSidebar = false,
 }: UserScreenProps) {
   const { theme, prismaticGlow } = useAppTheme();
   const pathname = usePathname();
   const {
     width,
     isShort,
+    isDesktopWeb,
     screenPadding,
     maxContentWidth,
     dockClearance,
     pageBottomClearance,
-  } = useResponsiveLayout();
+  } = useResponsiveLayout({ hideDesktopSidebar });
   const c = theme.colors;
 
   const showDockPadding = hasTabDock ?? TAB_ROUTES.has(pathname);
@@ -69,7 +73,7 @@ export default function UserScreen({
           maxWidth: maxContentWidth,
           paddingBottom: bottomPad,
           paddingHorizontal: screenPadding,
-          paddingTop: isShort ? 8 : 12,
+          paddingTop: isDesktopWeb ? 22 : isShort ? 8 : 12,
           width: "100%",
         },
         contentStyle,
@@ -78,6 +82,28 @@ export default function UserScreen({
       <AppErrorBoundary>{children}</AppErrorBoundary>
     </View>
   );
+
+  const mainViewport = (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      style={styles.flex}
+    >
+      {scrollable ? (
+        <ScrollView
+          bounces={false}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {body}
+        </ScrollView>
+      ) : (
+        body
+      )}
+    </KeyboardAvoidingView>
+  );
+
+  const showDesktopSidebar = isDesktopWeb && !hideDesktopSidebar;
 
   return (
     <SafeAreaView edges={["top"]} style={[styles.safeArea, { backgroundColor: c.background }]}>
@@ -136,23 +162,15 @@ export default function UserScreen({
         </>
       ) : null}
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.flex}
-      >
-        {scrollable ? (
-          <ScrollView
-            bounces={false}
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            {body}
-          </ScrollView>
-        ) : (
-          body
-        )}
-      </KeyboardAvoidingView>
+      {showDesktopSidebar ? (
+        <View style={styles.desktopShellRow}>
+          <WebDesktopSidebar />
+          {mainViewport}
+        </View>
+      ) : (
+        mainViewport
+      )}
+
       <DiamondRewardToastHost />
     </SafeAreaView>
   );
@@ -164,6 +182,10 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
+  },
+  desktopShellRow: {
+    flex: 1,
+    flexDirection: "row",
   },
   scrollContent: {
     flexGrow: 1,
