@@ -97,9 +97,10 @@ if (!fs.existsSync(metadataPath)) {
 }
 
 const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
-const androidMeta = metadata?.fileMetadata?.android;
+const platform = args.platform || (metadata?.fileMetadata?.android ? "android" : "ios");
+const androidMeta = metadata?.fileMetadata?.[platform];
 if (!androidMeta?.bundle) {
-  throw new Error("metadata.json missing fileMetadata.android.bundle");
+  throw new Error(`metadata.json missing fileMetadata.${platform}.bundle`);
 }
 
 const appConfigPath = path.resolve("app.json");
