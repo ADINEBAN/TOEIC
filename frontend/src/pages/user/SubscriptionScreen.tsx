@@ -27,7 +27,6 @@ import {
   PaymentOrderData,
   PlanOptionDto,
   SubscriptionPlansOverviewData,
-  simulateSepayOrderWebhook,
 } from "@/src/services/subscription.service";
 import { getMyProfile } from "@/src/services/user.service";
 import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
@@ -145,28 +144,35 @@ export default function SubscriptionScreen() {
     }
   };
 
-  const handleSimulateWebhook = async () => {
+  const handleCheckPaymentStatusNow = async () => {
     if (!auth.accessToken || !activeOrder) return;
     try {
       setSimulatingWebhook(true);
-      const updated = await simulateSepayOrderWebhook(auth.accessToken, activeOrder.orderCode);
-      setActiveOrder(updated);
-      await loadSubscriptionData();
-      try {
-        const profileRes = await getMyProfile(auth.accessToken);
-        if (profileRes.data) {
-          updateUserProfile(profileRes.data);
+      const refreshed = await getPaymentOrderStatus(auth.accessToken, activeOrder.orderCode);
+      setActiveOrder(refreshed);
+      if (refreshed.status === "PAID") {
+        await loadSubscriptionData();
+        try {
+          const profileRes = await getMyProfile(auth.accessToken);
+          if (profileRes.data) {
+            updateUserProfile(profileRes.data);
+          }
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
+        alertCrossPlatform(
+          "Thanh toán thành công 🎉",
+          `Hệ thống đã nhận được giao dịch chuyển khoản cho đơn ${refreshed.orderCode}. Gói ${refreshed.planTier} và +${refreshed.bonusDiamonds} 💎 đã được kích hoạt!`
+        );
+      } else {
+        alertCrossPlatform(
+          "Đang chờ ngân hàng xác nhận",
+          `Hệ thống đang chờ SePay gửi Webhook xác nhận giao dịch với nội dung ${refreshed.transferContent}. Ngay khi chuyển khoản thành công, gói sẽ tự động mở khóa sau vài giây.`
+        );
       }
-      alertCrossPlatform(
-        "Đã kích hoạt gói thành công 🎉",
-        `Đơn ${updated.orderCode} đã thanh toán thành công. Gói ${updated.planTier} và +${updated.bonusDiamonds} 💎 đã được cộng vào tài khoản!`
-      );
     } catch (error) {
       alertCrossPlatform(
-        "Không thể giả lập Webhook",
+        "Không thể kiểm tra trạng thái",
         extractErrorText(error, "Vui lòng thử lại.")
       );
     } finally {
@@ -547,15 +553,15 @@ export default function SubscriptionScreen() {
                   <Pressable
                     style={[styles.simulateButton, simulatingWebhook && styles.buttonDisabled]}
                     disabled={simulatingWebhook}
-                    onPress={handleSimulateWebhook}
+                    onPress={handleCheckPaymentStatusNow}
                   >
                     {simulatingWebhook ? (
                       <ActivityIndicator color="#FFFFFF" size="small" />
                     ) : (
                       <>
-                        <Ionicons name="flash" size={16} color="#FFFFFF" />
+                        <Ionicons name="refresh" size={16} color="#FFFFFF" />
                         <Text style={styles.simulateButtonText}>
-                          Giả lập SePay Webhook đã nhận tiền (Test Local 1-Click)
+                          Tôi đã chuyển khoản • Kiểm tra trạng thái ngay
                         </Text>
                       </>
                     )}

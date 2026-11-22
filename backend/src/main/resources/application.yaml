@@ -83,7 +83,7 @@ google:
 
 sepay:
   api-key: ${SEPAY_API_KEY:}
-  bank-code: ${SEPAY_BANK_CODE:Vietcombank}
+  bank-code: ${SEPAY_BANK_CODE:MBBank}
   account-number: ${SEPAY_ACCOUNT_NUMBER:0782733887}
   account-name: ${SEPAY_ACCOUNT_NAME:Y A DIN BYA}
   order-prefix: ${SEPAY_ORDER_PREFIX:TOEIC}
