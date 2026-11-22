@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, radius, spacing } from '@/src/assets/styles/theme';
+import AppLogoBadge from '@/src/components/common/AppLogoBadge';
 
 type AdminTopBarProps = {
   adminName: string;
@@ -19,9 +20,7 @@ export default function AdminTopBar({
   return (
     <View style={styles.bar}>
       <View style={styles.brandRow}>
-        <View style={styles.logoBadge}>
-          <Ionicons color={colors.onPrimary} name="school" size={20} />
-        </View>
+        <AppLogoBadge animated glowColor="rgba(37, 99, 235, 0.28)" size={42} />
         <View>
           <Text style={styles.eyebrow}>TOEIC Trainer</Text>
           <Text style={styles.title}>Cổng Quản Trị (Admin Console)</Text>
