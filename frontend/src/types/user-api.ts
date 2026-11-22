@@ -307,6 +307,8 @@ export type PlacementQuickQuestion = {
   skillArea: string;
   questionText: string;
   passageText: string | null;
+  audioUrl?: string | null;
+  imageUrl?: string | null;
   options: PlacementQuickOption[];
 };
 
@@ -320,6 +322,8 @@ export type PlacementEvaluationData = {
   accuracyPercent: number;
   estimatedScore: number;
   recommendedTargetScore: number;
+  maxUnlockedTargetScore?: number;
+  unlockSummary?: string | null;
   levelLabel: string;
   recommendedPathId: number | null;
   recommendedPathTitle: string | null;

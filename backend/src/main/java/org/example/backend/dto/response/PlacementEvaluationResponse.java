@@ -17,6 +17,8 @@ public class PlacementEvaluationResponse {
     private double accuracyPercent;
     private int estimatedScore;
     private int recommendedTargetScore;
+    private int maxUnlockedTargetScore;
+    private String unlockSummary;
     private String levelLabel;
     private Long recommendedPathId;
     private String recommendedPathTitle;

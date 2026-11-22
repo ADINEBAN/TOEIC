@@ -105,6 +105,8 @@ function NativeLessonVideoPlayer({
   const styles = useThemedStyles(createStyles);
   const onProgressRef = useRef(onProgress);
   const onPauseOrEndRef = useRef(onPauseOrEnd);
+  const initialPositionRef = useRef(initialPositionSeconds);
+  const durationFallbackRef = useRef(durationFallback);
   const videoViewRef = useRef<VideoView | null>(null);
   const trackWidthRef = useRef(1);
   const didAutoResumeRef = useRef(false);
@@ -140,6 +142,11 @@ function NativeLessonVideoPlayer({
   }, [onPauseOrEnd]);
 
   useEffect(() => {
+    initialPositionRef.current = initialPositionSeconds;
+    durationFallbackRef.current = durationFallback;
+  }, [durationFallback, initialPositionSeconds]);
+
+  useEffect(() => {
     playerHandleRef.current = {
       seekToSeconds: (seconds: number) => {
         try {
@@ -153,7 +160,7 @@ function NativeLessonVideoPlayer({
     const subTime = player.addListener("timeUpdate", ({ currentTime }) => {
       try {
         const nativeDuration = Number.isFinite(player.duration) && player.duration > 0 ? player.duration : 0;
-        const total = nativeDuration || durationFallback;
+        const total = nativeDuration || durationFallbackRef.current;
         setPosSec(currentTime);
         setDurSec(total);
         if (currentTime > 0) {
@@ -172,7 +179,7 @@ function NativeLessonVideoPlayer({
       } else {
         try {
           const cur = Number.isFinite(player.currentTime) ? player.currentTime : 0;
-          const dur = (Number.isFinite(player.duration) && player.duration > 0 ? player.duration : 0) || durationFallback;
+          const dur = (Number.isFinite(player.duration) && player.duration > 0 ? player.duration : 0) || durationFallbackRef.current;
           onPauseOrEndRef.current?.(cur, dur);
         } catch {
           // Ignore sync read on pause
@@ -189,10 +196,11 @@ function NativeLessonVideoPlayer({
           setPlayerError(null);
           player.muted = false;
           player.volume = 1.0;
-          if (!didAutoResumeRef.current && initialPositionSeconds > 5) {
+          const initPos = initialPositionRef.current;
+          if (!didAutoResumeRef.current && initPos > 5) {
             didAutoResumeRef.current = true;
-            const total = (Number.isFinite(player.duration) && player.duration > 0 ? player.duration : 0) || durationFallback;
-            const resumeAt = Math.min(Math.max(0, total - 3), initialPositionSeconds);
+            const total = (Number.isFinite(player.duration) && player.duration > 0 ? player.duration : 0) || durationFallbackRef.current;
+            const resumeAt = Math.min(Math.max(0, total - 3), initPos);
             player.currentTime = resumeAt;
             setPosSec(resumeAt);
           }
@@ -230,7 +238,7 @@ function NativeLessonVideoPlayer({
       }
       playerHandleRef.current = null;
     };
-  }, [durationFallback, initialPositionSeconds, player, playerHandleRef]);
+  }, [player, playerHandleRef]);
 
   const togglePlay = () => {
     try {
@@ -666,7 +674,7 @@ export default function LessonScreen() {
                 ? {
                     ...item,
                     completionPercent: updated.lessonCompletionPercent,
-                    lastPositionSeconds: updated.lastPositionSeconds,
+                    lastPositionSeconds: force ? updated.lastPositionSeconds : item.lastPositionSeconds,
                     watchedSeconds: updated.watchedSeconds,
                     progressStatus: updated.lessonStatus,
                   }

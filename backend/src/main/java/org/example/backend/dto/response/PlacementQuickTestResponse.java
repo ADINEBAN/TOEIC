@@ -24,6 +24,8 @@ public class PlacementQuickTestResponse {
         private String skillArea;
         private String questionText;
         private String passageText;
+        private String audioUrl;
+        private String imageUrl;
         private List<QuickOption> options;
     }
 
