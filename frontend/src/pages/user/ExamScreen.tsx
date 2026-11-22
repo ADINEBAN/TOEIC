@@ -62,6 +62,21 @@ function clearExamDraft(key: string) {
   }
 }
 
+const STANDARD_TOEIC_PART_LIMITS: Record<number, number> = {
+  1: 6,
+  2: 25,
+  3: 39,
+  4: 30,
+  5: 30,
+  6: 16,
+  7: 54,
+};
+
+function cleanToeicPromptText(text?: string | null): string {
+  if (!text) return "";
+  return text.replace(/^\s*\[(?:Test|Đề)\s*\d+\s*-\s*Q\d+\]\s*/i, "").trim();
+}
+
 export default function ExamScreen() {
   const { testId, partFilter, retryIds } = useLocalSearchParams<{
     testId: string;
@@ -103,12 +118,27 @@ export default function ExamScreen() {
         )
       : null;
 
-    const flattened = test.parts.flatMap((part) =>
-      (part.questions || []).map((question) => ({
+    const isFullTest = !test.testType || test.testType.toUpperCase() === "FULL_TEST";
+    const flattened = test.parts.flatMap((part) => {
+      let partQuestions = part.questions || [];
+      const partNo = part.partNumber ?? partQuestions[0]?.partNo ?? 0;
+      const stdLimit = STANDARD_TOEIC_PART_LIMITS[partNo];
+      if (isFullTest && stdLimit && partQuestions.length > stdLimit) {
+        const grouped = partQuestions.filter(
+          (q) => q.questionGroupCode && q.questionGroupCode.trim().length > 0,
+        );
+        if (grouped.length >= stdLimit) {
+          partQuestions = grouped.slice(0, stdLimit);
+        } else {
+          partQuestions = partQuestions.slice(partQuestions.length - stdLimit);
+        }
+      }
+      return partQuestions.map((question) => ({
         ...question,
+        partNo: question.partNo ?? part.partNumber,
         partName: part.partName,
-      })),
-    );
+      }));
+    });
     const filtered = flattened.filter((q) => {
       if (Number.isFinite(targetPart) && q.partNo !== targetPart) {
         return false;
@@ -372,34 +402,48 @@ export default function ExamScreen() {
       <QuestionMediaBlock
         audioUrl={currentQuestion.audioUrl}
         imageUrl={currentQuestion.imageUrl}
-        passageText={currentQuestion.passageText}
-        questionGroupCode={currentQuestion.questionGroupCode}
+        passageText={
+          (currentQuestion.partNo ?? 0) >= 6 ? currentQuestion.passageText : null
+        }
+        questionGroupCode={null}
       />
 
-      <SurfaceCard style={styles.promptCard}>
-        <Text style={[styles.prompt, { fontSize: rf(17), lineHeight: rf(25) }]}>
-          {currentQuestion.questionText}
-        </Text>
-      </SurfaceCard>
+      {(currentQuestion.partNo ?? 0) !== 1 && (currentQuestion.partNo ?? 0) !== 2 ? (
+        <SurfaceCard style={styles.promptCard}>
+          <Text style={[styles.prompt, { fontSize: rf(17), lineHeight: rf(25) }]}>
+            {cleanToeicPromptText(currentQuestion.questionText)}
+          </Text>
+        </SurfaceCard>
+      ) : null}
 
       <View style={styles.optionsList}>
-        {(currentQuestion.options ?? []).map((option) => {
-          const selected = selectedOptionLabel === option.optionLabel;
-          return (
-            <Pressable
-              key={option.id}
-              onPress={() => handleSelectOption(option.optionLabel)}
-              style={[styles.optionCard, selected ? styles.optionSelected : null]}
-            >
-              <View style={[styles.optionBadge, selected ? styles.optionBadgeSelected : null]}>
-                <Text style={[styles.optionBadgeText, selected ? styles.optionBadgeTextSelected : null]}>
-                  {option.optionLabel}
+        {(currentQuestion.options ?? [])
+          .filter((option) =>
+            (currentQuestion.partNo ?? 0) === 2
+              ? option.optionLabel.toUpperCase() !== "D"
+              : true,
+          )
+          .map((option) => {
+            const selected = selectedOptionLabel === option.optionLabel;
+            const hideOptionDetail =
+              (currentQuestion.partNo ?? 0) === 1 || (currentQuestion.partNo ?? 0) === 2;
+            return (
+              <Pressable
+                key={option.id}
+                onPress={() => handleSelectOption(option.optionLabel)}
+                style={[styles.optionCard, selected ? styles.optionSelected : null]}
+              >
+                <View style={[styles.optionBadge, selected ? styles.optionBadgeSelected : null]}>
+                  <Text style={[styles.optionBadgeText, selected ? styles.optionBadgeTextSelected : null]}>
+                    {option.optionLabel}
+                  </Text>
+                </View>
+                <Text style={[styles.optionText, { fontSize: rf(15) }]}>
+                  {hideOptionDetail ? `Đáp án (${option.optionLabel})` : option.optionText}
                 </Text>
-              </View>
-              <Text style={[styles.optionText, { fontSize: rf(15) }]}>{option.optionText}</Text>
-            </Pressable>
-          );
-        })}
+              </Pressable>
+            );
+          })}
       </View>
 
       <View style={styles.bottomActions}>

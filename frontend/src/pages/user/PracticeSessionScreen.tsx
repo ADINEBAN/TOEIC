@@ -205,34 +205,53 @@ export default function PracticeSessionScreen() {
       <QuestionMediaBlock
         audioUrl={currentQuestion.audioUrl}
         imageUrl={currentQuestion.imageUrl}
-        passageText={currentQuestion.passageText}
-        questionGroupCode={currentQuestion.questionGroupCode}
+        passageText={
+          (currentQuestion.partNo ?? practiceSet.partNo ?? 0) >= 6
+            ? currentQuestion.passageText
+            : null
+        }
+        questionGroupCode={null}
       />
 
-      <SurfaceCard style={styles.promptCard}>
-        <Text style={[styles.prompt, { fontSize: rf(17), lineHeight: rf(25) }]}>
-          {currentQuestion.questionText}
-        </Text>
-      </SurfaceCard>
+      {(currentQuestion.partNo ?? practiceSet.partNo ?? 0) !== 1 &&
+      (currentQuestion.partNo ?? practiceSet.partNo ?? 0) !== 2 ? (
+        <SurfaceCard style={styles.promptCard}>
+          <Text style={[styles.prompt, { fontSize: rf(17), lineHeight: rf(25) }]}>
+            {(currentQuestion.questionText ?? "")
+              .replace(/^\s*\[(?:Test|Đề)\s*\d+\s*-\s*Q\d+\]\s*/i, "")
+              .trim()}
+          </Text>
+        </SurfaceCard>
+      ) : null}
 
       <View style={styles.optionsList}>
-        {(currentQuestion.options ?? []).map((option) => {
-          const selected = selectedOption === option.optionLabel;
-          return (
-            <Pressable
-              key={option.id}
-              onPress={() => handleSelectOption(currentQuestion, option.optionLabel)}
-              style={[styles.optionCard, selected ? styles.optionSelected : null]}
-            >
-              <View style={[styles.optionBadge, selected ? styles.optionBadgeSelected : null]}>
-                <Text style={[styles.optionBadgeText, selected ? styles.optionBadgeTextSelected : null]}>
-                  {option.optionLabel}
+        {(currentQuestion.options ?? [])
+          .filter((option) =>
+            (currentQuestion.partNo ?? practiceSet.partNo ?? 0) === 2
+              ? option.optionLabel.toUpperCase() !== "D"
+              : true,
+          )
+          .map((option) => {
+            const selected = selectedOption === option.optionLabel;
+            const partNo = currentQuestion.partNo ?? practiceSet.partNo ?? 0;
+            const hideOptionDetail = partNo === 1 || partNo === 2;
+            return (
+              <Pressable
+                key={option.id}
+                onPress={() => handleSelectOption(currentQuestion, option.optionLabel)}
+                style={[styles.optionCard, selected ? styles.optionSelected : null]}
+              >
+                <View style={[styles.optionBadge, selected ? styles.optionBadgeSelected : null]}>
+                  <Text style={[styles.optionBadgeText, selected ? styles.optionBadgeTextSelected : null]}>
+                    {option.optionLabel}
+                  </Text>
+                </View>
+                <Text style={[styles.optionText, { fontSize: rf(15) }]}>
+                  {hideOptionDetail ? `Đáp án (${option.optionLabel})` : option.optionText}
                 </Text>
-              </View>
-              <Text style={[styles.optionText, { fontSize: rf(15) }]}>{option.optionText}</Text>
-            </Pressable>
-          );
-        })}
+              </Pressable>
+            );
+          })}
       </View>
 
       <View style={styles.bottomActions}>

@@ -85,14 +85,11 @@ public class SubscriptionService {
                 .durationDays(30)
                 .priceVnd(10_000L)
                 .bonusDiamonds(100)
-                .badgeText("Phổ biến cho luyện thi")
+                .badgeText("Phổ biến")
                 .highlights(List.of(
                         "Mở khóa 100% Video bài giảng & Full Test 200 câu",
-                        "30 lượt AI Giải thích đáp án / ngày",
-                        "10 đề tài liệu PDF/Word import / tháng + AI phân tích đáp án",
-                        "5 video cá nhân hóa AI phụ đề song ngữ / tháng",
-                        "20 lượt Camera AI nhận diện từ vựng / ngày",
-                        "Tặng ngay +100 Kim cương 💎 & huy hiệu PLUS"
+                        "30 lượt AI Giải thích & 20 lượt Camera AI / ngày",
+                        "10 đề PDF/Word + 5 Video AI / tháng • Tặng +100 💎"
                 ))
                 .build());
 
@@ -106,9 +103,8 @@ public class SubscriptionService {
                 .bonusDiamonds(500)
                 .badgeText("Tiết kiệm 59%")
                 .highlights(List.of(
-                        "Toàn bộ quyền lợi gói PLUS suốt 365 ngày",
-                        "30 lượt AI Giải thích đáp án / ngày",
-                        "10 đề tài liệu import + 5 video AI cá nhân / tháng",
+                        "Trọn bộ quyền lợi gói PLUS suốt 365 ngày",
+                        "30 lượt AI Giải thích / ngày & 10 đề tài liệu / tháng",
                         "Tặng ngay +500 Kim cương 💎 khi kích hoạt"
                 ))
                 .build());
@@ -121,13 +117,10 @@ public class SubscriptionService {
                 .durationDays(30)
                 .priceVnd(30_000L)
                 .bonusDiamonds(300)
-                .badgeText("Mở khóa Không giới hạn AI")
+                .badgeText("Không giới hạn AI")
                 .highlights(List.of(
-                        "KHÔNG GIỚI HẠN AI Giải thích đáp án & Phân tích đề",
-                        "KHÔNG GIỚI HẠN Upload đề PDF/Word/Excel & Camera AI",
-                        "KHÔNG GIỚI HẠN Import Video AI phụ đề song ngữ",
-                        "Mở khóa giọng đọc Speechify AI cao cấp (US/UK)",
-                        "Nhân x1.5 Kim cương thưởng khi hoàn thành bài học & đề thi",
+                        "KHÔNG GIỚI HẠN AI Giải thích, Đề tài liệu, Video & Camera AI",
+                        "Giọng đọc Speechify AI cao cấp + Nhân x1.5 💎 học tập",
                         "Tích xanh Verified ✓ + Tặng ngay +300 Kim cương 💎"
                 ))
                 .build());
@@ -142,8 +135,8 @@ public class SubscriptionService {
                 .bonusDiamonds(1_500)
                 .badgeText("VIP Trọn Năm")
                 .highlights(List.of(
-                        "Toàn bộ đặc quyền PRO Không giới hạn suốt 365 ngày",
-                        "Nhân x1.5 Kim cương thưởng mọi hoạt động học tập",
+                        "Đầy đủ đặc quyền PRO Không giới hạn suốt 365 ngày",
+                        "Nhân x1.5 💎 mọi hoạt động học tập & luyện đề",
                         "Tích xanh Verified ✓ + Tặng ngay +1.500 Kim cương 💎"
                 ))
                 .build());

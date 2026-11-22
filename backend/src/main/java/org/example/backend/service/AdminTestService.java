@@ -191,6 +191,20 @@ public class AdminTestService {
         return testPartMapper.toResponseList(testPartRepository.findByTestIdOrderBySortOrderAsc(testId));
     }
 
+    public static int standardToeicPartQuestionLimit(Integer partNumber) {
+        if (partNumber == null) return 30;
+        return switch (partNumber) {
+            case 1 -> 6;
+            case 2 -> 25;
+            case 3 -> 39;
+            case 4 -> 30;
+            case 5 -> 30;
+            case 6 -> 16;
+            case 7 -> 54;
+            default -> 30;
+        };
+    }
+
     @Transactional
     public AutoPopulateTestResponse autoPopulateTest(Long testId, AutoPopulateTestRequest request) {
         Test test = findTest(testId);
@@ -207,7 +221,7 @@ public class AdminTestService {
                 || request.getReplaceExisting();
 
         List<Question> allQuestions = questionRepository.findAll(Sort.by(Sort.Direction.ASC, "id"));
-        Map<Integer, List<Long>> matchedByPart = new LinkedHashMap<>();
+        Map<Integer, List<Question>> candidatesByPart = new LinkedHashMap<>();
         int matchedTotal = 0;
 
         for (Question q : allQuestions) {
@@ -226,8 +240,26 @@ public class AdminTestService {
                     continue;
                 }
             }
-            matchedByPart.computeIfAbsent(partNo, ignored -> new ArrayList<>()).add(q.getId());
+            candidatesByPart.computeIfAbsent(partNo, ignored -> new ArrayList<>()).add(q);
             matchedTotal++;
+        }
+
+        Map<Integer, List<Long>> matchedByPart = new LinkedHashMap<>();
+        for (Map.Entry<Integer, List<Question>> entry : candidatesByPart.entrySet()) {
+            int partNo = entry.getKey();
+            int limit = standardToeicPartQuestionLimit(partNo);
+            List<Question> partCandidates = entry.getValue();
+            if (partCandidates.size() > limit) {
+                List<Question> withGroupCode = partCandidates.stream()
+                        .filter(q -> q.getQuestionGroupCode() != null && !q.getQuestionGroupCode().isBlank())
+                        .toList();
+                if (withGroupCode.size() >= limit) {
+                    partCandidates = withGroupCode.subList(0, limit);
+                } else {
+                    partCandidates = partCandidates.subList(partCandidates.size() - limit, partCandidates.size());
+                }
+            }
+            matchedByPart.put(partNo, partCandidates.stream().map(Question::getId).toList());
         }
 
         Map<Integer, Integer> assignedPerPart = new TreeMap<>();

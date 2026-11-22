@@ -74,6 +74,8 @@ public class UserTestService {
         r.setPublished(test.getPublished());
         r.setTestType(test.getTestType());
         r.setTotalDurationMinutes(test.getTotalDurationMinutes());
+        boolean isFullTest = test.getTestType() == null
+                || "FULL_TEST".equalsIgnoreCase(test.getTestType().trim());
         r.setParts(test.getParts() == null ? List.of() : test.getParts().stream().map(p -> {
             org.example.backend.dto.response.TestPartResponse pr = new org.example.backend.dto.response.TestPartResponse();
             pr.setId(p.getId());
@@ -81,8 +83,24 @@ public class UserTestService {
             pr.setPartNumber(p.getPartNumber());
             pr.setDescription(p.getDescription());
             pr.setDurationMinutes(p.getDurationMinutes());
-            pr.setQuestionCount(p.getQuestionCount());
-            pr.setQuestions(p.getQuestions() == null ? List.of() : p.getQuestions().stream().map(q -> {
+
+            List<TestPartQuestion> rawQuestions = p.getQuestions() == null ? List.of() : p.getQuestions();
+            int partLimit = AdminTestService.standardToeicPartQuestionLimit(p.getPartNumber());
+            if (isFullTest && rawQuestions.size() > partLimit) {
+                List<TestPartQuestion> grouped = rawQuestions.stream()
+                        .filter(tpq -> tpq.getQuestion() != null
+                                && tpq.getQuestion().getQuestionGroupCode() != null
+                                && !tpq.getQuestion().getQuestionGroupCode().isBlank())
+                        .collect(Collectors.toList());
+                if (grouped.size() >= partLimit) {
+                    rawQuestions = grouped.subList(0, partLimit);
+                } else {
+                    rawQuestions = rawQuestions.subList(rawQuestions.size() - partLimit, rawQuestions.size());
+                }
+            }
+
+            pr.setQuestionCount(rawQuestions.size());
+            pr.setQuestions(rawQuestions.stream().map(q -> {
                 org.example.backend.dto.response.TestPartQuestionResponse qr = new org.example.backend.dto.response.TestPartQuestionResponse();
                 qr.setId(q.getId());
                 qr.setQuestionId(q.getQuestion().getId());
@@ -119,7 +137,13 @@ public class UserTestService {
         attempt.setTest(test);
         attempt.setStartedAt(LocalDateTime.now());
         // calculate totalQuestions from test parts
-        int total = test.getParts() == null ? 0 : test.getParts().stream().mapToInt(p -> p.getQuestionCount() == null ? 0 : p.getQuestionCount()).sum();
+        boolean isFullTest = test.getTestType() == null
+                || "FULL_TEST".equalsIgnoreCase(test.getTestType().trim());
+        int total = test.getParts() == null ? 0 : test.getParts().stream().mapToInt(p -> {
+            int rawCount = p.getQuestionCount() == null ? 0 : p.getQuestionCount();
+            int limit = AdminTestService.standardToeicPartQuestionLimit(p.getPartNumber());
+            return isFullTest ? Math.min(rawCount, limit) : rawCount;
+        }).sum();
         attempt.setTotalQuestions(total);
         attempt.setStatus(AttemptStatus.IN_PROGRESS);
 
