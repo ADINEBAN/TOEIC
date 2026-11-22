@@ -111,15 +111,24 @@ const appJson = fs.existsSync(appConfigPath)
 fs.rmSync(outDir, { recursive: true, force: true });
 copyDirRecursive(distDir, outDir);
 
-const bundleRel = androidMeta.bundle.replace(/\\/g, "/").replace(/^\/+/, "");
-const bundleAbs = path.join(outDir, bundleRel);
-const bundleBuf = fs.readFileSync(bundleAbs);
+const rawBundleRel = androidMeta.bundle.replace(/\\/g, "/").replace(/^\/+/, "");
+const rawBundleAbs = path.join(outDir, rawBundleRel);
+const bundleBuf = fs.readFileSync(rawBundleAbs);
 const bundleHash = sha256Base64Url(bundleBuf);
-const bundleExt = path.extname(bundleRel) || ".hbc";
+const bundleExt = path.extname(rawBundleRel) || ".hbc";
+const hashSuffix = bundleHash.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12);
+const bundleRel = rawBundleRel.replace(
+  new RegExp(`${bundleExt.replace(".", "\\.")}$`),
+  `-${hashSuffix}${bundleExt}`
+);
+const bundleAbs = path.join(outDir, bundleRel);
+if (bundleAbs !== rawBundleAbs) {
+  fs.renameSync(rawBundleAbs, bundleAbs);
+}
 
 const launchAsset = {
   hash: bundleHash,
-  key: md5Hex(bundleBuf),
+  key: crypto.createHash("sha256").update(bundleBuf).digest("hex").slice(0, 32),
   contentType: "application/javascript",
   fileExtension: bundleExt,
   url: bundleRel,

@@ -84,7 +84,7 @@ public class ExpoUpdatesController {
         return expoUpdatesService.resolveAsset(runtimeVersion, platform, relativePath)
                 .map(asset -> ResponseEntity.ok()
                         .contentType(asset.mediaType())
-                        .cacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePublic().immutable())
+                        .cacheControl(CacheControl.noStore())
                         .body(asset.resource()))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
