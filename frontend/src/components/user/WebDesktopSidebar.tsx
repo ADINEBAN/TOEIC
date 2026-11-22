@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { usePathname } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
@@ -131,8 +132,17 @@ export default function WebDesktopSidebar() {
         },
       ]}
     >
-      <View style={styles.brandBox}>
-        <AppLogoBadge animated glowColor={c.primary} size={38} />
+      <LinearGradient
+        colors={
+          c.isDark
+            ? ["rgba(59, 130, 246, 0.16)", "rgba(30, 41, 59, 0.68)"]
+            : ["rgba(59, 130, 246, 0.09)", "rgba(255, 255, 255, 0.96)"]
+        }
+        end={{ x: 1, y: 1 }}
+        start={{ x: 0, y: 0 }}
+        style={[styles.brandCard, { borderColor: c.glassBorder }]}
+      >
+        <AppLogoBadge glowColor={c.primary} size={38} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text numberOfLines={1} style={[styles.brandTitle, { color: c.text }]}>
             TOEIC TRAINER
@@ -156,20 +166,39 @@ export default function WebDesktopSidebar() {
                 {planTier}
               </Text>
             </View>
-            <Text style={[styles.diamondText, { color: c.primaryDark }]}>
-              💎 {(user?.diamonds ?? 50).toLocaleString("vi-VN")}
-            </Text>
+            <Pressable
+              onPress={() => pushRoute("/user/subscription")}
+              style={({ pressed }) => [
+                styles.diamondChip,
+                {
+                  backgroundColor: c.isDark ? "rgba(56, 189, 248, 0.16)" : "rgba(14, 165, 233, 0.1)",
+                },
+                pressed ? { opacity: 0.78 } : null,
+              ]}
+            >
+              <Text style={[styles.diamondText, { color: c.primaryDark }]}>
+                💎 {(user?.diamonds ?? 50).toLocaleString("vi-VN")}
+              </Text>
+            </Pressable>
           </View>
         </View>
-      </View>
+      </LinearGradient>
 
       <ScrollView
         contentContainerStyle={styles.navScrollContent}
         showsVerticalScrollIndicator={false}
         style={styles.navScroll}
       >
-        {NAV_GROUPS.map((group) => (
-          <View key={group.title} style={styles.navGroup}>
+        {NAV_GROUPS.map((group, groupIdx) => (
+          <View
+            key={group.title}
+            style={[
+              styles.navGroup,
+              groupIdx > 0
+                ? [styles.navGroupDivider, { borderTopColor: c.glassBorder }]
+                : null,
+            ]}
+          >
             <Text style={[styles.groupTitle, { color: c.textMuted }]}>{group.title}</Text>
             {group.items.map((item) => {
               const active = item.matchPrefixes.some((p) => pathname.startsWith(p));
@@ -179,15 +208,43 @@ export default function WebDesktopSidebar() {
                   onPress={() => handleNavigate(item.route)}
                   style={({ pressed }) => [
                     styles.navItem,
-                    active ? { backgroundColor: c.primarySoft, borderColor: c.border } : null,
-                    pressed ? { opacity: 0.85 } : null,
+                    active
+                      ? [
+                          styles.navItemActive,
+                          {
+                            backgroundColor: c.primarySoft,
+                            borderColor: c.border,
+                            shadowColor: c.primary,
+                          },
+                        ]
+                      : null,
+                    pressed ? { opacity: 0.82 } : null,
                   ]}
                 >
-                  <Ionicons
-                    color={active ? c.primary : c.textMuted}
-                    name={item.icon}
-                    size={17}
+                  <View
+                    style={[
+                      styles.activeBar,
+                      { backgroundColor: active ? c.primary : "transparent" },
+                    ]}
                   />
+                  <View
+                    style={[
+                      styles.navIconTile,
+                      {
+                        backgroundColor: active
+                          ? c.primary
+                          : c.isDark
+                            ? "rgba(255,255,255,0.06)"
+                            : c.surfaceMuted,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      color={active ? "#FFFFFF" : c.textMuted}
+                      name={item.icon}
+                      size={15}
+                    />
+                  </View>
                   <Text
                     numberOfLines={1}
                     style={[
@@ -210,13 +267,16 @@ export default function WebDesktopSidebar() {
         ))}
 
         {isAdmin ? (
-          <View style={styles.navGroup}>
+          <View style={[styles.navGroup, styles.navGroupDivider, { borderTopColor: c.glassBorder }]}>
             <Text style={[styles.groupTitle, { color: c.textMuted }]}>QUẢN TRỊ</Text>
             <Pressable
               onPress={() => pushRoute("/admin/dashboard")}
               style={({ pressed }) => [styles.navItem, pressed ? { opacity: 0.85 } : null]}
             >
-              <Ionicons color="#0284C7" name="shield-checkmark" size={17} />
+              <View style={[styles.activeBar, { backgroundColor: "transparent" }]} />
+              <View style={[styles.navIconTile, { backgroundColor: "rgba(2, 132, 199, 0.14)" }]}>
+                <Ionicons color="#0284C7" name="shield-checkmark" size={15} />
+              </View>
               <Text numberOfLines={1} style={[styles.navLabel, { color: c.text }]}>
                 Cổng Quản trị Admin
               </Text>
@@ -228,9 +288,10 @@ export default function WebDesktopSidebar() {
       {user ? (
         <Pressable
           onPress={() => handleNavigate("/user/profile")}
-          style={[
+          style={({ pressed }) => [
             styles.userFooter,
             { backgroundColor: c.glassFillStrong, borderColor: c.glassBorder },
+            pressed ? { opacity: 0.88 } : null,
           ]}
         >
           <UserAvatarWithFrame
@@ -239,7 +300,7 @@ export default function WebDesktopSidebar() {
             fullName={user.fullName || user.email}
             level={user.level ?? 1}
             showCornerBadge={false}
-            size={36}
+            size={38}
           />
           <View style={{ flex: 1, minWidth: 0 }}>
             <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
@@ -252,6 +313,7 @@ export default function WebDesktopSidebar() {
               Lv.{user.level ?? 1} • Mục tiêu {user.targetScore || 500}+
             </Text>
           </View>
+          <Ionicons color={c.textMuted} name="chevron-forward" size={15} />
         </Pressable>
       ) : null}
     </View>
@@ -261,22 +323,24 @@ export default function WebDesktopSidebar() {
 const styles = StyleSheet.create({
   sidebar: {
     borderRightWidth: 1,
-    gap: 8,
+    gap: 10,
     height: "100%",
     maxHeight: "100%",
     minHeight: 0,
     overflow: "hidden",
     paddingBottom: 12,
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    width: 244,
+    paddingHorizontal: 13,
+    paddingTop: 12,
+    width: 256,
   },
-  brandBox: {
+  brandCard: {
     alignItems: "center",
+    borderRadius: 16,
+    borderWidth: 1,
     flexDirection: "row",
     gap: 10,
-    paddingBottom: 4,
-    paddingHorizontal: 4,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
   },
   brandTitle: {
     fontSize: 13.5,
@@ -287,19 +351,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: 6,
-    marginTop: 2,
+    marginTop: 4,
   },
   tierPill: {
     borderRadius: 999,
-    paddingHorizontal: 7,
-    paddingVertical: 1.5,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
   },
   tierPillText: {
     fontSize: 9.5,
     fontWeight: "900",
+    letterSpacing: 0.4,
+  },
+  diamondChip: {
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
   },
   diamondText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: "800",
   },
   navScroll: {
@@ -307,28 +377,50 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
   navScrollContent: {
-    gap: 7,
-    paddingBottom: 8,
+    gap: 6,
+    paddingBottom: 6,
   },
   navGroup: {
-    gap: 1,
+    gap: 2,
+  },
+  navGroupDivider: {
+    borderTopWidth: 1,
+    marginTop: 4,
+    paddingTop: 8,
   },
   groupTitle: {
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 0.7,
-    marginBottom: 2,
-    paddingHorizontal: 10,
+    fontSize: 9.5,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginBottom: 4,
+    paddingHorizontal: 8,
   },
   navItem: {
     alignItems: "center",
     borderColor: "transparent",
-    borderRadius: 11,
+    borderRadius: 12,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 5.5,
+    gap: 9,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+  },
+  navItemActive: {
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+  },
+  activeBar: {
+    borderRadius: 4,
+    height: 18,
+    width: 3,
+  },
+  navIconTile: {
+    alignItems: "center",
+    borderRadius: 8,
+    height: 27,
+    justifyContent: "center",
+    width: 27,
   },
   navLabel: {
     flex: 1,
@@ -339,23 +431,24 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   itemBadge: {
-    backgroundColor: "#EDE9FE",
+    backgroundColor: "#F3E8FF",
     borderRadius: 999,
-    paddingHorizontal: 6,
+    paddingHorizontal: 7,
     paddingVertical: 2,
   },
   itemBadgeText: {
-    color: "#6D28D9",
+    color: "#7C3AED",
     fontSize: 9.5,
     fontWeight: "900",
   },
   userFooter: {
     alignItems: "center",
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     flexDirection: "row",
     gap: 10,
-    padding: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
   },
   userName: {
     flexShrink: 1,

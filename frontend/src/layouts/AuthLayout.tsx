@@ -14,7 +14,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import AppLogoBadge from "@/src/components/common/AppLogoBadge";
 import { LiquidCard } from "@/src/components/ui/LiquidGlass";
 import { useAppTheme } from "@/src/store/theme-store";
 import { useResponsiveLayout } from "@/src/utils/responsive";
@@ -197,12 +196,14 @@ export default function AuthLayout({
         />
 
         <View style={styles.showcaseForeground}>
-          {/* Top Floating Brand Pill */}
+          {/* Top Floating Eyebrow Pill */}
           <Animated.View style={[styles.showcaseBrandPill, { transform: [{ translateY: pillBobY }] }]}>
-            <AppLogoBadge animated glowColor="rgba(16, 185, 129, 0.45)" size={34} />
+            <View style={styles.showcaseIconBubble}>
+              <Ionicons color="#6EE7B7" name="sparkles" size={16} />
+            </View>
             <View>
-              <Text style={styles.showcaseBrandTitle}>TOEIC TRAINER</Text>
-              <Text style={styles.showcaseBrandSub}>Smart AI Study Workspace</Text>
+              <Text style={styles.showcaseBrandTitle}>SMART AI WORKSPACE</Text>
+              <Text style={styles.showcaseBrandSub}>Lộ trình TOEIC cá nhân hóa</Text>
             </View>
           </Animated.View>
 
@@ -322,9 +323,9 @@ export default function AuthLayout({
             contentContainerStyle={[
               styles.scrollContent,
               {
-                paddingBottom: Math.max(insets.bottom, 16) + 12,
-                paddingHorizontal: isWideWeb ? 28 : screenPadding,
-                paddingTop: isWideWeb ? 24 : isShort ? 12 : 24,
+                paddingBottom: Math.max(insets.bottom, 12) + 8,
+                paddingHorizontal: isWideWeb ? 24 : screenPadding,
+                paddingTop: isWideWeb ? 16 : isShort ? 12 : 24,
               },
             ]}
             keyboardShouldPersistTaps="handled"
@@ -337,9 +338,9 @@ export default function AuthLayout({
             style={[
               styles.scrollContent,
               {
-                paddingBottom: Math.max(insets.bottom, 16) + 12,
-                paddingHorizontal: isWideWeb ? 28 : screenPadding,
-                paddingTop: isWideWeb ? 24 : isShort ? 12 : 24,
+                paddingBottom: Math.max(insets.bottom, 12) + 8,
+                paddingHorizontal: isWideWeb ? 24 : screenPadding,
+                paddingTop: isWideWeb ? 16 : isShort ? 12 : 24,
               },
             ]}
           >
@@ -383,7 +384,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     maxWidth: 980,
-    minHeight: 590,
+    minHeight: 540,
     overflow: "hidden",
     shadowColor: "#064E3B",
     shadowOffset: { width: 0, height: 24 },
@@ -394,8 +395,8 @@ const styles = StyleSheet.create({
   splitFormCol: {
     flex: 1.02,
     justifyContent: "center",
-    paddingHorizontal: 38,
-    paddingVertical: 30,
+    paddingHorizontal: 36,
+    paddingVertical: 20,
   },
   splitFormInner: {
     alignSelf: "center",
@@ -433,6 +434,16 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 14,
     paddingVertical: 8,
+  },
+  showcaseIconBubble: {
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.22)",
+    borderColor: "rgba(110, 231, 183, 0.45)",
+    borderRadius: 16,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
   },
   showcaseBrandTitle: {
     color: "#FFFFFF",

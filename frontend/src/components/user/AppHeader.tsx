@@ -1,15 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { ReactNode, useState } from "react";
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { radius, spacing } from "@/src/assets/styles/user-theme";
 import { LiquidCard, LiquidIconButton, LiquidSwitch } from "@/src/components/ui/LiquidGlass";
+import UserAvatarWithFrame from "@/src/components/user/UserAvatarWithFrame";
+import { useAuth } from "@/src/hooks/use-auth";
 import {
   ACCENT_SWATCHES,
   LIQUID_THEME_PRESETS,
   useAppTheme,
 } from "@/src/store/theme-store";
+import { pushRoute } from "@/src/utils/navigation";
 import { useResponsiveLayout } from "@/src/utils/responsive";
 
 type AppHeaderProps = {
@@ -194,31 +197,26 @@ export default function AppHeader({
 }
 
 export function AvatarBadge({ label = "A" }: { label?: string }) {
-  const { theme } = useAppTheme();
+  const { auth } = useAuth();
   const { isNarrow } = useResponsiveLayout();
-  const c = theme.colors;
   const size = isNarrow ? 38 : 42;
+  const user = auth.user;
 
   return (
-    <View
-      style={[
-        styles.avatarOuter,
-        {
-          borderColor: c.glassBorder,
-          height: size,
-          shadowColor: c.primary,
-          width: size,
-        },
-      ]}
+    <Pressable
+      accessibilityLabel="Hồ sơ cá nhân"
+      onPress={() => pushRoute("/user/profile")}
+      style={({ pressed }) => (pressed ? { opacity: 0.85 } : undefined)}
     >
-      <LinearGradient
-        colors={c.primaryGradient}
-        end={{ x: 1, y: 1 }}
-        start={{ x: 0, y: 0 }}
-        style={StyleSheet.absoluteFill}
+      <UserAvatarWithFrame
+        avatarUrl={user?.avatarUrl}
+        frameId={user?.equippedFrameId}
+        fullName={user?.fullName || user?.email || label}
+        level={user?.level ?? 1}
+        showCornerBadge={false}
+        size={size}
       />
-      <Text style={[styles.avatarText, { color: c.onPrimary }]}>{label}</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -255,21 +253,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: 8,
-  },
-  avatarOuter: {
-    alignItems: "center",
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    elevation: Platform.OS === "android" ? 0 : 4,
-    justifyContent: "center",
-    overflow: "hidden",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.22,
-    shadowRadius: 10,
-  },
-  avatarText: {
-    fontSize: 15,
-    fontWeight: "900",
   },
   modalBackdrop: {
     alignItems: "center",
