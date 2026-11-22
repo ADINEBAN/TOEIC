@@ -560,7 +560,17 @@ export default function SubscriptionScreen() {
                       </>
                     )}
                   </Pressable>
-                ) : null}
+                ) : (
+                  <Pressable
+                    style={[styles.simulateButton, { backgroundColor: "#0D9488" }]}
+                    onPress={() => setActiveOrder(null)}
+                  >
+                    <Ionicons name="checkmark-done" size={16} color="#FFFFFF" />
+                    <Text style={styles.simulateButtonText}>
+                      Hoàn tất & Bắt đầu sử dụng gói {activeOrder.planTier}
+                    </Text>
+                  </Pressable>
+                )}
               </ScrollView>
             ) : null}
           </View>
