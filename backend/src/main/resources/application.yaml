@@ -32,6 +32,9 @@ server:
   port: ${PORT:${SERVER_PORT:8082}}
   address: 0.0.0.0
   forward-headers-strategy: framework
+  tomcat:
+    max-part-count: 1000
+    max-parameter-count: 10000
   servlet:
     context-path: /api
   # If you still hit limits from the container (embedded Tomcat/Jetty/Undertow),
@@ -77,3 +80,10 @@ google:
     client-id: ${GOOGLE_CLIENT_ID:}
     client-secret: ${GOOGLE_CLIENT_SECRET:}
     redirect-uri: ${GOOGLE_REDIRECT_URI:}
+
+sepay:
+  api-key: ${SEPAY_API_KEY:}
+  bank-code: ${SEPAY_BANK_CODE:Vietcombank}
+  account-number: ${SEPAY_ACCOUNT_NUMBER:0782733887}
+  account-name: ${SEPAY_ACCOUNT_NAME:Y A DIN BYA}
+  order-prefix: ${SEPAY_ORDER_PREFIX:TOEIC}

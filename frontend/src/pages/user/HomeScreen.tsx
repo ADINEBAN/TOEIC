@@ -519,6 +519,26 @@ export default function HomeScreen() {
         </SurfaceCard>
       ) : null}
 
+      <Pressable
+        onPress={() => pushRoute("/user/subscription")}
+        style={({ pressed }) => [pressed ? { opacity: 0.92 } : null]}
+      >
+        <SurfaceCard style={{ borderColor: "#8B5CF6", borderWidth: 1.5, marginBottom: 4 }}>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: 12, justifyContent: "space-between" }}>
+            <ClayIcon3D colors={["#A855F7", "#6D28D9"]} icon="sparkles" size={42} />
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={{ color: colors.text, fontSize: rf(14), fontWeight: "900" }}>
+                Gói {(auth.user?.planTier ?? (auth.user?.premium ? "PRO" : "FREE")).toUpperCase()} • Nâng cấp PLUS & PRO
+              </Text>
+              <Text style={{ color: colors.textMuted, fontSize: rf(12), fontWeight: "600" }}>
+                PLUS chỉ 10.000đ/30 ngày • PRO 30.000đ/30 ngày (SePay VietQR tự động)
+              </Text>
+            </View>
+            <Ionicons color="#7C3AED" name="chevron-forward" size={18} />
+          </View>
+        </SurfaceCard>
+      </Pressable>
+
       <SectionTitle
         actionLabel="Xem tất cả"
         onActionPress={() => pushRoute("/user/profile")}

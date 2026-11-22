@@ -10,8 +10,10 @@ import org.example.backend.dto.response.UserTestLeaderboardResponse;
 import org.example.backend.dto.response.TestResponse;
 import org.example.backend.enums.SuccessCode;
 import org.example.backend.service.OpenAIAnswerExplainService;
+import org.example.backend.service.SubscriptionService;
 import org.example.backend.service.UserTestService;
 import org.example.backend.util.ApiResponseUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -27,6 +29,9 @@ public class UserTestController {
 
     private final UserTestService userTestService;
     private final OpenAIAnswerExplainService openAIAnswerExplainService;
+
+    @Autowired(required = false)
+    private SubscriptionService subscriptionService;
 
     @GetMapping("/published")
     public ResponseEntity<ApiResponse<List<TestResponse>>> getPublishedTests() {
@@ -84,7 +89,13 @@ public class UserTestController {
     }
 
     @PostMapping("/questions/explain")
-    public ResponseEntity<ApiResponse<AIExplainResponse>> askAIExplain(@RequestBody AskAIExplainRequest request) {
+    public ResponseEntity<ApiResponse<AIExplainResponse>> askAIExplain(
+            Authentication authentication,
+            @RequestBody AskAIExplainRequest request
+    ) {
+        if (subscriptionService != null && authentication != null) {
+            subscriptionService.consumeQuotaOrThrow(authentication.getName(), SubscriptionService.FEATURE_AI_EXPLAIN);
+        }
         String type = request.getType() != null ? request.getType() : "BOTH";
         AIExplainResponse response = openAIAnswerExplainService.explainQuestion(
                 request.getTestPartQuestionId(),

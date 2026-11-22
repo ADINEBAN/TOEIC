@@ -44,6 +44,7 @@ public class SecurityConfig {
                                 "/auth/refresh",
                                 "/auth/google",
                                 "/auth/google/**",
+                                "/payments/sepay/webhook",
                                 "/users/admin",
                                 "/ws",
                                 "/ws/**",

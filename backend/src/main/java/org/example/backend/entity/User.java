@@ -79,8 +79,24 @@ public class User extends BaseEntity {
     @Column(name = "is_verified", nullable = false)
     private Boolean verified = false;
 
+    @Column(name = "plan_tier", nullable = false, length = 20)
+    private String planTier = "FREE";
+
+    @Column(name = "plan_expires_at")
+    private LocalDateTime planExpiresAt;
+
     @Column(name = "diamonds", nullable = false)
     private Integer diamonds = 50;
+
+    public String getActivePlanTier() {
+        if (planExpiresAt != null && planExpiresAt.isBefore(LocalDateTime.now())) {
+            return "FREE";
+        }
+        if (planTier != null && !planTier.isBlank() && !"FREE".equalsIgnoreCase(planTier)) {
+            return planTier.trim().toUpperCase();
+        }
+        return Boolean.TRUE.equals(premium) ? "PRO" : "FREE";
+    }
 
     @Column(name = "arena_wins", nullable = false)
     private Integer arenaWins = 0;

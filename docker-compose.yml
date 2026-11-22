@@ -34,6 +34,11 @@ services:
       TOEIC_PYTHON_BIN: /opt/venv/bin/python3
       TOEIC_YTDLP_BIN: /opt/venv/bin/yt-dlp
       TOEIC_FFMPEG_BIN: /usr/bin/ffmpeg
+      SEPAY_API_KEY: ${SEPAY_API_KEY:-}
+      SEPAY_BANK_CODE: ${SEPAY_BANK_CODE:-Vietcombank}
+      SEPAY_ACCOUNT_NUMBER: ${SEPAY_ACCOUNT_NUMBER:-0782733887}
+      SEPAY_ACCOUNT_NAME: ${SEPAY_ACCOUNT_NAME:-Y A DIN BYA}
+      SEPAY_ORDER_PREFIX: ${SEPAY_ORDER_PREFIX:-TOEIC}
     volumes:
       - /opt/toeic/data:/app/data
       - /opt/toeic/updates:/app/updates
