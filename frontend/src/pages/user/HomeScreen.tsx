@@ -17,7 +17,6 @@ import {
 } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
-import AppLogoBadge from "@/src/components/common/AppLogoBadge";
 import VerifiedBadge from "@/src/components/common/VerifiedBadge";
 import { LiquidCard } from "@/src/components/ui/LiquidGlass";
 import AppHeader from "@/src/components/user/AppHeader";
@@ -458,14 +457,6 @@ export default function HomeScreen() {
         title=""
         titleSlot={
           <View style={styles.headerGreetingRow}>
-            {isDesktopWeb ? (
-              <AppLogoBadge
-                animated
-                glowColor={colors.primary}
-                size={34}
-                style={{ marginRight: 6 }}
-              />
-            ) : null}
             <Text numberOfLines={1} style={[styles.headerGreetingText, { fontSize: rf(17.5) }]}>
               Chào, {greetingName}!
             </Text>
@@ -489,7 +480,7 @@ export default function HomeScreen() {
               {isDesktopWeb ? (
                 <View style={styles.heroBrandEyebrow}>
                   <View style={[styles.heroBrandDot, { backgroundColor: colors.success }]} />
-                  <Text style={styles.heroBrandEyebrowText}>TOEIC TRAINER • WEB STUDIO</Text>
+                  <Text style={styles.heroBrandEyebrowText}>MỤC TIÊU TOEIC CÁ NHÂN</Text>
                 </View>
               ) : null}
               <Text style={[styles.welcomeHeadline, { fontSize: rf(isNarrow ? 19 : 21) }]}>

@@ -231,13 +231,13 @@ const createStyles = (colors: LiquidThemeColors) =>
   StyleSheet.create({
     header: {
       alignItems: "center",
-      marginBottom: 14,
+      marginBottom: 10,
     },
     brandRow: {
       alignItems: "center",
       flexDirection: "row",
-      gap: 10,
-      marginBottom: 8,
+      gap: 8,
+      marginBottom: 4,
     },
     brandText: {
       color: colors.primary,
@@ -251,7 +251,7 @@ const createStyles = (colors: LiquidThemeColors) =>
     },
     subtitle: {
       color: colors.textMuted,
-      marginTop: 4,
+      marginTop: 2,
       textAlign: "center",
     },
     authSwitchBar: {
@@ -260,8 +260,8 @@ const createStyles = (colors: LiquidThemeColors) =>
       borderRadius: radius.pill,
       borderWidth: 1,
       flexDirection: "row",
-      marginTop: 12,
-      padding: 4,
+      marginTop: 8,
+      padding: 3,
       width: "100%",
     },
     authSwitchTab: {
@@ -269,7 +269,7 @@ const createStyles = (colors: LiquidThemeColors) =>
       borderRadius: radius.pill,
       flex: 1,
       justifyContent: "center",
-      paddingVertical: 8,
+      paddingVertical: 7,
     },
     authSwitchTabActive: {
       backgroundColor: colors.primary,
@@ -283,10 +283,10 @@ const createStyles = (colors: LiquidThemeColors) =>
       color: colors.onPrimary,
     },
     form: {
-      gap: 2,
+      gap: 0,
     },
     fieldBlock: {
-      marginBottom: 12,
+      marginBottom: 9,
     },
     fieldLabel: {
       color: colors.textMuted,

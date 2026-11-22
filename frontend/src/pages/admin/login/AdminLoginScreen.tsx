@@ -316,8 +316,8 @@ export default function AdminLoginScreen() {
 
                 <View style={styles.showcaseForeground}>
                   <Animated.View style={[styles.showcaseBadge, { transform: [{ translateY: pillBobY }] }]}>
-                    <AppLogoBadge animated glowColor="rgba(56, 189, 248, 0.45)" size={32} />
-                    <Text style={styles.showcaseBadgeText}>TOEIC Trainer Workspace</Text>
+                    <Ionicons color="#38BDF8" name="shield-checkmark" size={16} />
+                    <Text style={styles.showcaseBadgeText}>Admin Operations Console</Text>
                   </Animated.View>
 
                   <View>
