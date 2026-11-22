@@ -1,17 +1,26 @@
-name: TOEIC Trainer CD (Azure VPS)
+name: TOEIC Trainer CD (Azure VPS & APK Release)
 
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*'
   workflow_dispatch:
+    inputs:
+      build_apk:
+        description: 'Build và xuất bản toeic-trainer.apk lên GitHub Release'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
-  group: deploy-toeic-vps
+  group: deploy-toeic-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   deploy:
     name: Deploy main to Azure VPS
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -25,15 +34,20 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Export Expo Web static bundle & Android OTA update bundle
+        id: export_bundles
         working-directory: frontend
         env:
           EXPO_PUBLIC_API_BASE_URL: https://toeic-trainer-api.koreacentral.cloudapp.azure.com
         run: |
           npm ci
+          RUNTIME_VERSION=$(node -p "require('./app.json').expo.version")
+          echo "runtime_version=$RUNTIME_VERSION" >> "$GITHUB_OUTPUT"
+
           npx expo export --platform web
           tar -C dist -czf /tmp/toeic-web.tar.gz .
+
           npx expo export --platform android --output-dir ota-dist
-          node scripts/prepare-ota-update.mjs --dist ota-dist --out ota-publish --runtime-version 1.2.0 --commit "${{ github.sha }}"
+          node scripts/prepare-ota-update.mjs --dist ota-dist --out ota-publish --runtime-version "$RUNTIME_VERSION" --commit "${{ github.sha }}"
           tar -C ota-publish -czf /tmp/toeic-ota.tar.gz .
 
       - name: Deploy Backend, Static Web & OTA Updates via SSH and Docker Compose
@@ -41,22 +55,26 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          RUNTIME_VERSION: ${{ steps.export_bundles.outputs.runtime_version }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes /tmp/toeic-web.tar.gz /tmp/toeic-ota.tar.gz "$VPS_USER@$VPS_HOST:/tmp/"
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" << 'EOF'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" << EOF
             set -euo pipefail
             rm -rf /opt/toeic/web_next /opt/toeic/ota_next
-            mkdir -p /opt/toeic/web /opt/toeic/web_next /opt/toeic/updates/1.2.0/android /opt/toeic/ota_next
+            mkdir -p /opt/toeic/web /opt/toeic/web_next "/opt/toeic/updates/${RUNTIME_VERSION}/android" /opt/toeic/ota_next
+
             tar -xzf /tmp/toeic-web.tar.gz -C /opt/toeic/web_next
             find /opt/toeic/web -mindepth 1 -delete
             cp -a /opt/toeic/web_next/. /opt/toeic/web/
+
             tar -xzf /tmp/toeic-ota.tar.gz -C /opt/toeic/ota_next
-            find /opt/toeic/updates/1.2.0/android -mindepth 1 -delete
-            cp -a /opt/toeic/ota_next/. /opt/toeic/updates/1.2.0/android/
+            find "/opt/toeic/updates/${RUNTIME_VERSION}/android" -mindepth 1 -delete
+            cp -a /opt/toeic/ota_next/. "/opt/toeic/updates/${RUNTIME_VERSION}/android/"
+
             rm -rf /opt/toeic/web_next /opt/toeic/ota_next /tmp/toeic-web.tar.gz /tmp/toeic-ota.tar.gz
 
             cd /opt/toeic/app
@@ -68,3 +86,68 @@ jobs:
             docker image prune -f
           EOF
           rm -f ~/.ssh/deploy_key /tmp/toeic-web.tar.gz /tmp/toeic-ota.tar.gz
+
+  release-apk:
+    name: Build & Release Fixed-Name Android APK
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.build_apk)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies & prepare Android project
+        working-directory: frontend
+        env:
+          EXPO_PUBLIC_API_BASE_URL: https://toeic-trainer-api.koreacentral.cloudapp.azure.com
+        run: |
+          npm ci
+          if [ ! -d "android" ]; then
+            npx expo prebuild --platform android --no-install
+          fi
+
+      - name: Build Android Release APK
+        working-directory: frontend/android
+        env:
+          EXPO_PUBLIC_API_BASE_URL: https://toeic-trainer-api.koreacentral.cloudapp.azure.com
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      - name: Rename APK to fixed filename (toeic-trainer.apk)
+        run: |
+          APK_PATH="frontend/android/app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK_PATH" ]; then
+            APK_PATH=$(find frontend/android/app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
+          fi
+          if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
+            echo "Lỗi: Không tìm thấy file APK bản release!"
+            exit 1
+          fi
+          echo "Đang sao chép $APK_PATH -> toeic-trainer.apk"
+          cp "$APK_PATH" toeic-trainer.apk
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v-build-{0}', github.run_number) }}
+          files: toeic-trainer.apk
+          generate_release_notes: true
