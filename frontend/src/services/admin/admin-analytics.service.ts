@@ -36,6 +36,23 @@ export class AdminAnalyticsService extends BaseAdminService {
     );
   }
 
+  updateUserPlan(
+    userId: number,
+    planTier: 'FREE' | 'PLUS' | 'PRO',
+    durationDays?: number,
+  ) {
+    return this.request<ApiResponse<AdminUserApiItem>>(
+      `/api/admin/users/${userId}/plan`,
+      {
+        body: JSON.stringify({
+          planTier,
+          ...(durationDays != null ? { durationDays } : {}),
+        }),
+        method: 'PATCH',
+      },
+    );
+  }
+
   updateUserVerified(userId: number, verified: boolean) {
     return this.request<ApiResponse<AdminUserApiItem>>(
       `/api/admin/users/${userId}/verified`,

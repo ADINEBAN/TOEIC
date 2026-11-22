@@ -582,9 +582,21 @@ class Sprint6CoreServicesTest {
 
         @org.junit.jupiter.api.Test
         void getOverview_computesKpiMetricsAccurately() {
-            User activeUser = buildUser(1L, "u1@toeic.test", "U1");
-            activeUser.setPremium(true);
-            activeUser.setCurrentLoginStreak(4);
+            User proUser = buildUser(1L, "u1@toeic.test", "U1");
+            proUser.setPremium(true);
+            proUser.setPlanTier("PRO");
+            proUser.setPlanExpiresAt(LocalDateTime.now().plusDays(15));
+            proUser.setCurrentLoginStreak(4);
+
+            User plusUser = buildUser(3L, "u3@toeic.test", "U3");
+            plusUser.setPlanTier("PLUS");
+            plusUser.setPlanExpiresAt(LocalDateTime.now().plusDays(10));
+
+            User expiredUser = buildUser(4L, "u4@toeic.test", "U4");
+            expiredUser.setPremium(true);
+            expiredUser.setPlanTier("PLUS");
+            expiredUser.setPlanExpiresAt(LocalDateTime.now().minusDays(2));
+
             User blockedUser = buildUser(2L, "u2@toeic.test", "U2");
             blockedUser.setStatus(UserStatus.BLOCKED);
 
@@ -595,27 +607,38 @@ class Sprint6CoreServicesTest {
             submitted.setScore(80.0);
             submitted.setToeicScore(780);
 
-            when(userRepository.findAll()).thenReturn(List.of(activeUser, blockedUser));
+            when(userRepository.findAll()).thenReturn(List.of(proUser, plusUser, expiredUser, blockedUser));
             when(testRepository.findAll()).thenReturn(List.of(published));
             when(userTestAttemptRepository.findAll()).thenReturn(List.of(submitted));
             when(questionRepository.count()).thenReturn(25L);
 
             AdminAnalyticsOverviewResponse overview = adminAnalyticsService.getOverview();
-            assertEquals(2, overview.getTotalUsers());
-            assertEquals(1, overview.getActiveUsers());
-            assertEquals(1, overview.getPremiumUsers());
+            assertEquals(4, overview.getTotalUsers());
+            assertEquals(3, overview.getActiveUsers());
+            assertEquals(1, overview.getBlockedUsers());
+            assertEquals(1, overview.getPlusUsers());
+            assertEquals(1, overview.getProUsers());
+            assertEquals(2, overview.getFreeUsers());
+            assertEquals(2, overview.getPremiumUsers());
             assertEquals(25, overview.getTotalQuestions());
             assertEquals(780, overview.getAverageToeicScore());
+            assertEquals(780, overview.getHighestToeicScore());
+            assertEquals(1, overview.getBand650To849());
 
-            when(userRepository.findById(1L)).thenReturn(Optional.of(activeUser));
+            when(userRepository.findById(1L)).thenReturn(Optional.of(proUser));
             when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
             UserResponse mapped = new UserResponse();
             mapped.setVerified(true);
+            mapped.setPlanTier("PLUS");
             when(userMapper.toResponse(any(User.class))).thenReturn(mapped);
 
             UserResponse verifiedRes = adminAnalyticsService.updateUserVerified(1L, true);
             assertTrue(Boolean.TRUE.equals(verifiedRes.getVerified()));
-            assertTrue(Boolean.TRUE.equals(activeUser.getVerified()));
+            assertTrue(Boolean.TRUE.equals(proUser.getVerified()));
+
+            UserResponse planRes = adminAnalyticsService.updateUserPlan(1L, "PLUS", 30);
+            assertEquals("PLUS", planRes.getPlanTier());
+            assertEquals("PLUS", proUser.getPlanTier());
         }
     }
 

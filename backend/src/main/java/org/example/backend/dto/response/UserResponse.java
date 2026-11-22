@@ -24,6 +24,9 @@ public class UserResponse {
     private String planTier;
     private LocalDateTime planExpiresAt;
     private Integer diamonds;
+    private Integer currentLoginStreak;
+    private Integer longestLoginStreak;
+    private java.time.LocalDate lastLoginDate;
     private Integer arenaWins;
     private Integer arenaLosses;
     private Integer arenaElo;

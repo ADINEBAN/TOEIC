@@ -53,6 +53,21 @@ public class AdminAnalyticsController {
         );
     }
 
+    @PatchMapping("/users/{userId}/plan")
+    public ResponseEntity<ApiResponse<UserResponse>> updateUserPlan(
+            @PathVariable Long userId,
+            @RequestBody PlanPatchRequest request
+    ) {
+        return ApiResponseUtil.success(
+                adminAnalyticsService.updateUserPlan(
+                        userId,
+                        request != null ? request.getPlanTier() : null,
+                        request != null ? request.getDurationDays() : null
+                ),
+                SuccessCode.USER_PREMIUM_UPDATED
+        );
+    }
+
     @PatchMapping("/users/{userId}/verified")
     public ResponseEntity<ApiResponse<UserResponse>> updateUserVerified(
             @PathVariable Long userId,
@@ -72,6 +87,12 @@ public class AdminAnalyticsController {
     @Data
     public static class PremiumPatchRequest {
         private Boolean premium;
+    }
+
+    @Data
+    public static class PlanPatchRequest {
+        private String planTier;
+        private Integer durationDays;
     }
 
     @Data

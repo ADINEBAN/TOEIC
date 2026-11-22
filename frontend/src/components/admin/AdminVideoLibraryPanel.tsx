@@ -422,10 +422,7 @@ export default function AdminVideoLibraryPanel({ accessToken }: { accessToken: s
       <View style={styles.card}>
         <View style={styles.cardHeaderRow}>
           <View>
-            <Text style={styles.cardTitle}>Nhập & Xử Lý Video Mới (Admin / Content Manager)</Text>
-            <Text style={styles.cardSubtitle}>
-              Quy trình tự động: Draft → Downloading → Transcribing (AI ASR) → Translating (EN–VI) → Reviewing → Published.
-            </Text>
+            <Text style={styles.cardTitle}>Nhập & Xử Lý Video Mới</Text>
           </View>
           <Pressable
             onPress={() => setShowAdvancedImport((prev) => !prev)}
