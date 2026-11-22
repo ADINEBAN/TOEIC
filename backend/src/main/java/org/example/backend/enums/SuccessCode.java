@@ -195,6 +195,7 @@ public enum SuccessCode {
     PAYMENT_ORDER_RETRIEVED(1179, "Payment order status retrieved successfully", HttpStatus.OK),
     PAYMENT_ORDERS_LISTED(1180, "User payment orders listed successfully", HttpStatus.OK),
     SEPAY_WEBHOOK_PROCESSED(1181, "SePay payment webhook processed successfully", HttpStatus.OK),
+    PLAN_REDEEMED_WITH_DIAMONDS(1182, "Subscription plan redeemed with diamonds successfully", HttpStatus.OK),
 
     PATIENT_CLASSIFICATION_DELETED(1023, "Xóa phân loại bệnh nhân thành công", HttpStatus.OK),
     CLASSIFICATION_RETRIEVED(1022, "Lấy thông tin phân loại thành công", HttpStatus.OK),

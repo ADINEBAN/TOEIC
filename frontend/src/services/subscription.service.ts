@@ -9,6 +9,7 @@ export type PlanOptionDto = {
   durationDays: number;
   priceVnd: number;
   bonusDiamonds: number;
+  diamondCost?: number | null;
   badgeText: string;
   highlights: string[];
 };
@@ -120,6 +121,21 @@ export async function simulateSepayOrderWebhook(
     `/api/payments/orders/${encodeURIComponent(orderCode)}/simulate-webhook`,
     {
       body: JSON.stringify({}),
+      headers: buildAuthHeaders(accessToken),
+      method: "POST",
+    }
+  );
+  return response.data;
+}
+
+export async function redeemSubscriptionWithDiamonds(
+  accessToken: string,
+  planCode: string
+): Promise<SubscriptionPlansOverviewData> {
+  const response = await apiRequest<ApiResponse<SubscriptionPlansOverviewData>>(
+    "/api/payments/redeem-diamonds",
+    {
+      body: JSON.stringify({ planCode }),
       headers: buildAuthHeaders(accessToken),
       method: "POST",
     }

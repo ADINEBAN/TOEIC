@@ -16,7 +16,7 @@ import {
 } from "@/src/services/user.service";
 import { LiquidThemeColors, useAppTheme, useThemedStyles } from "@/src/store/theme-store";
 import { CosmeticCatalogItem, CosmeticShopData } from "@/src/types/user-api";
-import { safeBack } from "@/src/utils/navigation";
+import { safeBack, pushRoute } from "@/src/utils/navigation";
 import { useResponsiveLayout } from "@/src/utils/responsive";
 
 type FilterTab = "ALL" | "ANIMATED" | "STATIC" | "AVATAR" | "OWNED";
@@ -137,6 +137,20 @@ export default function ShopScreen() {
           </View>
         }
       />
+
+      <Pressable onPress={() => pushRoute("/user/subscription")} style={{ marginBottom: 12 }}>
+        <SurfaceCard style={styles.redeemBanner}>
+          <View style={styles.redeemBannerLeft}>
+            <Text style={styles.redeemBannerTitle}>💎 Đổi Kim cương lấy gói thành viên</Text>
+            <Text style={styles.redeemBannerSub}>
+              10.000 💎 = 1 tháng PLUS • 20.000 💎 = 1 tháng PRO
+            </Text>
+          </View>
+          <View style={styles.redeemBannerCta}>
+            <Text style={styles.redeemBannerCtaText}>Đổi gói ›</Text>
+          </View>
+        </SurfaceCard>
+      </Pressable>
 
       {/* Filter Pills */}
       <ScrollView
@@ -341,4 +355,41 @@ const createStyles = (colors: LiquidThemeColors) =>
     actionEquipped: { backgroundColor: "#10B981" },
     actionMuted: { backgroundColor: "#94A3B8" },
     actionBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "900" },
+    redeemBanner: {
+      alignItems: "center",
+      backgroundColor: colors.isDark ? "rgba(14,165,233,0.14)" : "#F0F9FF",
+      borderColor: "#38BDF8",
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: 10,
+      justifyContent: "space-between",
+      paddingHorizontal: 14,
+      paddingVertical: 11,
+    },
+    redeemBannerLeft: {
+      flex: 1,
+      gap: 2,
+      minWidth: 0,
+    },
+    redeemBannerTitle: {
+      color: colors.isDark ? "#38BDF8" : "#0369A1",
+      fontSize: 13.5,
+      fontWeight: "900",
+    },
+    redeemBannerSub: {
+      color: colors.textMuted,
+      fontSize: 11.5,
+      fontWeight: "700",
+    },
+    redeemBannerCta: {
+      backgroundColor: "#0284C7",
+      borderRadius: 99,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+    },
+    redeemBannerCtaText: {
+      color: "#FFFFFF",
+      fontSize: 12,
+      fontWeight: "800",
+    },
   });
