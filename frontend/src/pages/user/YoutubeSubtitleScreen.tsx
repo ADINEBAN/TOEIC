@@ -57,6 +57,7 @@ import {
   YoutubeWordLookupData,
 } from "@/src/types/user-api";
 import { safeBack } from "@/src/utils/navigation";
+import { useResponsiveLayout } from "@/src/utils/responsive";
 import { cleanMeaningText, cleanStudyText } from "@/src/utils/text-clean";
 
 const LEVEL_FILTERS = ["Tất cả", "A2", "B1", "B2", "C1"] as const;
@@ -376,11 +377,31 @@ function cleanSubtitleText(raw: string | null | undefined): string {
     .trim();
 }
 
+function findActiveSegmentIndex(segments: VideoSubtitleSegmentItem[], timeSec: number): number {
+  const len = segments.length;
+  if (len === 0) return 0;
+  if (timeSec < segments[0].startTime) return 0;
+
+  let lo = 0;
+  let hi = len - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const seg = segments[mid];
+    if (timeSec < seg.startTime) {
+      hi = mid - 1;
+    } else if (timeSec >= seg.endTime) {
+      lo = mid + 1;
+    } else {
+      return mid;
+    }
+  }
+  return Math.max(0, Math.min(len - 1, hi));
+}
+
 type SubtitleSentenceRowProps = {
   seg: VideoSubtitleSegmentItem;
   isCurrent: boolean;
   activeWordIdx: number;
-  currentClockLabel: string;
   isSpeaking: boolean;
   subtitleFilter: SubtitleDisplayFilter;
   activeFontSize: number;
@@ -396,7 +417,6 @@ const SubtitleSentenceRow = React.memo(function SubtitleSentenceRow({
   seg,
   isCurrent,
   activeWordIdx,
-  currentClockLabel,
   isSpeaking,
   subtitleFilter,
   activeFontSize,
@@ -414,7 +434,7 @@ const SubtitleSentenceRow = React.memo(function SubtitleSentenceRow({
       <Pressable onPress={() => onSeekSegment(seg.startTime)} style={styles.subtitleCardTopRow}>
         <View style={isCurrent ? styles.speakingNowPill : styles.inactiveTimestampPill}>
           <Text style={isCurrent ? styles.speakingNowPillText : styles.inactiveTimestampText}>
-            {isCurrent ? `● ĐANG NÓI ${currentClockLabel}` : `▶ ${seg.rangeLabel}`}
+            {isCurrent ? `● ĐANG NÓI · ${seg.rangeLabel}` : `▶ ${seg.rangeLabel}`}
           </Text>
         </View>
 
@@ -519,6 +539,9 @@ export default function YoutubeSubtitleScreen() {
 
   // Navigation & Filters
   const [viewMode, setViewMode] = useState<ViewMode>("hub");
+  const { isDesktopWeb, width } = useResponsiveLayout({
+    hideDesktopSidebar: viewMode === "player",
+  });
   const [studioTab, setStudioTab] = useState<StudioTab>("subtitles");
   const [subtitleFilter, setSubtitleFilter] = useState<SubtitleDisplayFilter>("en-vi");
   const [fontSizeIdx, setFontSizeIdx] = useState(1);
@@ -533,7 +556,10 @@ export default function YoutubeSubtitleScreen() {
   // Persistent Published Video Library
   const [videoLibrary, setVideoLibrary] = useState<ImportedVideoDetailData[]>([]);
   const [loadingLibrary, setLoadingLibrary] = useState(() => Boolean(auth?.accessToken));
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [activeVideo, setActiveVideo] = useState<ImportedVideoDetailData | null>(null);
+  const videoDetailCacheRef = useRef<Record<number, ImportedVideoDetailData>>({});
+  const wordLookupCacheRef = useRef<Record<string, YoutubeWordLookupData>>({});
 
   // Player Synchronization State
   const playerControlRef = useRef<NativePlayerControlHandle | null>(null);
@@ -552,6 +578,10 @@ export default function YoutubeSubtitleScreen() {
   const nativeActiveAtRef = useRef(0);
   const isPlayingRef = useRef(false);
   const speakingSegSeqRef = useRef<number | null>(null);
+  const activeVideoRef = useRef<ImportedVideoDetailData | null>(null);
+  const accessTokenRef = useRef<string | null | undefined>(auth?.accessToken);
+  const loopCurrentSentenceRef = useRef(loopCurrentSentence);
+  const activeSegmentRef = useRef<VideoSubtitleSegmentItem | undefined>(undefined);
 
   useEffect(() => {
     currentTimeRef.current = currentTimeSec;
@@ -564,6 +594,18 @@ export default function YoutubeSubtitleScreen() {
   useEffect(() => {
     speakingSegSeqRef.current = speakingSegSeq;
   }, [speakingSegSeq]);
+
+  useEffect(() => {
+    activeVideoRef.current = activeVideo;
+  }, [activeVideo]);
+
+  useEffect(() => {
+    accessTokenRef.current = auth?.accessToken;
+  }, [auth?.accessToken]);
+
+  useEffect(() => {
+    loopCurrentSentenceRef.current = loopCurrentSentence;
+  }, [loopCurrentSentence]);
 
   // Word Lookup & Flashcards State
   const [selectedWordToken, setSelectedWordToken] = useState<string | null>(null);
@@ -803,25 +845,17 @@ export default function YoutubeSubtitleScreen() {
     return 180;
   }, [activeVideo, segments]);
 
-  // Synchronized active subtitle segment
-  const activeSegIndex = useMemo(() => {
-    if (segments.length === 0) return 0;
-    for (let i = 0; i < segments.length; i += 1) {
-      const seg = segments[i];
-      if (currentTimeSec >= seg.startTime && currentTimeSec < seg.endTime) {
-        return i;
-      }
-    }
-    // Nearest segment fallback on seek
-    for (let i = segments.length - 1; i >= 0; i -= 1) {
-      if (currentTimeSec >= segments[i].startTime) {
-        return i;
-      }
-    }
-    return 0;
-  }, [currentTimeSec, segments]);
+  // Synchronized active subtitle segment (O(log N) binary search)
+  const activeSegIndex = useMemo(
+    () => findActiveSegmentIndex(segments, currentTimeSec),
+    [currentTimeSec, segments],
+  );
 
   const activeSegment = segments[activeSegIndex];
+
+  useEffect(() => {
+    activeSegmentRef.current = activeSegment;
+  }, [activeSegment]);
 
   const activeWordIdx = useMemo(() => {
     if (!activeSegment) return -1;
@@ -835,22 +869,18 @@ export default function YoutubeSubtitleScreen() {
   // Master playback timer supporting 0.5x - 2.0x speeds & Repeat Current Subtitle
   useEffect(() => {
     if (!isPlaying || viewMode !== "player" || streamRecovering) return;
-    const tickMs = 300;
+    const tickMs = 280;
     const timer = setInterval(() => {
+      if (Date.now() - nativeActiveAtRef.current < 600) {
+        return;
+      }
       setCurrentTimeSec((prev) => {
-        let next = prev + (tickMs / 1000) * playbackSpeed;
-        if (Date.now() - nativeActiveAtRef.current < 900 && lastNativePosRef.current > 0) {
-          const maxLead = lastNativePosRef.current + 0.45 * playbackSpeed;
-          if (next > maxLead) {
-            next = maxLead;
-          }
-        }
-        if (loopCurrentSentence && activeSegment) {
-          if (next >= activeSegment.endTime) {
-            playerControlRef.current?.seekTo(activeSegment.startTime);
-            lastNativePosRef.current = activeSegment.startTime;
-            return activeSegment.startTime;
-          }
+        const next = prev + (tickMs / 1000) * playbackSpeed;
+        const curSeg = activeSegmentRef.current;
+        if (loopCurrentSentenceRef.current && curSeg && next >= curSeg.endTime) {
+          playerControlRef.current?.seekTo(curSeg.startTime);
+          lastNativePosRef.current = curSeg.startTime;
+          return curSeg.startTime;
         }
         if (next >= totalDurationSec) {
           playerControlRef.current?.seekTo(0);
@@ -861,27 +891,25 @@ export default function YoutubeSubtitleScreen() {
       });
     }, tickMs);
     return () => clearInterval(timer);
-  }, [activeSegment, isPlaying, loopCurrentSentence, playbackSpeed, streamRecovering, totalDurationSec, viewMode]);
+  }, [isPlaying, playbackSpeed, streamRecovering, totalDurationSec, viewMode]);
 
-  const handleNativeTimeUpdate = useCallback(
-    (nativeTimeSec: number) => {
-      if (!Number.isFinite(nativeTimeSec) || nativeTimeSec < 0) return;
-      if (loopCurrentSentence && activeSegment && nativeTimeSec >= activeSegment.endTime) {
-        playerControlRef.current?.seekTo(activeSegment.startTime);
-        lastNativePosRef.current = activeSegment.startTime;
-        setCurrentTimeSec(activeSegment.startTime);
-        return;
+  const handleNativeTimeUpdate = useCallback((nativeTimeSec: number) => {
+    if (!Number.isFinite(nativeTimeSec) || nativeTimeSec < 0) return;
+    const curSeg = activeSegmentRef.current;
+    if (loopCurrentSentenceRef.current && curSeg && nativeTimeSec >= curSeg.endTime) {
+      playerControlRef.current?.seekTo(curSeg.startTime);
+      lastNativePosRef.current = curSeg.startTime;
+      setCurrentTimeSec(curSeg.startTime);
+      return;
+    }
+    if (Math.abs(nativeTimeSec - lastNativePosRef.current) > 0.02) {
+      lastNativePosRef.current = nativeTimeSec;
+      nativeActiveAtRef.current = Date.now();
+      if (Math.abs(nativeTimeSec - currentTimeRef.current) > 0.22) {
+        setCurrentTimeSec(nativeTimeSec);
       }
-      if (Math.abs(nativeTimeSec - lastNativePosRef.current) > 0.02) {
-        lastNativePosRef.current = nativeTimeSec;
-        nativeActiveAtRef.current = Date.now();
-        if (Math.abs(nativeTimeSec - currentTimeRef.current) > 0.32) {
-          setCurrentTimeSec(nativeTimeSec);
-        }
-      }
-    },
-    [activeSegment, loopCurrentSentence],
-  );
+    }
+  }, []);
 
   // Auto-scroll active subtitle card smoothly into upper viewport whenever spoken sentence advances
   useEffect(() => {
@@ -933,14 +961,24 @@ export default function YoutubeSubtitleScreen() {
         if ((res.data.diamondsEarned ?? 0) > 0) {
           showDiamondRewardToast(res.data.diamondsEarned ?? 0, "Hoàn thành Video AI");
         }
-        setActiveVideo((prev) =>
-          prev
+        setActiveVideo((prev) => {
+          const merged = prev
             ? {
+                ...prev,
                 ...res.data,
                 streamVideoUrl: res.data.streamVideoUrl || prev.streamVideoUrl,
+                segments: res.data.segments?.length ? res.data.segments : prev.segments,
+                vocabulary: res.data.vocabulary?.length ? res.data.vocabulary : prev.vocabulary,
+                exercises: res.data.exercises?.length ? res.data.exercises : prev.exercises,
+                bookmarks: res.data.bookmarks?.length ? res.data.bookmarks : prev.bookmarks,
+                fullEnglishTranscript: res.data.fullEnglishTranscript || prev.fullEnglishTranscript,
               }
-            : res.data,
-        );
+            : res.data;
+          if (merged.id && (merged.segments?.length ?? 0) > 0) {
+            videoDetailCacheRef.current[merged.id] = merged;
+          }
+          return merged;
+        });
         setVideoLibrary((prev) =>
           prev.map((item) =>
             item.id === res.data.id
@@ -966,6 +1004,8 @@ export default function YoutubeSubtitleScreen() {
     }
   };
 
+  const openRequestSeqRef = useRef(0);
+
   const handleOpenLibraryVideo = async (summary: ImportedVideoDetailData) => {
     if (!summary.published && summary.latestJob && !["COMPLETED", "FAILED", "CANCELLED"].includes(summary.latestJob.status)) {
       setActiveJob(summary.latestJob);
@@ -983,25 +1023,54 @@ export default function YoutubeSubtitleScreen() {
       );
       return;
     }
+
+    const cached = videoDetailCacheRef.current[summary.id];
+    const hasInlineSegments = (summary.segments?.length ?? 0) > 0;
+    const initialData = cached ?? summary;
+    openVideoInStudio(initialData);
+
     if (!auth?.accessToken) {
-      openVideoInStudio(summary);
+      setLoadingDetail(false);
       return;
+    }
+    if (cached && (cached.segments?.length ?? 0) > 0) {
+      setLoadingDetail(false);
+      return;
+    }
+
+    const reqId = ++openRequestSeqRef.current;
+    if (!hasInlineSegments) {
+      setLoadingDetail(true);
     }
     try {
       const res = await getPublishedVideoDetail(auth.accessToken, summary.id);
+      if (reqId !== openRequestSeqRef.current) return;
       if (res.data) {
         if ((res.data.segments?.length ?? 0) === 0 && res.data.latestJob && res.data.latestJob.status !== "COMPLETED") {
           setActiveJob(res.data.latestJob);
+          setViewMode("hub");
           Alert.alert(
             "Video chưa sẵn sàng",
             res.data.latestJob.currentStageMessage || "Đang xử lý phụ đề video...",
           );
           return;
         }
-        openVideoInStudio(res.data);
+        videoDetailCacheRef.current[summary.id] = res.data;
+        setActiveVideo(res.data);
+        const resumePos = res.data.lastPositionSeconds && res.data.lastPositionSeconds > 0 ? res.data.lastPositionSeconds : 0;
+        if (resumePos > 0) {
+          setStreamSeekAnchorSec(resumePos);
+          setCurrentTimeSec(resumePos);
+          lastNativePosRef.current = resumePos;
+          playerControlRef.current?.seekTo(resumePos);
+        }
       }
     } catch {
-      openVideoInStudio(summary);
+      // Keep optimistic studio open with summary on transient fetch error
+    } finally {
+      if (reqId === openRequestSeqRef.current) {
+        setLoadingDetail(false);
+      }
     }
   };
 
@@ -1204,60 +1273,69 @@ export default function YoutubeSubtitleScreen() {
     }
   };
 
-  const handlePressWord = useCallback(
-    async (rawToken: string, seg: VideoSubtitleSegmentItem) => {
-      const cleaned = cleanWordToken(rawToken);
-      if (!cleaned) return;
+  const handlePressWord = useCallback(async (rawToken: string, seg: VideoSubtitleSegmentItem) => {
+    const cleaned = cleanWordToken(rawToken);
+    if (!cleaned) return;
 
-      if (isPlayingRef.current) {
-        setIsPlaying(false);
-        playerControlRef.current?.setPlaying(false);
-      }
-      setSelectedWordToken(cleaned);
-      setWordModalVisible(true);
+    if (isPlayingRef.current) {
+      setIsPlaying(false);
+      playerControlRef.current?.setPlaying(false);
+    }
+    setSelectedWordToken(cleaned);
+    setWordModalVisible(true);
 
-      const localMatch = (activeVideo?.vocabulary || []).find(
-        (v) =>
-          v.word.toLowerCase() === cleaned.toLowerCase() ||
-          v.normalizedWord.toLowerCase() === cleaned.toLowerCase(),
-      );
-      if (localMatch) {
-        setWordLookupData(localMatch);
-        setLoadingWordLookup(false);
-        return;
-      }
+    const cacheKey = cleaned.toLowerCase();
+    const cachedWord = wordLookupCacheRef.current[cacheKey];
+    if (cachedWord) {
+      setWordLookupData(cachedWord);
+      setLoadingWordLookup(false);
+      return;
+    }
 
-      if (!auth?.accessToken) return;
-      try {
-        setLoadingWordLookup(true);
-        setWordLookupData(null);
-        const res = await lookupYoutubeWord(auth.accessToken, {
-          word: cleaned,
-          contextSentence: seg.englishText,
-          videoTitle: activeVideo?.title,
-        });
-        if (res.data) {
-          setWordLookupData(res.data);
-        }
-      } catch {
-        setWordLookupData({
-          word: cleaned,
-          normalizedWord: cleaned.toLowerCase(),
-          pronunciation: `/${cleaned.toLowerCase()}/`,
-          partOfSpeech: "Từ vựng ngữ cảnh",
-          meaningVi: `Từ "${cleaned}" trong câu: "${seg.vietnameseText}"`,
-          meaningEn: seg.englishText,
-          exampleSentence: seg.englishText,
-          exampleTranslation: seg.vietnameseText,
-          grammarNote: "Chạm Yêu thích để lưu vào Flashcards.",
-          source: "CONTEXT",
-        });
-      } finally {
-        setLoadingWordLookup(false);
+    const curVideo = activeVideoRef.current;
+    const localMatch = (curVideo?.vocabulary || []).find(
+      (v) =>
+        v.word.toLowerCase() === cacheKey ||
+        v.normalizedWord.toLowerCase() === cacheKey,
+    );
+    if (localMatch) {
+      wordLookupCacheRef.current[cacheKey] = localMatch;
+      setWordLookupData(localMatch);
+      setLoadingWordLookup(false);
+      return;
+    }
+
+    const token = accessTokenRef.current;
+    if (!token) return;
+    try {
+      setLoadingWordLookup(true);
+      setWordLookupData(null);
+      const res = await lookupYoutubeWord(token, {
+        word: cleaned,
+        contextSentence: seg.englishText,
+        videoTitle: curVideo?.title,
+      });
+      if (res.data) {
+        wordLookupCacheRef.current[cacheKey] = res.data;
+        setWordLookupData(res.data);
       }
-    },
-    [activeVideo, auth],
-  );
+    } catch {
+      setWordLookupData({
+        word: cleaned,
+        normalizedWord: cacheKey,
+        pronunciation: `/${cacheKey}/`,
+        partOfSpeech: "Từ vựng ngữ cảnh",
+        meaningVi: `Từ "${cleaned}" trong câu: "${seg.vietnameseText}"`,
+        meaningEn: seg.englishText,
+        exampleSentence: seg.englishText,
+        exampleTranslation: seg.vietnameseText,
+        grammarNote: "Chạm Yêu thích để lưu vào Flashcards.",
+        source: "CONTEXT",
+      });
+    } finally {
+      setLoadingWordLookup(false);
+    }
+  }, [setIsPlaying, setLoadingWordLookup, setSelectedWordToken, setWordLookupData, setWordModalVisible]);
 
   const handleSaveWordToFlashcards = async (item: YoutubeWordLookupData) => {
     if (!auth?.accessToken) return;
@@ -1409,7 +1487,7 @@ export default function YoutubeSubtitleScreen() {
   }, [currentDrillSeg]);
 
   const progressRatio = totalDurationSec > 0 ? Math.max(0, Math.min(1, currentTimeSec / totalDurationSec)) : 0;
-  const activeClockLabel = formatClock(currentTimeSec);
+  const hubCardWidth: `${number}%` = width >= 1340 ? "32.2%" : "48.8%";
 
   const renderSubtitleItem = useCallback(
     ({ item, index }: { item: VideoSubtitleSegmentItem; index: number }) => {
@@ -1419,7 +1497,6 @@ export default function YoutubeSubtitleScreen() {
           activeFontSize={activeFontSize}
           activeWordIdx={isCurrent ? activeWordIdx : -1}
           asrEngine={activeVideo?.asrEngine || "ASR"}
-          currentClockLabel={isCurrent ? activeClockLabel : ""}
           isCurrent={isCurrent}
           isSpeaking={speakingSegSeq === item.sequenceNumber}
           onPressWord={handlePressWord}
@@ -1433,7 +1510,6 @@ export default function YoutubeSubtitleScreen() {
       );
     },
     [
-      activeClockLabel,
       activeFontSize,
       activeSegIndex,
       activeVideo?.asrEngine,
@@ -1448,6 +1524,560 @@ export default function YoutubeSubtitleScreen() {
     ],
   );
 
+  const filterChipNodes = (
+    <>
+      {LEVEL_FILTERS.map((lvl) => {
+        const active = selectedLevel === lvl;
+        return (
+          <Pressable
+            key={lvl}
+            onPress={() => setSelectedLevel(lvl)}
+            style={[
+              styles.hubFilterChip,
+              active && { backgroundColor: theme.colors.primarySoft, borderColor: theme.colors.primary },
+            ]}
+          >
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.hubFilterChipText,
+                active && { color: theme.colors.primary, fontWeight: "800" },
+              ]}
+            >
+              {lvl === "Tất cả" ? "Mọi trình độ" : `Level ${lvl}`}
+            </Text>
+          </Pressable>
+        );
+      })}
+      {availableTopics
+        .filter((t) => t !== "Tất cả")
+        .map((tp) => {
+          const active = selectedTopic === tp;
+          return (
+            <Pressable
+              key={tp}
+              onPress={() => setSelectedTopic(active ? "Tất cả" : tp)}
+              style={[
+                styles.hubFilterChip,
+                active && {
+                  backgroundColor: theme.colors.isDark ? "rgba(16,185,129,0.22)" : "#DCFCE7",
+                  borderColor: "#10B981",
+                },
+              ]}
+            >
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.hubFilterChipText,
+                  active && { color: theme.colors.isDark ? "#34D399" : "#047857", fontWeight: "800" },
+                ]}
+              >
+                {tp}
+              </Text>
+            </Pressable>
+          );
+        })}
+    </>
+  );
+
+  const videoPlayerBlock = activeVideo ? (
+    <View
+      style={[
+        styles.videoFrameContainer,
+        isDesktopWeb && styles.videoFrameDesktop,
+        !isDesktopWeb && expandedVideoHeight && styles.videoFrameExpanded,
+      ]}
+    >
+      <VideoErrorBoundary
+        onOpenExternal={() => {
+          const target = activeVideo.canonicalUrl || activeVideo.sourceUrl;
+          if (target) void WebBrowser.openBrowserAsync(target);
+        }}
+      >
+        <InlineStudioVideoSurface
+          key={`${activeVideo.id}-${streamMode}-${resolvedActiveStreamUrl}`}
+          accessToken={auth?.accessToken}
+          controlRef={playerControlRef}
+          initialSeekSec={streamSeekAnchorSec}
+          isPlaying={isPlaying}
+          muted={ttsSyncEnabled}
+          onNativeReady={() => {
+            setStreamRecovering(false);
+            setStreamErrorDetail(null);
+          }}
+          onNativeTimeUpdate={handleNativeTimeUpdate}
+          onPlaybackError={(msg) => void handleStreamPlaybackError(msg)}
+          playbackSpeed={playbackSpeed}
+          videoUrl={resolvedActiveStreamUrl}
+        />
+      </VideoErrorBoundary>
+
+      {streamRecovering && streamMode !== "failed" ? (
+        <View style={styles.streamStatusPill}>
+          <ActivityIndicator color="#38BDF8" size="small" />
+          <Text style={styles.streamStatusPillText}>Đang làm mới luồng video & âm thanh...</Text>
+        </View>
+      ) : null}
+
+      {streamMode === "failed" ? (
+        <View style={styles.streamErrorOverlay}>
+          <Ionicons color="#38BDF8" name="cloud-offline-outline" size={26} />
+          <Text style={styles.streamErrorTitle}>Chưa phát được video gốc trực tiếp</Text>
+          <Text numberOfLines={2} style={styles.streamErrorSub}>
+            {streamErrorDetail || "Luồng phát tạm gián đoạn. Bạn có thể thử lại hoặc nghe giọng đọc AI đồng bộ phụ đề."}
+          </Text>
+          <View style={styles.streamErrorBtnRow}>
+            <Pressable onPress={handleRetryVideoStream} style={styles.streamRetryBtn}>
+              <Ionicons color="#082F49" name="refresh" size={14} />
+              <Text style={styles.streamRetryBtnText}>Thử phát lại</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                lastAutoSpokenSeqRef.current = null;
+                setTtsSyncEnabled(true);
+                setIsPlaying(true);
+              }}
+              style={styles.streamAiVoiceBtn}
+            >
+              <Ionicons color="#F8FAFC" name="volume-high" size={14} />
+              <Text style={styles.streamAiVoiceBtnText}>Nghe giọng AI</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
+      {!isPlaying && currentTimeSec < 1 && activeVideo.thumbnailUrl ? (
+        <Pressable onPress={handleTogglePlay} style={StyleSheet.absoluteFill}>
+          <Image resizeMode="contain" source={{ uri: activeVideo.thumbnailUrl }} style={styles.videoPosterImage} />
+          <View style={styles.videoPosterPlayOverlay}>
+            <View style={styles.videoBigPlayCircle}>
+              <Ionicons color="#082F49" name="play" size={28} />
+            </View>
+          </View>
+        </Pressable>
+      ) : null}
+
+      <Pressable onPress={() => setCcEnabled((prev) => !prev)} style={styles.ccOverlayBadge}>
+        <Text style={styles.ccOverlayBadgeText}>{ccEnabled ? "CC Bật" : "CC Tắt"}</Text>
+      </Pressable>
+
+      {ccEnabled && activeSegment ? (
+        <View pointerEvents="none" style={styles.onVideoSubtitleBox}>
+          <Text numberOfLines={2} style={styles.onVideoSubtitleEn}>
+            {activeSegment.englishText}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  ) : null;
+
+  const transportBlock = activeVideo ? (
+    <View style={[styles.transportSection, isDesktopWeb && styles.transportSectionDesktop]}>
+      <View style={styles.scrubberRow}>
+        <Text style={styles.scrubberTimeText}>{formatClock(currentTimeSec)}</Text>
+        <View style={styles.scrubberBarTrackWrap}>
+          <View style={styles.scrubberTrackBg}>
+            <View style={[styles.scrubberTrackFill, { width: `${Math.round(progressRatio * 100)}%` }]} />
+          </View>
+          <View
+            style={[
+              styles.scrubberThumbDot,
+              { left: `${Math.max(0, Math.min(96, Math.round(progressRatio * 100)))}%` },
+            ]}
+          />
+          <View style={styles.scrubberTapLayer}>
+            {[0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1].map((ratio) => (
+              <Pressable key={ratio} onPress={() => handleSeekTo(ratio * totalDurationSec, true)} style={{ flex: 1, height: 28 }} />
+            ))}
+          </View>
+        </View>
+        <Text style={styles.scrubberTimeText}>{formatClock(totalDurationSec)}</Text>
+      </View>
+
+      <View style={[styles.transportControlsRow, isDesktopWeb && styles.transportControlsDesktop]}>
+        <Pressable onPress={() => handleSeekTo(currentTimeSec - 10)} style={styles.transportIconBtn}>
+          <Ionicons color="#E2E8F0" name="play-back-outline" size={17} />
+          <Text style={styles.transportSeekSubText}>10</Text>
+        </Pressable>
+
+        <Pressable onPress={handleTogglePlay} style={styles.transportPlayCircleBtn}>
+          <Ionicons color="#082F49" name={isPlaying ? "pause" : "play"} size={21} />
+        </Pressable>
+
+        <Pressable onPress={() => handleSeekTo(currentTimeSec + 10)} style={styles.transportIconBtn}>
+          <Ionicons color="#E2E8F0" name="play-forward-outline" size={17} />
+          <Text style={styles.transportSeekSubText}>10</Text>
+        </Pressable>
+
+        <Pressable onPress={handleReplayCurrentSentence} style={styles.speedPillBtn}>
+          <Text style={styles.speedPillText}>⟲ Câu</Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => setLoopCurrentSentence((prev) => !prev)}
+          style={[styles.loopSentenceBtn, loopCurrentSentence && styles.loopSentenceBtnActive]}
+        >
+          <Ionicons color={loopCurrentSentence ? "#F59E0B" : "#94A3B8"} name="repeat" size={15} />
+          <Text style={[styles.loopSentenceText, loopCurrentSentence && styles.loopSentenceTextActive]}>Lặp</Text>
+        </Pressable>
+
+        <Pressable onPress={handleCycleSpeed} style={styles.speedPillBtn}>
+          <Text style={styles.speedPillText}>{playbackSpeed}x</Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => {
+            const next = !ttsSyncEnabled;
+            lastAutoSpokenSeqRef.current = null;
+            setTtsSyncEnabled(next);
+            if (!next) stopSpeaking();
+          }}
+          style={styles.transportIconBtn}
+        >
+          <Ionicons
+            color={ttsSyncEnabled ? "#38BDF8" : "#E2E8F0"}
+            name={ttsSyncEnabled ? "headset" : "volume-high"}
+            size={18}
+          />
+        </Pressable>
+
+        <Pressable
+          onPress={() => {
+            if (Platform.OS !== "web" && resolvedActiveStreamUrl && playerControlRef.current?.enterFullscreen) {
+              playerControlRef.current.enterFullscreen();
+            } else if (isDesktopWeb && playerControlRef.current?.enterFullscreen) {
+              playerControlRef.current.enterFullscreen();
+            } else {
+              setExpandedVideoHeight((prev) => !prev);
+            }
+          }}
+          style={styles.transportIconBtn}
+        >
+          <Ionicons color="#E2E8F0" name={expandedVideoHeight ? "contract-outline" : "scan-outline"} size={17} />
+        </Pressable>
+      </View>
+    </View>
+  ) : null;
+
+  const studioRightPanelBlock = activeVideo ? (
+    <>
+      <View style={styles.studioTabsBarWrap}>
+        <ScrollView contentContainerStyle={styles.studioTabsBar} horizontal showsHorizontalScrollIndicator={false}>
+          {[
+            { key: "subtitles" as const, icon: "albums-outline" as const, label: `Phụ đề (${segments.length})` },
+            { key: "listening" as const, icon: "ear-outline" as const, label: "Luyện nghe" },
+            { key: "shadowing" as const, icon: "mic-outline" as const, label: "Shadowing" },
+            { key: "vocabulary" as const, icon: "book-outline" as const, label: `Từ vựng (${activeVideo.vocabulary?.length ?? 0})` },
+            { key: "exercises" as const, icon: "help-circle-outline" as const, label: `Bài tập (${activeVideo.exercises?.length ?? 0})` },
+            { key: "bookmarks" as const, icon: "bookmark-outline" as const, label: `Đánh dấu (${activeVideo.bookmarks?.length ?? 0})` },
+          ].map((t) => {
+            const active = studioTab === t.key;
+            return (
+              <Pressable key={t.key} onPress={() => setStudioTab(t.key)} style={[styles.studioTabItem, active && styles.studioTabItemActive]}>
+                <Ionicons color={active ? "#06B6D4" : "#94A3B8"} name={t.icon} size={15} />
+                <Text style={[styles.studioTabLabel, active && styles.studioTabLabelActive]}>{t.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {studioTab === "subtitles" ? (
+        <View style={styles.subtitlesTabPane}>
+          <View style={styles.subtitleToolbarRow}>
+            <ScrollView contentContainerStyle={styles.langPillsRow} horizontal showsHorizontalScrollIndicator={false}>
+              {[
+                { key: "en-vi" as const, label: "Song ngữ" },
+                { key: "en-only" as const, label: "Chỉ Tiếng Anh" },
+                { key: "vi-only" as const, label: "Chỉ Tiếng Việt" },
+                { key: "en-note" as const, label: "ASR" },
+              ].map((pill) => {
+                const active = subtitleFilter === pill.key;
+                return (
+                  <Pressable
+                    key={pill.key}
+                    onPress={() => setSubtitleFilter(pill.key)}
+                    style={[styles.langFilterPill, active && styles.langFilterPillActive]}
+                  >
+                    <Text style={[styles.langFilterPillText, active && styles.langFilterPillTextActive]}>
+                      {pill.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <Pressable
+              onPress={() => setAutoFollowSubtitle((prev) => !prev)}
+              style={[styles.autoFollowPillBtn, autoFollowSubtitle && styles.autoFollowPillBtnActive]}
+            >
+              <Ionicons
+                color={autoFollowSubtitle ? "#082F49" : "#CBD5E1"}
+                name={autoFollowSubtitle ? "locate" : "locate-outline"}
+                size={13}
+              />
+              <Text style={[styles.autoFollowPillText, autoFollowSubtitle && styles.autoFollowPillTextActive]}>
+                Tự cuộn
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setFontSizeIdx((prev) => (prev + 1) % FONT_SIZES.length)}
+              style={styles.fontSizePillBtn}
+            >
+              <Text style={styles.fontSizePillText}>{FONT_SIZES[fontSizeIdx]?.key}</Text>
+            </Pressable>
+          </View>
+
+          {loadingDetail && segments.length === 0 ? (
+            <View style={{ alignItems: "center", flex: 1, gap: 10, justifyContent: "center", padding: 24 }}>
+              <ActivityIndicator color="#06B6D4" size="large" />
+              <Text style={{ color: "#94A3B8", fontSize: 13, fontWeight: "700" }}>
+                Đang tải phụ đề song ngữ...
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              ref={subtitleListRef}
+              contentContainerStyle={styles.subtitleFlatListContent}
+              data={segments}
+              extraData={{
+                activeFontSize,
+                activeSegIndex,
+                activeWordIdx,
+                savedWordsMap,
+                speakingSegSeq,
+                subtitleFilter,
+              }}
+              initialNumToRender={10}
+              keyExtractor={(item) => `${item.sequenceNumber}-${item.startTime}`}
+              maxToRenderPerBatch={6}
+              onScrollBeginDrag={() => setAutoFollowSubtitle(false)}
+              onScrollToIndexFailed={(info) => {
+                subtitleListRef.current?.scrollToOffset({
+                  offset: Math.max(0, info.averageItemLength * info.index),
+                  animated: true,
+                });
+                setTimeout(() => {
+                  subtitleListRef.current?.scrollToIndex({
+                    index: Math.max(0, Math.min(info.index, segments.length - 1)),
+                    viewPosition: 0.14,
+                    animated: true,
+                  });
+                }, 120);
+              }}
+              removeClippedSubviews={Platform.OS === "android"}
+              renderItem={renderSubtitleItem}
+              showsVerticalScrollIndicator={false}
+              style={{ flex: 1, minHeight: 0 }}
+              updateCellsBatchingPeriod={40}
+              windowSize={5}
+            />
+          )}
+
+          {!autoFollowSubtitle && segments.length > 0 ? (
+            <Pressable
+              onPress={() => {
+                setAutoFollowSubtitle(true);
+                subtitleListRef.current?.scrollToIndex({
+                  index: Math.max(0, Math.min(segments.length - 1, activeSegIndex)),
+                  viewPosition: 0.14,
+                  animated: true,
+                });
+              }}
+              style={styles.backToActiveFloatingBtn}
+            >
+              <Ionicons color="#082F49" name="arrow-down-circle" size={16} />
+              <Text style={styles.backToActiveFloatingText}>Về câu đang nói</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.studioBodyScroll} showsVerticalScrollIndicator={false} style={{ flex: 1, minHeight: 0 }}>
+          {studioTab === "listening" && currentDrillSeg ? (
+            <View style={styles.tabPanelCard}>
+              <View style={styles.tabPanelHeaderRow}>
+                <Text style={styles.tabPanelTitle}>🎧 Luyện nghe câu {drillIdx + 1}/{segments.length}</Text>
+                <Pressable onPress={() => void handleSpeakSegment(currentDrillSeg)} style={styles.primaryPillCta}>
+                  <Text style={styles.primaryPillCtaText}>Nghe câu</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.drillMaskedSentence}>{drillData.masked}</Text>
+              <Text style={styles.drillViHint}>🇻🇳 {currentDrillSeg.vietnameseText}</Text>
+              <View style={styles.drillOptionsGrid}>
+                {drillData.options.map((opt) => {
+                  const picked = drillSelectedOption === opt;
+                  const right = opt.toLowerCase() === drillData.target.toLowerCase();
+                  return (
+                    <Pressable
+                      key={opt}
+                      onPress={() => setDrillSelectedOption(opt)}
+                      style={[
+                        styles.drillOptionBtn,
+                        picked && right && styles.drillOptionBtnCorrect,
+                        picked && !right && styles.drillOptionBtnWrong,
+                      ]}
+                    >
+                      <Text style={styles.drillOptionBtnText}>{opt}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Pressable onPress={() => setDrillRevealText((p) => !p)} style={styles.revealBtn}>
+                <Text style={styles.revealBtnText}>{drillRevealText ? "Ẩn đáp án" : "Hiện câu gốc"}</Text>
+              </Pressable>
+              {drillRevealText ? <Text style={styles.drillFullAnswerText}>{currentDrillSeg.englishText}</Text> : null}
+              <View style={styles.drillNavRow}>
+                <Pressable
+                  onPress={() => {
+                    setDrillIdx(Math.max(0, drillIdx - 1));
+                    setDrillSelectedOption(null);
+                    setDrillRevealText(false);
+                  }}
+                  style={styles.secondaryNavBtn}
+                >
+                  <Text style={styles.secondaryNavBtnText}>← Trước</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setDrillIdx((drillIdx + 1) % Math.max(1, segments.length));
+                    setDrillSelectedOption(null);
+                    setDrillRevealText(false);
+                  }}
+                  style={styles.secondaryNavBtn}
+                >
+                  <Text style={styles.secondaryNavBtnText}>Tiếp →</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+
+          {studioTab === "shadowing" && activeSegment ? (
+            <View style={styles.tabPanelCard}>
+              <Text style={styles.tabPanelTitle}>🎙️ Shadowing câu #{activeSegment.sequenceNumber}</Text>
+              <View style={styles.wordChipsWrap}>
+                {tokenizeSentence(activeSegment.englishText).map((tok, i) => (
+                  <View key={i} style={[styles.wordChipItem, i === activeWordIdx && styles.wordChipItemSpokenNow]}>
+                    <Text style={[styles.wordChipLabel, i === activeWordIdx && styles.wordChipLabelSpokenNow]}>{tok}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={styles.vietnameseTranslationLineActive}>🇻🇳 {activeSegment.vietnameseText}</Text>
+              <View style={styles.drillNavRow}>
+                <Pressable onPress={() => { setShadowingStep("listening"); void handleSpeakSegment(activeSegment); }} style={styles.primaryPillCta}>
+                  <Text style={styles.primaryPillCtaText}>1. Nghe mẫu</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    if (shadowingStep === "repeating") setShadowingStep("done");
+                    else {
+                      setShadowingStep("repeating");
+                      handleSeekTo(activeSegment.startTime, true);
+                    }
+                  }}
+                  style={styles.secondaryNavBtn}
+                >
+                  <Text style={styles.secondaryNavBtnText}>{shadowingStep === "repeating" ? "⏹ Xong" : "🎙️ 2. Đọc nhại"}</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+
+          {studioTab === "vocabulary" ? (
+            <View style={{ gap: 10 }}>
+              {(activeVideo.vocabulary || []).map((vocab, i) => {
+                const key = (vocab.normalizedWord || vocab.word).trim().toLowerCase();
+                const saved = Boolean(savedWordsMap[key]);
+                return (
+                  <View key={`${vocab.word}-${i}`} style={styles.vocabCard}>
+                    <View style={styles.vocabCardTopRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.vocabWordTitle}>{vocab.word} <Text style={styles.vocabIpaText}>{vocab.pronunciation}</Text></Text>
+                        <Text style={styles.vocabPosText}>{vocab.partOfSpeech}</Text>
+                      </View>
+                      <Pressable onPress={() => void speakText(vocab.word)} style={styles.roundSpeakerBtn}>
+                        <Ionicons color="#38BDF8" name="volume-high-outline" size={17} />
+                      </Pressable>
+                      <Pressable onPress={() => void handleSaveWordToFlashcards(vocab)} style={[styles.vocabSaveBtn, saved && styles.vocabSaveBtnSaved]}>
+                        <Text style={[styles.vocabSaveBtnText, saved && { color: "#10B981" }]}>{saved ? "Đã lưu" : "♥ Lưu"}</Text>
+                      </Pressable>
+                    </View>
+                    <Text style={styles.vocabMeaningViText}>🇻🇳 {vocab.meaningVi}</Text>
+                    <Text style={styles.vocabExampleEnText}>• {vocab.exampleSentence}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+
+          {studioTab === "exercises" ? (
+            <View style={{ gap: 12 }}>
+              {(activeVideo.exercises || []).map((ex: YoutubeExerciseItem) => {
+                const pickedIdx = exerciseAnswers[ex.index];
+                const answered = pickedIdx !== undefined;
+                return (
+                  <View key={ex.index} style={styles.vocabCard}>
+                    <Text style={styles.tabPanelTitle}>{ex.question}</Text>
+                    {(ex.options || []).map((opt, optIdx) => {
+                      const selected = pickedIdx === optIdx;
+                      const right = optIdx === ex.correctIndex;
+                      return (
+                        <Pressable
+                          key={optIdx}
+                          onPress={() => setExerciseAnswers((prev) => ({ ...prev, [ex.index]: optIdx }))}
+                          style={[
+                            styles.exerciseOptionRow,
+                            answered && right && styles.drillOptionBtnCorrect,
+                            answered && selected && !right && styles.drillOptionBtnWrong,
+                          ]}
+                        >
+                          <Text style={styles.exerciseOptionText}>{opt}</Text>
+                        </Pressable>
+                      );
+                    })}
+                    {answered ? <Text style={styles.exerciseExplainText}>💡 {ex.explanationVi}</Text> : null}
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+
+          {studioTab === "bookmarks" ? (
+            <View style={{ gap: 10 }}>
+              <View style={styles.tabPanelCard}>
+                <Text style={styles.tabPanelTitle}>🔖 Đánh dấu mốc thời gian ({formatClock(currentTimeSec)})</Text>
+                <TextInput
+                  onChangeText={setBookmarkLabelInput}
+                  placeholder="Nhãn ghi chú tại mốc hiện tại..."
+                  placeholderTextColor="#64748B"
+                  style={styles.bookmarkInput}
+                  value={bookmarkLabelInput}
+                />
+                <Pressable onPress={() => void handleAddBookmark()} style={styles.primaryPillCta}>
+                  <Ionicons color="#082F49" name="bookmark" size={16} />
+                  <Text style={styles.primaryPillCtaText}>Lưu Bookmark tại {formatClock(currentTimeSec)}</Text>
+                </Pressable>
+              </View>
+
+              {(activeVideo.bookmarks || []).map((bm) => (
+                <View key={bm.id} style={styles.vocabCard}>
+                  <View style={styles.vocabCardTopRow}>
+                    <Pressable onPress={() => handleSeekTo(bm.timestampSeconds, true)} style={{ flex: 1 }}>
+                      <Text style={styles.vocabWordTitle}>▶ {bm.timestampLabel} — {bm.label}</Text>
+                    </Pressable>
+                    <Pressable onPress={() => void handleDeleteBookmark(bm)}>
+                      <Ionicons color="#EF4444" name="trash-outline" size={18} />
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </ScrollView>
+      )}
+    </>
+  ) : null;
+
   return (
     <>
       <StatusBar
@@ -1458,50 +2088,49 @@ export default function YoutubeSubtitleScreen() {
           {/* ============================================================================
            * VIEW 1: PUBLISHED USER VIDEO LEARNING LIBRARY
            * ============================================================================ */}
-          <View style={styles.hubContainer}>
-          <View style={styles.hubHeaderRow}>
-            <Pressable onPress={() => safeBack("/user/home")} style={styles.hubBackBtn}>
-              <Ionicons color={theme.colors.text} name="arrow-back" size={20} />
-            </Pressable>
-            <Text numberOfLines={1} style={styles.hubHeaderTitle}>
-              Thư viện Video Song ngữ
-            </Text>
-            <Pressable
-              onPress={() => void reloadPublishedLibrary()}
-              style={styles.hubActionIconBtn}
-            >
-              <Ionicons color={theme.colors.primary} name="refresh-outline" size={19} />
-            </Pressable>
-          </View>
+          <View style={[styles.hubContainer, isDesktopWeb && styles.hubContainerDesktop]}>
+            <View style={styles.hubHeaderRow}>
+              <Pressable onPress={() => safeBack("/user/home")} style={styles.hubBackBtn}>
+                <Ionicons color={theme.colors.text} name="arrow-back" size={20} />
+              </Pressable>
+              <Text numberOfLines={1} style={styles.hubHeaderTitle}>
+                Thư viện Video Song ngữ
+              </Text>
+              <Pressable
+                onPress={() => void reloadPublishedLibrary()}
+                style={styles.hubActionIconBtn}
+              >
+                <Ionicons color={theme.colors.primary} name="refresh-outline" size={19} />
+              </Pressable>
+            </View>
 
-          {/* Curated Library Banner + User Personal Video Import */}
-          <View style={styles.importCard}>
-            <Pressable
-              onPress={() => setImportPanelOpen((prev) => !prev)}
-              style={styles.importCardHeader}
-            >
-              <View style={styles.youtubeBadgeBox}>
-                <View style={styles.youtubePlayCircle}>
-                  <Ionicons color="#FFFFFF" name="play" size={16} />
+            {/* Curated Library Banner + User Personal Video Import */}
+            <View style={styles.importCard}>
+              <Pressable
+                onPress={() => setImportPanelOpen((prev) => !prev)}
+                style={styles.importCardHeader}
+              >
+                <View style={styles.youtubeBadgeBox}>
+                  <View style={styles.youtubePlayCircle}>
+                    <Ionicons color="#FFFFFF" name="play" size={16} />
+                  </View>
                 </View>
-              </View>
-              <View style={{ flex: 1, gap: 4 }}>
-                <Text style={styles.importCardTitle}>Video Song ngữ & Nhập link cá nhân</Text>
-                <Text style={styles.importCardSubtitle}>
-                  Học video do Admin biên tập hoặc dán link YouTube riêng để AI tạo phụ đề ngắn gọn, sạch & đồng bộ.
-                </Text>
-              </View>
-              <Ionicons
-                color={theme.colors.textMuted}
-                name={importPanelOpen ? "chevron-up" : "chevron-down"}
-                size={20}
-              />
-            </Pressable>
+                <View style={{ flex: 1, gap: 4 }}>
+                  <Text style={styles.importCardTitle}>Video Song ngữ & Nhập link cá nhân</Text>
+                  <Text style={styles.importCardSubtitle}>
+                    Học video do Admin biên tập hoặc dán link YouTube riêng để AI tạo phụ đề song ngữ.
+                  </Text>
+                </View>
+                <Ionicons
+                  color={theme.colors.textMuted}
+                  name={importPanelOpen ? "chevron-up" : "chevron-down"}
+                  size={20}
+                />
+              </Pressable>
 
-            {importPanelOpen ? (
-              <View style={{ gap: 10, paddingTop: 2 }}>
-                <View style={styles.urlRow}>
-                  <View style={styles.urlInputBox}>
+              {importPanelOpen ? (
+                <View style={isDesktopWeb ? styles.hubImportRowDesktop : styles.hubImportColMobile}>
+                  <View style={[styles.urlInputBox, isDesktopWeb && { flex: 1.4 }]}>
                     <Ionicons color="#EF4444" name="logo-youtube" size={18} />
                     <TextInput
                       autoCapitalize="none"
@@ -1518,313 +2147,262 @@ export default function YoutubeSubtitleScreen() {
                       </Pressable>
                     ) : null}
                   </View>
-                </View>
 
-                <View style={styles.urlInputBox}>
-                  <Ionicons color={theme.colors.primary} name="create-outline" size={17} />
-                  <TextInput
-                    onChangeText={setCustomTitleInput}
-                    placeholder="Tiêu đề tùy chọn (bỏ trống AI tự tóm tắt)"
-                    placeholderTextColor={theme.colors.textMuted}
-                    style={styles.urlTextInput}
-                    value={customTitleInput}
-                  />
-                </View>
+                  <View style={[styles.urlInputBox, isDesktopWeb && { flex: 1 }]}>
+                    <Ionicons color={theme.colors.primary} name="create-outline" size={17} />
+                    <TextInput
+                      onChangeText={setCustomTitleInput}
+                      placeholder="Tiêu đề tùy chọn"
+                      placeholderTextColor={theme.colors.textMuted}
+                      style={styles.urlTextInput}
+                      value={customTitleInput}
+                    />
+                  </View>
 
-                <Pressable
-                  disabled={importingPersonal}
-                  onPress={() => void handleImportPersonalUrl()}
-                  style={[styles.redImportBtn, importingPersonal && { opacity: 0.7 }]}
-                >
-                  {importingPersonal ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                  ) : (
-                    <Ionicons color="#FFFFFF" name="sparkles" size={18} />
-                  )}
-                  <Text style={styles.redImportBtnText}>
-                    {importingPersonal ? "Đang gửi xử lý AI..." : "Nhập link & Tạo phụ đề song ngữ"}
+                  <Pressable
+                    disabled={importingPersonal}
+                    onPress={() => void handleImportPersonalUrl()}
+                    style={[
+                      styles.redImportBtn,
+                      isDesktopWeb && styles.redImportBtnDesktop,
+                      importingPersonal && { opacity: 0.7 },
+                    ]}
+                  >
+                    {importingPersonal ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Ionicons color="#FFFFFF" name="sparkles" size={17} />
+                    )}
+                    <Text style={styles.redImportBtnText}>
+                      {importingPersonal ? "Đang xử lý AI..." : isDesktopWeb ? "Tạo phụ đề" : "Nhập link & Tạo phụ đề song ngữ"}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+
+            {activeJob ? (
+              <View style={styles.jobProgressCard}>
+                <View style={styles.jobHeaderRow}>
+                  <Text style={styles.jobTitleText}>
+                    {activeJob.status === "COMPLETED"
+                      ? "✓ Hoàn tất xử lý video cá nhân"
+                      : activeJob.status === "FAILED"
+                        ? "✕ Xử lý video gặp lỗi"
+                        : activeJob.status === "CANCELLED"
+                          ? "Đã hủy xử lý video"
+                          : `Đang xử lý video cá nhân (${activeJob.overallProgress}%)`}
                   </Text>
-                </Pressable>
+                  <Text style={styles.jobChunkText}>{activeJob.status}</Text>
+                </View>
+                <View style={styles.jobBarTrack}>
+                  <View style={[styles.jobBarFill, { width: `${Math.max(4, activeJob.overallProgress || 0)}%` }]} />
+                </View>
+                {activeJob.currentStageMessage ? (
+                  <Text style={styles.jobMessageText}>{activeJob.currentStageMessage}</Text>
+                ) : null}
+                {importErrorMsg || activeJob.errorMessage ? (
+                  <Text style={styles.jobErrorText}>{importErrorMsg || activeJob.errorMessage}</Text>
+                ) : null}
+                <View style={styles.jobBtnRow}>
+                  {!["COMPLETED", "FAILED", "CANCELLED"].includes(activeJob.status) ? (
+                    <Pressable onPress={() => void handleCancelPersonalJob()} style={styles.jobCancelBtn}>
+                      <Text style={styles.jobBtnText}>Hủy xử lý</Text>
+                    </Pressable>
+                  ) : activeJob.status === "FAILED" ? (
+                    <Pressable onPress={() => void handleRetryPersonalJob(activeJob.jobId)} style={styles.jobRetryBtn}>
+                      <Text style={styles.jobBtnText}>Thử lại</Text>
+                    </Pressable>
+                  ) : null}
+                  {["COMPLETED", "FAILED", "CANCELLED"].includes(activeJob.status) ? (
+                    <Pressable onPress={() => setActiveJob(null)} style={styles.jobRetryBtn}>
+                      <Text style={styles.jobBtnText}>Ẩn thông báo</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               </View>
             ) : null}
-          </View>
 
-          {activeJob ? (
-            <View style={styles.jobProgressCard}>
-              <View style={styles.jobHeaderRow}>
-                <Text style={styles.jobTitleText}>
-                  {activeJob.status === "COMPLETED"
-                    ? "✓ Hoàn tất xử lý video cá nhân"
-                    : activeJob.status === "FAILED"
-                      ? "✕ Xử lý video gặp lỗi"
-                      : activeJob.status === "CANCELLED"
-                        ? "Đã hủy xử lý video"
-                        : `Đang xử lý video cá nhân (${activeJob.overallProgress}%)`}
+            {/* Search & Video Bookmark Filter */}
+            <View style={styles.searchFilterRow}>
+              <View style={styles.searchInputWrap}>
+                <Ionicons color={theme.colors.primary} name="search-outline" size={18} />
+                <TextInput
+                  onChangeText={setSearchQuery}
+                  placeholder="Tìm tiêu đề, mô tả, kênh, chủ đề..."
+                  placeholderTextColor={theme.colors.textMuted}
+                  style={styles.searchTextInput}
+                  value={searchQuery}
+                />
+                {searchQuery.length > 0 ? (
+                  <Pressable onPress={() => setSearchQuery("")}>
+                    <Ionicons color={theme.colors.textMuted} name="close-circle" size={17} />
+                  </Pressable>
+                ) : null}
+              </View>
+              <Pressable
+                onPress={() => setOnlyFavorites((prev) => !prev)}
+                style={[styles.favoriteFilterBtn, onlyFavorites && styles.favoriteFilterBtnActive]}
+              >
+                <Ionicons color="#F43F5E" name={onlyFavorites ? "bookmark" : "bookmark-outline"} size={16} />
+                <Text style={styles.favoriteFilterText}>Đã lưu</Text>
+              </Pressable>
+            </View>
+
+            {/* Level & Topic Filter Chips */}
+            {isDesktopWeb ? (
+              <View style={styles.hubFilterChipsWrap}>{filterChipNodes}</View>
+            ) : (
+              <ScrollView
+                contentContainerStyle={styles.hubFilterChipsScroll}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ flexGrow: 0, flexShrink: 0 }}
+              >
+                {filterChipNodes}
+              </ScrollView>
+            )}
+
+            {loadingLibrary ? (
+              <ActivityIndicator color={theme.colors.primary} style={{ marginVertical: 20 }} />
+            ) : filteredLibrary.length === 0 ? (
+              <View style={styles.videoOfTheDayCard}>
+                <Text style={styles.vodTitle}>Chưa có video phù hợp trong thư viện</Text>
+                <Text style={styles.vodSourceMeta}>
+                  {videoLibrary.length === 0
+                    ? "Các bài học video sẽ xuất hiện tại đây ngay sau khi Ban quản trị duyệt và xuất bản."
+                    : "Hãy thử xóa từ khóa tìm kiếm hoặc chọn lại bộ lọc trình độ / chủ đề."}
                 </Text>
-                <Text style={styles.jobChunkText}>{activeJob.status}</Text>
               </View>
-              <View style={styles.jobBarTrack}>
-                <View style={[styles.jobBarFill, { width: `${Math.max(4, activeJob.overallProgress || 0)}%` }]} />
-              </View>
-              {activeJob.currentStageMessage ? (
-                <Text style={styles.jobMessageText}>{activeJob.currentStageMessage}</Text>
-              ) : null}
-              {importErrorMsg || activeJob.errorMessage ? (
-                <Text style={styles.jobErrorText}>{importErrorMsg || activeJob.errorMessage}</Text>
-              ) : null}
-              <View style={styles.jobBtnRow}>
-                {!["COMPLETED", "FAILED", "CANCELLED"].includes(activeJob.status) ? (
-                  <Pressable onPress={() => void handleCancelPersonalJob()} style={styles.jobCancelBtn}>
-                    <Text style={styles.jobBtnText}>Hủy xử lý</Text>
-                  </Pressable>
-                ) : activeJob.status === "FAILED" ? (
-                  <Pressable onPress={() => void handleRetryPersonalJob(activeJob.jobId)} style={styles.jobRetryBtn}>
-                    <Text style={styles.jobBtnText}>Thử lại</Text>
-                  </Pressable>
-                ) : null}
-                {["COMPLETED", "FAILED", "CANCELLED"].includes(activeJob.status) ? (
-                  <Pressable onPress={() => setActiveJob(null)} style={styles.jobRetryBtn}>
-                    <Text style={styles.jobBtnText}>Ẩn thông báo</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            </View>
-          ) : null}
-
-          {/* Search & Video Bookmark Filter */}
-          <View style={styles.searchFilterRow}>
-            <View style={styles.searchInputWrap}>
-              <Ionicons color={theme.colors.primary} name="search-outline" size={18} />
-              <TextInput
-                onChangeText={setSearchQuery}
-                placeholder="Tìm tiêu đề, mô tả, kênh, chủ đề..."
-                placeholderTextColor={theme.colors.textMuted}
-                style={styles.searchTextInput}
-                value={searchQuery}
-              />
-              {searchQuery.length > 0 ? (
-                <Pressable onPress={() => setSearchQuery("")}>
-                  <Ionicons color={theme.colors.textMuted} name="close-circle" size={17} />
-                </Pressable>
-              ) : null}
-            </View>
-            <Pressable
-              onPress={() => setOnlyFavorites((prev) => !prev)}
-              style={[styles.favoriteFilterBtn, onlyFavorites && styles.favoriteFilterBtnActive]}
-            >
-              <Ionicons color="#F43F5E" name={onlyFavorites ? "bookmark" : "bookmark-outline"} size={16} />
-              <Text style={styles.favoriteFilterText}>Đã lưu</Text>
-            </Pressable>
-          </View>
-
-          {/* Level & Topic Filter Chips */}
-          <ScrollView
-            contentContainerStyle={{ alignItems: "center", gap: 8, paddingVertical: 2 }}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ flexGrow: 0, flexShrink: 0 }}
-          >
-            {LEVEL_FILTERS.map((lvl) => {
-              const active = selectedLevel === lvl;
-              return (
-                <Pressable
-                  key={lvl}
-                  onPress={() => setSelectedLevel(lvl)}
-                  style={[
-                    styles.dropdownPill,
-                    { flex: 0, height: 36, justifyContent: "center", paddingHorizontal: 14, paddingVertical: 0 },
-                    active && { backgroundColor: theme.colors.primarySoft, borderColor: theme.colors.primary },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.dropdownPillText,
-                      active && { color: theme.colors.primary, fontWeight: "800" },
-                    ]}
-                  >
-                    {lvl === "Tất cả" ? "Mọi trình độ" : `Level ${lvl}`}
-                  </Text>
-                </Pressable>
-              );
-            })}
-            {availableTopics
-              .filter((t) => t !== "Tất cả")
-              .map((tp) => {
-                const active = selectedTopic === tp;
-                return (
-                  <Pressable
-                    key={tp}
-                    onPress={() => setSelectedTopic(active ? "Tất cả" : tp)}
-                    style={[
-                      styles.dropdownPill,
-                      { flex: 0, height: 36, justifyContent: "center", paddingHorizontal: 14, paddingVertical: 0 },
-                      active && {
-                        backgroundColor: theme.colors.isDark ? "rgba(16,185,129,0.22)" : "#DCFCE7",
-                        borderColor: "#10B981",
-                      },
-                    ]}
-                  >
-                    <Text
+            ) : (
+              <View style={isDesktopWeb ? styles.hubCardsGrid : styles.hubCardsStack}>
+                {filteredLibrary.map((video) => {
+                  const watchPct =
+                    video.completed
+                      ? 100
+                      : video.durationSeconds > 0
+                        ? Math.min(99, Math.round((video.lastPositionSeconds / video.durationSeconds) * 100))
+                        : 0;
+                  return (
+                    <Pressable
+                      key={video.id}
+                      onPress={() => void handleOpenLibraryVideo(video)}
                       style={[
-                        styles.dropdownPillText,
-                        active && { color: theme.colors.isDark ? "#34D399" : "#047857", fontWeight: "800" },
+                        styles.videoOfTheDayCard,
+                        isDesktopWeb ? { width: hubCardWidth } : null,
                       ]}
                     >
-                      {tp}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-          </ScrollView>
+                      {video.thumbnailUrl ? (
+                        <View
+                          style={[
+                            styles.videoThumbBox,
+                            isDesktopWeb ? styles.videoThumbBoxDesktop : styles.videoThumbBoxMobile,
+                          ]}
+                        >
+                          <Image
+                            resizeMode="cover"
+                            source={{ uri: video.thumbnailUrl }}
+                            style={{ height: "100%", width: "100%" }}
+                          />
+                          <View style={styles.thumbDurationBadge}>
+                            <Text style={{ color: "#F8FAFC", fontSize: 11.5, fontWeight: "900" }}>
+                              {video.durationLabel || formatClock(video.durationSeconds)}
+                            </Text>
+                          </View>
+                          <Pressable
+                            hitSlop={8}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              void handleToggleCardFavorite(video);
+                            }}
+                            style={styles.thumbFavBtn}
+                          >
+                            <Ionicons
+                              color={video.favorite ? "#F43F5E" : "#F8FAFC"}
+                              name={video.favorite ? "bookmark" : "bookmark-outline"}
+                              size={17}
+                            />
+                          </Pressable>
+                        </View>
+                      ) : null}
 
-          {loadingLibrary ? (
-            <ActivityIndicator color={theme.colors.primary} style={{ marginVertical: 20 }} />
-          ) : filteredLibrary.length === 0 ? (
-            <View style={styles.videoOfTheDayCard}>
-              <Text style={styles.vodTitle}>Chưa có video phù hợp trong thư viện</Text>
-              <Text style={styles.vodSourceMeta}>
-                {videoLibrary.length === 0
-                  ? "Các bài học video sẽ xuất hiện tại đây ngay sau khi Ban quản trị duyệt và xuất bản."
-                  : "Hãy thử xóa từ khóa tìm kiếm hoặc chọn lại bộ lọc trình độ / chủ đề."}
-              </Text>
-            </View>
-          ) : (
-            filteredLibrary.map((video) => {
-              const watchPct =
-                video.completed
-                  ? 100
-                  : video.durationSeconds > 0
-                    ? Math.min(99, Math.round((video.lastPositionSeconds / video.durationSeconds) * 100))
-                    : 0;
-              return (
-                <Pressable
-                  key={video.id}
-                  onPress={() => void handleOpenLibraryVideo(video)}
-                  style={styles.videoOfTheDayCard}
-                >
-                  {video.thumbnailUrl ? (
-                    <View style={{ borderRadius: 14, height: 164, overflow: "hidden", position: "relative", width: "100%" }}>
-                      <Image
-                        resizeMode="cover"
-                        source={{ uri: video.thumbnailUrl }}
-                        style={{ height: "100%", width: "100%" }}
-                      />
-                      <View
-                        style={{
-                          backgroundColor: "rgba(8,14,30,0.82)",
-                          borderRadius: 8,
-                          bottom: 8,
-                          paddingHorizontal: 8,
-                          paddingVertical: 3,
-                          position: "absolute",
-                          right: 8,
-                        }}
-                      >
-                        <Text style={{ color: "#F8FAFC", fontSize: 11.5, fontWeight: "900" }}>
-                          {video.durationLabel || formatClock(video.durationSeconds)}
-                        </Text>
+                      <View style={styles.vodTopBadgesRow}>
+                        <View style={styles.vodFireBadge}>
+                          <Text numberOfLines={1} style={styles.vodFireBadgeText}>
+                            {!video.published
+                              ? video.latestJob && !["COMPLETED", "FAILED", "CANCELLED"].includes(video.latestJob.status)
+                                ? `CÁ NHÂN • ${video.latestJob.overallProgress}%`
+                                : video.latestJob?.status === "FAILED"
+                                  ? "CÁ NHÂN • LỖI"
+                                  : "VIDEO CỦA TÔI"
+                              : video.completed
+                                ? "✓ ĐÃ HOÀN THÀNH"
+                                : video.topic || "General English"}
+                          </Text>
+                        </View>
+
+                        <View style={styles.vodRightMetaRow}>
+                          {!video.published && video.latestJob?.status === "FAILED" ? (
+                            <Pressable
+                              hitSlop={6}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                if (video.latestJob?.jobId) {
+                                  void handleRetryPersonalJob(video.latestJob.jobId);
+                                }
+                              }}
+                              style={styles.jobRetryBtn}
+                            >
+                              <Text style={styles.jobBtnText}>Thử lại</Text>
+                            </Pressable>
+                          ) : null}
+                          {!video.published ? (
+                            <Pressable
+                              hitSlop={8}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                handleDeletePersonalCard(video);
+                              }}
+                            >
+                              <Ionicons color="#EF4444" name="trash-outline" size={17} />
+                            </Pressable>
+                          ) : null}
+                          <View style={styles.vodLevelBadge}>
+                            <Text style={styles.vodLevelBadgeText}>{video.level || "B1"}</Text>
+                          </View>
+                          {!video.thumbnailUrl ? (
+                            <Text style={styles.vodDurationText}>
+                              {video.durationLabel || formatClock(video.durationSeconds)}
+                            </Text>
+                          ) : null}
+                        </View>
                       </View>
-                      <Pressable
-                        hitSlop={8}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          void handleToggleCardFavorite(video);
-                        }}
-                        style={{
-                          alignItems: "center",
-                          backgroundColor: "rgba(8,14,30,0.75)",
-                          borderRadius: 999,
-                          height: 34,
-                          justifyContent: "center",
-                          position: "absolute",
-                          right: 8,
-                          top: 8,
-                          width: 34,
-                        }}
-                      >
-                        <Ionicons
-                          color={video.favorite ? "#F43F5E" : "#F8FAFC"}
-                          name={video.favorite ? "bookmark" : "bookmark-outline"}
-                          size={17}
-                        />
-                      </Pressable>
-                    </View>
-                  ) : null}
 
-                  <View style={styles.vodTopBadgesRow}>
-                    <View style={styles.vodFireBadge}>
-                      <Text style={styles.vodFireBadgeText}>
-                        {!video.published
-                          ? video.latestJob && !["COMPLETED", "FAILED", "CANCELLED"].includes(video.latestJob.status)
-                            ? `CÁ NHÂN • ${video.latestJob.overallProgress}%`
-                            : video.latestJob?.status === "FAILED"
-                              ? "CÁ NHÂN • LỖI"
-                              : "VIDEO CỦA TÔI"
-                          : video.completed
-                            ? "✓ ĐÃ HOÀN THÀNH"
-                            : video.topic || "General English"}
+                      <Text numberOfLines={isDesktopWeb ? 2 : undefined} style={styles.vodTitle}>
+                        {video.title}
                       </Text>
-                    </View>
-
-                    <View style={styles.vodRightMetaRow}>
-                      {!video.published && video.latestJob?.status === "FAILED" ? (
-                        <Pressable
-                          hitSlop={6}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            if (video.latestJob?.jobId) {
-                              void handleRetryPersonalJob(video.latestJob.jobId);
-                            }
-                          }}
-                          style={styles.jobRetryBtn}
-                        >
-                          <Text style={styles.jobBtnText}>Thử lại</Text>
-                        </Pressable>
-                      ) : null}
-                      {!video.published ? (
-                        <Pressable
-                          hitSlop={8}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            handleDeletePersonalCard(video);
-                          }}
-                        >
-                          <Ionicons color="#EF4444" name="trash-outline" size={17} />
-                        </Pressable>
-                      ) : null}
-                      <View style={styles.vodLevelBadge}>
-                        <Text style={styles.vodLevelBadgeText}>{video.level || "B1"}</Text>
-                      </View>
-                      {!video.thumbnailUrl ? (
-                        <Text style={styles.vodDurationText}>
-                          {video.durationLabel || formatClock(video.durationSeconds)}
+                      {video.description ? (
+                        <Text numberOfLines={2} style={styles.vodSourceMeta}>
+                          {cleanSubtitleText(video.description)}
                         </Text>
                       ) : null}
-                    </View>
-                  </View>
-
-                  <Text style={styles.vodTitle}>{video.title}</Text>
-                  {video.description ? (
-                    <Text numberOfLines={2} style={styles.vodSourceMeta}>
-                      {cleanSubtitleText(video.description)}
-                    </Text>
-                  ) : null}
-                  <Text style={styles.vodSourceMeta}>
-                    {video.authorName || video.platform} • Đã học{" "}
-                    {formatClock(video.lastPositionSeconds)} / {formatClock(video.durationSeconds)} ({watchPct}%)
-                  </Text>
-                  <View style={styles.jobBarTrack}>
-                    <View style={[styles.jobBarFill, { width: `${watchPct}%` }]} />
-                  </View>
-                </Pressable>
-              );
-            })
-          )}
+                      <Text style={styles.vodSourceMeta}>
+                        {video.authorName || video.platform} • Đã học{" "}
+                        {formatClock(video.lastPositionSeconds)} / {formatClock(video.durationSeconds)} ({watchPct}%)
+                      </Text>
+                      <View style={styles.jobBarTrack}>
+                        <View style={[styles.jobBarFill, { width: `${watchPct}%` }]} />
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
           </View>
         </UserScreen>
       ) : activeVideo ? (
         /* ============================================================================
-         * VIEW 2: IN-APP FULL-LENGTH PLAYER & STUDIO (TRUE EDGE-TO-EDGE FULLSCREEN)
+         * VIEW 2: IN-APP FULL-LENGTH PLAYER & STUDIO
          * ============================================================================ */
         <View style={[styles.playerStudioContainer, { paddingBottom: insets.bottom }]}>
           <View style={[styles.studioTopBar, { paddingTop: Math.max(insets.top, 8) + 4 }]}>
@@ -1872,491 +2450,41 @@ export default function YoutubeSubtitleScreen() {
             </Pressable>
           </View>
 
-          {/* 16:9 In-App Video Surface */}
-          <View style={[styles.videoFrameContainer, expandedVideoHeight && styles.videoFrameExpanded]}>
-            <VideoErrorBoundary
-              onOpenExternal={() => {
-                const target = activeVideo.canonicalUrl || activeVideo.sourceUrl;
-                if (target) void WebBrowser.openBrowserAsync(target);
-              }}
-            >
-              <InlineStudioVideoSurface
-                key={`${activeVideo.id}-${streamMode}-${resolvedActiveStreamUrl}`}
-                accessToken={auth?.accessToken}
-                controlRef={playerControlRef}
-                initialSeekSec={streamSeekAnchorSec}
-                isPlaying={isPlaying}
-                muted={ttsSyncEnabled}
-                onNativeReady={() => {
-                  setStreamRecovering(false);
-                  setStreamErrorDetail(null);
-                }}
-                onNativeTimeUpdate={handleNativeTimeUpdate}
-                onPlaybackError={(msg) => void handleStreamPlaybackError(msg)}
-                playbackSpeed={playbackSpeed}
-                videoUrl={resolvedActiveStreamUrl}
-              />
-            </VideoErrorBoundary>
-
-            {streamRecovering && streamMode !== "failed" ? (
-              <View style={styles.streamStatusPill}>
-                <ActivityIndicator color="#38BDF8" size="small" />
-                <Text style={styles.streamStatusPillText}>Đang làm mới luồng video & âm thanh...</Text>
-              </View>
-            ) : null}
-
-            {streamMode === "failed" ? (
-              <View style={styles.streamErrorOverlay}>
-                <Ionicons color="#38BDF8" name="cloud-offline-outline" size={26} />
-                <Text style={styles.streamErrorTitle}>Chưa phát được video gốc trực tiếp</Text>
-                <Text numberOfLines={2} style={styles.streamErrorSub}>
-                  {streamErrorDetail || "Luồng phát tạm gián đoạn. Bạn có thể thử lại hoặc nghe giọng đọc AI đồng bộ phụ đề."}
-                </Text>
-                <View style={styles.streamErrorBtnRow}>
-                  <Pressable onPress={handleRetryVideoStream} style={styles.streamRetryBtn}>
-                    <Ionicons color="#082F49" name="refresh" size={14} />
-                    <Text style={styles.streamRetryBtnText}>Thử phát lại</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => {
-                      lastAutoSpokenSeqRef.current = null;
-                      setTtsSyncEnabled(true);
-                      setIsPlaying(true);
-                    }}
-                    style={styles.streamAiVoiceBtn}
-                  >
-                    <Ionicons color="#F8FAFC" name="volume-high" size={14} />
-                    <Text style={styles.streamAiVoiceBtnText}>Nghe giọng AI</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ) : null}
-
-            {!isPlaying && currentTimeSec < 1 && activeVideo.thumbnailUrl ? (
-              <Pressable onPress={handleTogglePlay} style={StyleSheet.absoluteFill}>
-                <Image resizeMode="contain" source={{ uri: activeVideo.thumbnailUrl }} style={styles.videoPosterImage} />
-                <View style={styles.videoPosterPlayOverlay}>
-                  <View style={styles.videoBigPlayCircle}>
-                    <Ionicons color="#082F49" name="play" size={28} />
+          {isDesktopWeb ? (
+            <View style={styles.studioMainSplit}>
+              <View style={styles.studioLeftCol}>
+                {videoPlayerBlock}
+                {transportBlock}
+                <View style={styles.desktopMetaStrip}>
+                  <View style={styles.vodLevelBadge}>
+                    <Text style={styles.vodLevelBadgeText}>{activeVideo.level || "B1"}</Text>
                   </View>
-                </View>
-              </Pressable>
-            ) : null}
-
-            <Pressable onPress={() => setCcEnabled((prev) => !prev)} style={styles.ccOverlayBadge}>
-              <Text style={styles.ccOverlayBadgeText}>{ccEnabled ? "CC Bật" : "CC Tắt"}</Text>
-            </Pressable>
-
-            {ccEnabled && activeSegment ? (
-              <View pointerEvents="none" style={styles.onVideoSubtitleBox}>
-                <Text numberOfLines={2} style={styles.onVideoSubtitleEn}>
-                  {activeSegment.englishText}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-
-          {/* Scrubber & Transport Controls */}
-          <View style={styles.transportSection}>
-            <View style={styles.scrubberRow}>
-              <Text style={styles.scrubberTimeText}>{formatClock(currentTimeSec)}</Text>
-              <View style={styles.scrubberBarTrackWrap}>
-                <View style={styles.scrubberTrackBg}>
-                  <View style={[styles.scrubberTrackFill, { width: `${Math.round(progressRatio * 100)}%` }]} />
-                </View>
-                <View
-                  style={[
-                    styles.scrubberThumbDot,
-                    { left: `${Math.max(0, Math.min(96, Math.round(progressRatio * 100)))}%` },
-                  ]}
-                />
-                <View style={styles.scrubberTapLayer}>
-                  {[0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1].map((ratio) => (
-                    <Pressable key={ratio} onPress={() => handleSeekTo(ratio * totalDurationSec, true)} style={{ flex: 1, height: 28 }} />
-                  ))}
-                </View>
-              </View>
-              <Text style={styles.scrubberTimeText}>{formatClock(totalDurationSec)}</Text>
-            </View>
-
-            <View style={styles.transportControlsRow}>
-              <Pressable onPress={() => handleSeekTo(currentTimeSec - 10)} style={styles.transportIconBtn}>
-                <Ionicons color="#E2E8F0" name="play-back-outline" size={17} />
-                <Text style={styles.transportSeekSubText}>10</Text>
-              </Pressable>
-
-              <Pressable onPress={handleTogglePlay} style={styles.transportPlayCircleBtn}>
-                <Ionicons color="#082F49" name={isPlaying ? "pause" : "play"} size={21} />
-              </Pressable>
-
-              <Pressable onPress={() => handleSeekTo(currentTimeSec + 10)} style={styles.transportIconBtn}>
-                <Ionicons color="#E2E8F0" name="play-forward-outline" size={17} />
-                <Text style={styles.transportSeekSubText}>10</Text>
-              </Pressable>
-
-              <Pressable onPress={handleReplayCurrentSentence} style={styles.speedPillBtn}>
-                <Text style={styles.speedPillText}>⟲ Câu</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => setLoopCurrentSentence((prev) => !prev)}
-                style={[styles.loopSentenceBtn, loopCurrentSentence && styles.loopSentenceBtnActive]}
-              >
-                <Ionicons color={loopCurrentSentence ? "#F59E0B" : "#94A3B8"} name="repeat" size={15} />
-                <Text style={[styles.loopSentenceText, loopCurrentSentence && styles.loopSentenceTextActive]}>Lặp</Text>
-              </Pressable>
-
-              <Pressable onPress={handleCycleSpeed} style={styles.speedPillBtn}>
-                <Text style={styles.speedPillText}>{playbackSpeed}x</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => {
-                  const next = !ttsSyncEnabled;
-                  lastAutoSpokenSeqRef.current = null;
-                  setTtsSyncEnabled(next);
-                  if (!next) stopSpeaking();
-                }}
-                style={styles.transportIconBtn}
-              >
-                <Ionicons
-                  color={ttsSyncEnabled ? "#38BDF8" : "#E2E8F0"}
-                  name={ttsSyncEnabled ? "headset" : "volume-high"}
-                  size={18}
-                />
-              </Pressable>
-
-              <Pressable
-                onPress={() => {
-                  if (Platform.OS !== "web" && resolvedActiveStreamUrl && playerControlRef.current?.enterFullscreen) {
-                    playerControlRef.current.enterFullscreen();
-                  } else {
-                    setExpandedVideoHeight((prev) => !prev);
-                  }
-                }}
-                style={styles.transportIconBtn}
-              >
-                <Ionicons color="#E2E8F0" name={expandedVideoHeight ? "contract-outline" : "scan-outline"} size={17} />
-              </Pressable>
-            </View>
-          </View>
-
-          {/* 6 Studio Tabs */}
-          <View style={styles.studioTabsBarWrap}>
-            <ScrollView contentContainerStyle={styles.studioTabsBar} horizontal showsHorizontalScrollIndicator={false}>
-              {[
-                { key: "subtitles" as const, icon: "albums-outline" as const, label: `Phụ đề (${segments.length})` },
-                { key: "listening" as const, icon: "ear-outline" as const, label: "Luyện nghe" },
-                { key: "shadowing" as const, icon: "mic-outline" as const, label: "Shadowing" },
-                { key: "vocabulary" as const, icon: "book-outline" as const, label: `Từ vựng (${activeVideo.vocabulary.length})` },
-                { key: "exercises" as const, icon: "help-circle-outline" as const, label: `Bài tập (${activeVideo.exercises.length})` },
-                { key: "bookmarks" as const, icon: "bookmark-outline" as const, label: `Đánh dấu (${activeVideo.bookmarks.length})` },
-              ].map((t) => {
-                const active = studioTab === t.key;
-                return (
-                  <Pressable key={t.key} onPress={() => setStudioTab(t.key)} style={[styles.studioTabItem, active && styles.studioTabItemActive]}>
-                    <Ionicons color={active ? "#06B6D4" : "#94A3B8"} name={t.icon} size={15} />
-                    <Text style={[styles.studioTabLabel, active && styles.studioTabLabelActive]}>{t.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-
-          {studioTab === "subtitles" ? (
-            <View style={styles.subtitlesTabPane}>
-              <View style={styles.subtitleToolbarRow}>
-                <ScrollView contentContainerStyle={styles.langPillsRow} horizontal showsHorizontalScrollIndicator={false}>
-                  {[
-                    { key: "en-vi" as const, label: "Song ngữ" },
-                    { key: "en-only" as const, label: "Chỉ Tiếng Anh" },
-                    { key: "vi-only" as const, label: "Chỉ Tiếng Việt" },
-                    { key: "en-note" as const, label: "ASR" },
-                  ].map((pill) => {
-                    const active = subtitleFilter === pill.key;
-                    return (
-                      <Pressable
-                        key={pill.key}
-                        onPress={() => setSubtitleFilter(pill.key)}
-                        style={[styles.langFilterPill, active && styles.langFilterPillActive]}
-                      >
-                        <Text style={[styles.langFilterPillText, active && styles.langFilterPillTextActive]}>
-                          {pill.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-
-                <Pressable
-                  onPress={() => setAutoFollowSubtitle((prev) => !prev)}
-                  style={[styles.autoFollowPillBtn, autoFollowSubtitle && styles.autoFollowPillBtnActive]}
-                >
-                  <Ionicons
-                    color={autoFollowSubtitle ? "#082F49" : "#CBD5E1"}
-                    name={autoFollowSubtitle ? "locate" : "locate-outline"}
-                    size={13}
-                  />
-                  <Text style={[styles.autoFollowPillText, autoFollowSubtitle && styles.autoFollowPillTextActive]}>
-                    Tự cuộn
+                  <Text numberOfLines={1} style={styles.desktopMetaText}>
+                    {`${activeVideo.topic || "Video Studio"} · ${activeVideo.authorName || activeVideo.platform}`}
                   </Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => setFontSizeIdx((prev) => (prev + 1) % FONT_SIZES.length)}
-                  style={styles.fontSizePillBtn}
-                >
-                  <Text style={styles.fontSizePillText}>{FONT_SIZES[fontSizeIdx]?.key}</Text>
-                </Pressable>
+                  <Text style={styles.desktopMetaPct}>
+                    {`${Math.round(progressRatio * 100)}%`}
+                  </Text>
+                </View>
               </View>
-
-              <FlatList
-                ref={subtitleListRef}
-                contentContainerStyle={styles.subtitleFlatListContent}
-                data={segments}
-                extraData={{
-                  activeClockLabel,
-                  activeFontSize,
-                  activeSegIndex,
-                  activeWordIdx,
-                  savedWordsMap,
-                  speakingSegSeq,
-                  subtitleFilter,
-                }}
-                initialNumToRender={10}
-                keyExtractor={(item) => `${item.sequenceNumber}-${item.startTime}`}
-                maxToRenderPerBatch={8}
-                onScrollBeginDrag={() => setAutoFollowSubtitle(false)}
-                onScrollToIndexFailed={(info) => {
-                  subtitleListRef.current?.scrollToOffset({
-                    offset: Math.max(0, info.averageItemLength * info.index),
-                    animated: true,
-                  });
-                  setTimeout(() => {
-                    subtitleListRef.current?.scrollToIndex({
-                      index: Math.max(0, Math.min(info.index, segments.length - 1)),
-                      viewPosition: 0.14,
-                      animated: true,
-                    });
-                  }, 120);
-                }}
-                removeClippedSubviews={Platform.OS === "android"}
-                renderItem={renderSubtitleItem}
-                showsVerticalScrollIndicator={false}
-                updateCellsBatchingPeriod={40}
-                windowSize={5}
-              />
-
-              {!autoFollowSubtitle && segments.length > 0 ? (
-                <Pressable
-                  onPress={() => {
-                    setAutoFollowSubtitle(true);
-                    subtitleListRef.current?.scrollToIndex({
-                      index: Math.max(0, Math.min(segments.length - 1, activeSegIndex)),
-                      viewPosition: 0.14,
-                      animated: true,
-                    });
-                  }}
-                  style={styles.backToActiveFloatingBtn}
-                >
-                  <Ionicons color="#082F49" name="arrow-down-circle" size={16} />
-                  <Text style={styles.backToActiveFloatingText}>Về câu đang nói</Text>
-                </Pressable>
-              ) : null}
+              <View style={styles.studioRightCol}>{studioRightPanelBlock}</View>
             </View>
           ) : (
-          <ScrollView contentContainerStyle={styles.studioBodyScroll} showsVerticalScrollIndicator={false}>
-
-            {studioTab === "listening" && currentDrillSeg ? (
-              <View style={styles.tabPanelCard}>
-                <View style={styles.tabPanelHeaderRow}>
-                  <Text style={styles.tabPanelTitle}>🎧 Luyện nghe câu {drillIdx + 1}/{segments.length}</Text>
-                  <Pressable onPress={() => void handleSpeakSegment(currentDrillSeg)} style={styles.primaryPillCta}>
-                    <Text style={styles.primaryPillCtaText}>Nghe câu</Text>
-                  </Pressable>
-                </View>
-                <Text style={styles.drillMaskedSentence}>{drillData.masked}</Text>
-                <Text style={styles.drillViHint}>🇻🇳 {currentDrillSeg.vietnameseText}</Text>
-                <View style={styles.drillOptionsGrid}>
-                  {drillData.options.map((opt) => {
-                    const picked = drillSelectedOption === opt;
-                    const right = opt.toLowerCase() === drillData.target.toLowerCase();
-                    return (
-                      <Pressable
-                        key={opt}
-                        onPress={() => setDrillSelectedOption(opt)}
-                        style={[
-                          styles.drillOptionBtn,
-                          picked && right && styles.drillOptionBtnCorrect,
-                          picked && !right && styles.drillOptionBtnWrong,
-                        ]}
-                      >
-                        <Text style={styles.drillOptionBtnText}>{opt}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                <Pressable onPress={() => setDrillRevealText((p) => !p)} style={styles.revealBtn}>
-                  <Text style={styles.revealBtnText}>{drillRevealText ? "Ẩn đáp án" : "Hiện câu gốc"}</Text>
-                </Pressable>
-                {drillRevealText ? <Text style={styles.drillFullAnswerText}>{currentDrillSeg.englishText}</Text> : null}
-                <View style={styles.drillNavRow}>
-                  <Pressable
-                    onPress={() => {
-                      setDrillIdx(Math.max(0, drillIdx - 1));
-                      setDrillSelectedOption(null);
-                      setDrillRevealText(false);
-                    }}
-                    style={styles.secondaryNavBtn}
-                  >
-                    <Text style={styles.secondaryNavBtnText}>← Trước</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => {
-                      setDrillIdx((drillIdx + 1) % Math.max(1, segments.length));
-                      setDrillSelectedOption(null);
-                      setDrillRevealText(false);
-                    }}
-                    style={styles.secondaryNavBtn}
-                  >
-                    <Text style={styles.secondaryNavBtnText}>Tiếp →</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ) : null}
-
-            {studioTab === "shadowing" && activeSegment ? (
-              <View style={styles.tabPanelCard}>
-                <Text style={styles.tabPanelTitle}>🎙️ Shadowing câu #{activeSegment.sequenceNumber}</Text>
-                <View style={styles.wordChipsWrap}>
-                  {tokenizeSentence(activeSegment.englishText).map((tok, i) => (
-                    <View key={i} style={[styles.wordChipItem, i === activeWordIdx && styles.wordChipItemSpokenNow]}>
-                      <Text style={[styles.wordChipLabel, i === activeWordIdx && styles.wordChipLabelSpokenNow]}>{tok}</Text>
-                    </View>
-                  ))}
-                </View>
-                <Text style={styles.vietnameseTranslationLineActive}>🇻🇳 {activeSegment.vietnameseText}</Text>
-                <View style={styles.drillNavRow}>
-                  <Pressable onPress={() => { setShadowingStep("listening"); void handleSpeakSegment(activeSegment); }} style={styles.primaryPillCta}>
-                    <Text style={styles.primaryPillCtaText}>1. Nghe mẫu</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => {
-                      if (shadowingStep === "repeating") setShadowingStep("done");
-                      else {
-                        setShadowingStep("repeating");
-                        handleSeekTo(activeSegment.startTime, true);
-                      }
-                    }}
-                    style={styles.secondaryNavBtn}
-                  >
-                    <Text style={styles.secondaryNavBtnText}>{shadowingStep === "repeating" ? "⏹ Xong" : "🎙️ 2. Đọc nhại"}</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ) : null}
-
-            {studioTab === "vocabulary" ? (
-              <View style={{ gap: 10 }}>
-                {activeVideo.vocabulary.map((vocab, i) => {
-                  const key = (vocab.normalizedWord || vocab.word).trim().toLowerCase();
-                  const saved = Boolean(savedWordsMap[key]);
-                  return (
-                    <View key={`${vocab.word}-${i}`} style={styles.vocabCard}>
-                      <View style={styles.vocabCardTopRow}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.vocabWordTitle}>{vocab.word} <Text style={styles.vocabIpaText}>{vocab.pronunciation}</Text></Text>
-                          <Text style={styles.vocabPosText}>{vocab.partOfSpeech}</Text>
-                        </View>
-                        <Pressable onPress={() => void speakText(vocab.word)} style={styles.roundSpeakerBtn}>
-                          <Ionicons color="#38BDF8" name="volume-high-outline" size={17} />
-                        </Pressable>
-                        <Pressable onPress={() => void handleSaveWordToFlashcards(vocab)} style={[styles.vocabSaveBtn, saved && styles.vocabSaveBtnSaved]}>
-                          <Text style={[styles.vocabSaveBtnText, saved && { color: "#10B981" }]}>{saved ? "Đã lưu" : "♥ Lưu"}</Text>
-                        </Pressable>
-                      </View>
-                      <Text style={styles.vocabMeaningViText}>🇻🇳 {vocab.meaningVi}</Text>
-                      <Text style={styles.vocabExampleEnText}>• {vocab.exampleSentence}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-            ) : null}
-
-            {studioTab === "exercises" ? (
-              <View style={{ gap: 12 }}>
-                {activeVideo.exercises.map((ex: YoutubeExerciseItem) => {
-                  const pickedIdx = exerciseAnswers[ex.index];
-                  const answered = pickedIdx !== undefined;
-                  return (
-                    <View key={ex.index} style={styles.vocabCard}>
-                      <Text style={styles.tabPanelTitle}>{ex.question}</Text>
-                      {(ex.options || []).map((opt, optIdx) => {
-                        const selected = pickedIdx === optIdx;
-                        const right = optIdx === ex.correctIndex;
-                        return (
-                          <Pressable
-                            key={optIdx}
-                            onPress={() => setExerciseAnswers((prev) => ({ ...prev, [ex.index]: optIdx }))}
-                            style={[
-                              styles.exerciseOptionRow,
-                              answered && right && styles.drillOptionBtnCorrect,
-                              answered && selected && !right && styles.drillOptionBtnWrong,
-                            ]}
-                          >
-                            <Text style={styles.exerciseOptionText}>{opt}</Text>
-                          </Pressable>
-                        );
-                      })}
-                      {answered ? <Text style={styles.exerciseExplainText}>💡 {ex.explanationVi}</Text> : null}
-                    </View>
-                  );
-                })}
-              </View>
-            ) : null}
-
-            {studioTab === "bookmarks" ? (
-              <View style={{ gap: 10 }}>
-                <View style={styles.tabPanelCard}>
-                  <Text style={styles.tabPanelTitle}>🔖 Đánh dấu mốc thời gian ({formatClock(currentTimeSec)})</Text>
-                  <TextInput
-                    onChangeText={setBookmarkLabelInput}
-                    placeholder="Nhãn ghi chú tại mốc hiện tại..."
-                    placeholderTextColor="#64748B"
-                    style={styles.bookmarkInput}
-                    value={bookmarkLabelInput}
-                  />
-                  <Pressable onPress={() => void handleAddBookmark()} style={styles.primaryPillCta}>
-                    <Ionicons color="#082F49" name="bookmark" size={16} />
-                    <Text style={styles.primaryPillCtaText}>Lưu Bookmark tại {formatClock(currentTimeSec)}</Text>
-                  </Pressable>
-                </View>
-
-                {activeVideo.bookmarks.map((bm) => (
-                  <View key={bm.id} style={styles.vocabCard}>
-                    <View style={styles.vocabCardTopRow}>
-                      <Pressable onPress={() => handleSeekTo(bm.timestampSeconds, true)} style={{ flex: 1 }}>
-                        <Text style={styles.vocabWordTitle}>▶ {bm.timestampLabel} — {bm.label}</Text>
-                      </Pressable>
-                      <Pressable onPress={() => void handleDeleteBookmark(bm)}>
-                        <Ionicons color="#EF4444" name="trash-outline" size={18} />
-                      </Pressable>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-          </ScrollView>
+            <>
+              {videoPlayerBlock}
+              {transportBlock}
+              {studioRightPanelBlock}
+            </>
           )}
         </View>
       ) : null}
 
       {/* Word Lookup Modal */}
-      <Modal animationType="slide" onRequestClose={() => setWordModalVisible(false)} transparent visible={wordModalVisible}>
-        <View style={styles.modalBackdrop}>
+      <Modal animationType={isDesktopWeb ? "fade" : "slide"} onRequestClose={() => setWordModalVisible(false)} transparent visible={wordModalVisible}>
+        <View style={[styles.modalBackdrop, isDesktopWeb && styles.modalBackdropDesktop]}>
           <Pressable onPress={() => setWordModalVisible(false)} style={StyleSheet.absoluteFill} />
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
+          <View style={[styles.modalSheet, isDesktopWeb && styles.modalSheetDesktop]}>
+            {!isDesktopWeb ? <View style={styles.modalHandle} /> : null}
             <View style={styles.modalHeaderRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modalWordTitle}>{wordLookupData?.word || selectedWordToken || "Từ vựng"}</Text>
@@ -2390,8 +2518,8 @@ export default function YoutubeSubtitleScreen() {
 
       {/* Export Subtitles Modal (UTF-8 SRT / VTT / JSON) */}
       <Modal animationType="fade" onRequestClose={() => setExportModalVisible(false)} transparent visible={exportModalVisible}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+        <View style={[styles.modalBackdrop, isDesktopWeb && styles.modalBackdropDesktop]}>
+          <View style={[styles.modalSheet, isDesktopWeb && styles.modalSheetDesktop]}>
             <Text style={styles.modalWordTitle}>Xuất Phụ Đề Song Ngữ (UTF-8)</Text>
             <Text style={styles.detailSecondaryValue}>Hỗ trợ đầy đủ dấu tiếng Việt cho SRT, WebVTT và JSON.</Text>
             <View style={{ gap: 8, marginTop: 12 }}>
@@ -2427,6 +2555,7 @@ const createStyles = (colors: LiquidThemeColors) =>
   StyleSheet.create({
     screenContent: { flexGrow: 1, paddingBottom: 24 },
     hubContainer: { gap: 14, paddingHorizontal: 14, paddingTop: 10 },
+    hubContainerDesktop: { paddingHorizontal: 0, paddingTop: 4 },
     hubHeaderRow: { alignItems: "center", flexDirection: "row", gap: 10, paddingVertical: 4 },
     hubBackBtn: {
       alignItems: "center",
@@ -2485,6 +2614,8 @@ const createStyles = (colors: LiquidThemeColors) =>
     },
     importCardTitle: { color: colors.text, fontSize: 16, fontWeight: "900", lineHeight: 22 },
     importCardSubtitle: { color: colors.textMuted, fontSize: 12.5, lineHeight: 18 },
+    hubImportColMobile: { gap: 10, paddingTop: 2 },
+    hubImportRowDesktop: { alignItems: "center", flexDirection: "row", gap: 10, paddingTop: 2 },
     urlRow: { alignItems: "center", flexDirection: "row", gap: 10 },
     urlInputBox: {
       alignItems: "center",
@@ -2495,10 +2626,11 @@ const createStyles = (colors: LiquidThemeColors) =>
       flex: 1,
       flexDirection: "row",
       gap: 8,
+      minWidth: 0,
       paddingHorizontal: 14,
       paddingVertical: 10,
     },
-    urlTextInput: { color: colors.text, flex: 1, fontSize: 13.5, paddingVertical: 0 },
+    urlTextInput: { color: colors.text, flex: 1, fontSize: 13.5, minWidth: 0, paddingVertical: 0 },
     dropdownRow: { flexDirection: "row", gap: 10 },
     dropdownPill: {
       alignItems: "center",
@@ -2513,6 +2645,73 @@ const createStyles = (colors: LiquidThemeColors) =>
       paddingVertical: 9,
     },
     dropdownPillText: { color: colors.text, fontSize: 12.5, fontWeight: "700" },
+    hubFilterChipsWrap: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+    hubFilterChipsScroll: {
+      alignItems: "center",
+      gap: 8,
+      paddingVertical: 2,
+    },
+    hubFilterChip: {
+      alignItems: "center",
+      backgroundColor: colors.surface,
+      borderColor: colors.glassBorder,
+      borderRadius: 999,
+      borderWidth: 1,
+      flexGrow: 0,
+      flexShrink: 0,
+      height: 34,
+      justifyContent: "center",
+      paddingHorizontal: 14,
+    },
+    hubFilterChipText: {
+      color: colors.text,
+      fontSize: 12.5,
+      fontWeight: "700",
+    },
+    hubCardsGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 14,
+    },
+    hubCardsStack: {
+      gap: 14,
+    },
+    videoThumbBox: {
+      borderRadius: 14,
+      overflow: "hidden",
+      position: "relative",
+      width: "100%",
+    },
+    videoThumbBoxMobile: {
+      height: 164,
+    },
+    videoThumbBoxDesktop: {
+      aspectRatio: 16 / 9,
+    },
+    thumbDurationBadge: {
+      backgroundColor: "rgba(8,14,30,0.82)",
+      borderRadius: 8,
+      bottom: 8,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      position: "absolute",
+      right: 8,
+    },
+    thumbFavBtn: {
+      alignItems: "center",
+      backgroundColor: "rgba(8,14,30,0.75)",
+      borderRadius: 999,
+      height: 34,
+      justifyContent: "center",
+      position: "absolute",
+      right: 8,
+      top: 8,
+      width: 34,
+    },
     customTranscriptInput: {
       backgroundColor: colors.surfaceAlt,
       borderColor: colors.borderStrong,
@@ -2534,7 +2733,12 @@ const createStyles = (colors: LiquidThemeColors) =>
       paddingHorizontal: 18,
       paddingVertical: 14,
     },
-    redImportBtnText: { color: "#FFFFFF", fontSize: 14.5, fontWeight: "900" },
+    redImportBtnDesktop: {
+      flexShrink: 0,
+      paddingHorizontal: 20,
+      paddingVertical: 11,
+    },
+    redImportBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900" },
     jobProgressCard: {
       backgroundColor: colors.surface,
       borderColor: colors.primary,
@@ -2624,7 +2828,7 @@ const createStyles = (colors: LiquidThemeColors) =>
     vodDurationText: { color: colors.primary, fontSize: 13, fontWeight: "800" },
     vodTitle: { color: colors.text, fontSize: 16.5, fontWeight: "900", lineHeight: 23 },
     vodSourceMeta: { color: colors.textMuted, fontSize: 12.5, lineHeight: 18 },
-    playerStudioContainer: { backgroundColor: "#060B16", flex: 1, width: "100%" },
+    playerStudioContainer: { backgroundColor: "#060B16", flex: 1, minHeight: 0, overflow: "hidden", width: "100%" },
     studioTopBar: {
       alignItems: "center",
       backgroundColor: "#080E1E",
@@ -2637,7 +2841,48 @@ const createStyles = (colors: LiquidThemeColors) =>
     },
     studioTopIconBtn: { alignItems: "center", height: 34, justifyContent: "center", width: 34 },
     studioTopTitle: { color: "#F8FAFC", flex: 1, fontSize: 15, fontWeight: "800" },
+    studioMainSplit: {
+      alignItems: "stretch",
+      alignSelf: "center",
+      flex: 1,
+      flexDirection: "row",
+      gap: 18,
+      maxWidth: 1440,
+      minHeight: 0,
+      padding: 16,
+      width: "100%",
+    },
+    studioLeftCol: {
+      flex: 1.25,
+      gap: 12,
+      minHeight: 0,
+      minWidth: 0,
+    },
+    studioRightCol: {
+      backgroundColor: "#080E1E",
+      borderColor: "#1E293B",
+      borderRadius: 18,
+      borderWidth: 1,
+      flex: 1,
+      minHeight: 0,
+      minWidth: 360,
+      overflow: "hidden",
+    },
+    desktopMetaStrip: {
+      alignItems: "center",
+      backgroundColor: "#0B1222",
+      borderColor: "#1E293B",
+      borderRadius: 14,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+    },
+    desktopMetaText: { color: "#CBD5E1", flex: 1, fontSize: 12.5, fontWeight: "700" },
+    desktopMetaPct: { color: "#06B6D4", fontSize: 12.5, fontWeight: "900" },
     videoFrameContainer: { backgroundColor: "#000000", height: 210, overflow: "hidden", position: "relative", width: "100%" },
+    videoFrameDesktop: { aspectRatio: 16 / 9, borderRadius: 18, height: "auto", maxHeight: 540, width: "100%" },
     videoFrameExpanded: { height: 270 },
     videoPosterImage: { height: "100%", width: "100%" },
     videoPosterPlayOverlay: {
@@ -2675,6 +2920,7 @@ const createStyles = (colors: LiquidThemeColors) =>
     },
     onVideoSubtitleEn: { color: "#F8FAFC", fontSize: 12.5, fontWeight: "700", textAlign: "center" },
     transportSection: { backgroundColor: "#0B1222", borderBottomColor: "#1E293B", borderBottomWidth: 1, gap: 6, paddingHorizontal: 12, paddingVertical: 8 },
+    transportSectionDesktop: { borderColor: "#1E293B", borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 12 },
     scrubberRow: { alignItems: "center", flexDirection: "row", gap: 10 },
     scrubberTimeText: { color: "#CBD5E1", fontSize: 11.5, fontWeight: "700", minWidth: 42 },
     scrubberBarTrackWrap: { flex: 1, height: 24, justifyContent: "center", position: "relative" },
@@ -2683,6 +2929,7 @@ const createStyles = (colors: LiquidThemeColors) =>
     scrubberThumbDot: { backgroundColor: "#06B6D4", borderRadius: 999, height: 15, marginLeft: -7, position: "absolute", width: 15 },
     scrubberTapLayer: { bottom: 0, flexDirection: "row", left: 0, position: "absolute", right: 0, top: 0 },
     transportControlsRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+    transportControlsDesktop: { gap: 10, justifyContent: "center" },
     transportIconBtn: { alignItems: "center", flexDirection: "row", gap: 2, paddingHorizontal: 5, paddingVertical: 6 },
     transportSeekSubText: { color: "#CBD5E1", fontSize: 10, fontWeight: "900" },
     transportPlayCircleBtn: { alignItems: "center", backgroundColor: "#06B6D4", borderRadius: 999, height: 38, justifyContent: "center", width: 38 },
@@ -2709,7 +2956,9 @@ const createStyles = (colors: LiquidThemeColors) =>
     studioTabLabel: { color: "#94A3B8", fontSize: 12.5, fontWeight: "700" },
     studioTabLabelActive: { color: "#06B6D4", fontWeight: "900" },
     studioBodyScroll: { gap: 12, padding: 12, paddingBottom: 36 },
-    subtitlesTabPane: { flex: 1, position: "relative" },
+    subtitlesTabPane: { flex: 1, minHeight: 0, overflow: "hidden", position: "relative" },
+    modalBackdropDesktop: { alignItems: "center", justifyContent: "center", padding: 24 },
+    modalSheetDesktop: { borderRadius: 24, maxHeight: "86%", maxWidth: 520, paddingBottom: 22, width: "100%" },
     subtitleFlatListContent: { gap: 10, paddingBottom: 72, paddingHorizontal: 12, paddingTop: 10 },
     subtitleToolbarRow: {
       alignItems: "center",

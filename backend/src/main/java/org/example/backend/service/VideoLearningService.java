@@ -955,7 +955,7 @@ public class VideoLearningService {
                     user, "VIDEO_COMPLETE", "video:" + video.getId(), 20, 40, mins,
                     "Hoàn thành video song ngữ: " + video.getTitle(), true);
         }
-        ImportedVideoDetailResponse res = buildSummaryOrDetailWithPreloadedState(user, video, state, true, privileged);
+        ImportedVideoDetailResponse res = buildSummaryOrDetailWithPreloadedState(user, video, state, false, false);
         res.setDiamondsEarned(diamondsEarned);
         res.setCurrentDiamonds(user.getDiamonds());
         return res;
@@ -1148,9 +1148,11 @@ public class VideoLearningService {
         VideoProcessingJob latestJob = (includeAdminMeta || isPersonalImportVideo(video))
                 ? videoProcessingJobRepository.findFirstByImportedVideoIdOrderByCreatedAtDesc(video.getId()).orElse(null)
                 : null;
-        VideoTranscript transcript = videoTranscriptRepository
-                .findFirstByImportedVideoIdOrderByCreatedAtDesc(video.getId())
-                .orElse(null);
+        VideoTranscript transcript = (includeFullContent || includeAdminMeta)
+                ? videoTranscriptRepository
+                        .findFirstByImportedVideoIdOrderByCreatedAtDesc(video.getId())
+                        .orElse(null)
+                : null;
 
         List<VideoSubtitleSegment> rawSegments = (includeFullContent || includeAdminMeta)
                 ? videoSubtitleSegmentRepository.findByImportedVideoIdOrderBySequenceNumberAsc(video.getId())

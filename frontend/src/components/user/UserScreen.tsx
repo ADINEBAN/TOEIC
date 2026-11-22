@@ -179,13 +179,17 @@ export default function UserScreen({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
+    minHeight: 0,
   },
   flex: {
     flex: 1,
+    minHeight: 0,
   },
   desktopShellRow: {
     flex: 1,
     flexDirection: "row",
+    minHeight: 0,
+    overflow: "hidden",
   },
   scrollContent: {
     flexGrow: 1,
