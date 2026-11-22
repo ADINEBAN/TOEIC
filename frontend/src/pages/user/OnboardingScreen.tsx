@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { radius } from "@/src/assets/styles/user-theme";
-import { LiquidButton, LiquidCard } from "@/src/components/ui/LiquidGlass";
+import { LiquidButton } from "@/src/components/ui/LiquidGlass";
 import AppHeader, { AvatarBadge } from "@/src/components/user/AppHeader";
+import QuestionMediaBlock from "@/src/components/user/QuestionMediaBlock";
 import SurfaceCard from "@/src/components/user/SurfaceCard";
 import UserScreen from "@/src/components/user/UserScreen";
 import { useAuth } from "@/src/hooks/use-auth";
@@ -22,20 +23,43 @@ import {
   PlacementQuickQuestion,
   UserLearningPathCatalogItem,
 } from "@/src/types/user-api";
-import { pushRoute, replaceRoute, safeBack } from "@/src/utils/navigation";
+import { replaceRoute, safeBack } from "@/src/utils/navigation";
 import { useResponsiveLayout } from "@/src/utils/responsive";
+import { alertCrossPlatform, confirmCrossPlatform } from "@/src/utils/web-dialog";
 
 function resolvePathAccent(score: number) {
-  if (score < 500) return "#CFE0FF";
-  if (score < 700) return "#D8F6D9";
-  if (score < 850) return "#E2E5FF";
-  return "#FEF3C7";
+  if (score <= 350) return "#CFE0FF";
+  if (score <= 650) return "#D8F6D9";
+  return "#EDE9FE";
+}
+
+function resolveInitialUnlockedScore(
+  currentLevel?: string | null,
+  enrolledTargetScore?: number | null,
+): number {
+  let base = 300;
+  const lvl = (currentLevel ?? "").toUpperCase();
+  if (lvl === "ADVANCED") {
+    base = 990;
+  } else if (lvl === "INTERMEDIATE") {
+    base = 600;
+  }
+  if (typeof enrolledTargetScore === "number" && enrolledTargetScore > base) {
+    base = enrolledTargetScore;
+  }
+  return base;
+}
+
+function requiredCorrectTextForPath(targetScore: number): string {
+  if (targetScore <= 350) return "Mở mặc định (0–3 câu hoặc Bỏ qua test)";
+  if (targetScore <= 650) return "Cần đạt 4–7 câu đúng trong bài test 10 câu";
+  return "Cần đạt > 7 câu đúng (8–10/10 câu) trong bài test";
 }
 
 export default function OnboardingScreen() {
   const { auth, updateUserProfile } = useAuth();
   const { theme } = useAppTheme();
-  const { isNarrow, rf } = useResponsiveLayout();
+  const { rf } = useResponsiveLayout();
   const colors = theme.colors;
   const styles = useThemedStyles(createStyles);
 
@@ -52,6 +76,12 @@ export default function OnboardingScreen() {
   const [quizIndex, setQuizIndex] = useState(0);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
   const [evalResult, setEvalResult] = useState<PlacementEvaluationData | null>(null);
+  const [targetPathForQuiz, setTargetPathForQuiz] =
+    useState<UserLearningPathCatalogItem | null>(null);
+  const [unlockedMaxScore, setUnlockedMaxScore] = useState<number>(() =>
+    resolveInitialUnlockedScore(auth.user?.currentLevel, null),
+  );
+  const [didAutoPromptTest, setDidAutoPromptTest] = useState(false);
 
   const loadCatalog = useCallback(async () => {
     if (!auth.accessToken) {
@@ -64,18 +94,48 @@ export default function OnboardingScreen() {
       const res = await getUserLearningPathCatalog(auth.accessToken);
       const items = res.data ?? [];
       setCatalog(items);
+      const enrolled = items.find((p) => p.enrolled);
+      const basePath =
+        items.find((p) => p.targetScore <= 350) ?? items[0] ?? null;
+
+      setUnlockedMaxScore((prev) =>
+        Math.max(
+          prev,
+          resolveInitialUnlockedScore(null, enrolled?.targetScore),
+        ),
+      );
       setSelectedPathId((prev) => {
         if (prev && items.some((p) => p.id === prev)) return prev;
-        const enrolled = items.find((p) => p.enrolled);
-        const recommended = items.find((p) => p.recommended);
-        return enrolled?.id ?? recommended?.id ?? items[0]?.id ?? null;
+        return enrolled?.id ?? basePath?.id ?? null;
       });
+
+      if (!enrolled && !didAutoPromptTest) {
+        setDidAutoPromptTest(true);
+        try {
+          setQuizLoading(true);
+          const quizRes = await getPlacementQuickTest(auth.accessToken);
+          const qList = quizRes.data?.questions ?? [];
+          if (qList.length > 0) {
+            setQuizQuestions(qList);
+            setQuizAnswers({});
+            setQuizIndex(0);
+            setEvalResult(null);
+            setStep("quiz");
+          }
+        } catch {
+          // Stay on catalog if quick test fetch fails
+        } finally {
+          setQuizLoading(false);
+        }
+      }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Không thể tải danh sách lộ trình.");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Không thể tải danh sách lộ trình.",
+      );
     } finally {
       setLoading(false);
     }
-  }, [auth.accessToken]);
+  }, [auth.accessToken, didAutoPromptTest]);
 
   useFocusEffect(
     useCallback(() => {
@@ -83,12 +143,28 @@ export default function OnboardingScreen() {
     }, [loadCatalog]),
   );
 
+  const isPathUnlocked = useCallback(
+    (path: UserLearningPathCatalogItem) => {
+      if (path.enrolled || path.targetScore <= 350) return true;
+      return path.targetScore <= unlockedMaxScore;
+    },
+    [unlockedMaxScore],
+  );
+
   const selectedPath = useMemo(
     () => catalog.find((item) => item.id === selectedPathId) ?? catalog[0] ?? null,
     [catalog, selectedPathId],
   );
 
-  const handleAssignPath = async (overridePathId?: number | null, overrideTargetScore?: number) => {
+  const path300 = useMemo(
+    () => catalog.find((item) => item.targetScore <= 350) ?? catalog[0] ?? null,
+    [catalog],
+  );
+
+  const handleAssignPath = async (
+    overridePathId?: number | null,
+    overrideTargetScore?: number,
+  ) => {
     if (!auth.accessToken) {
       replaceRoute("/");
       return;
@@ -97,8 +173,9 @@ export default function OnboardingScreen() {
       typeof overridePathId === "number"
         ? catalog.find((item) => item.id === overridePathId) ?? selectedPath
         : selectedPath;
-    if (!chosenPath && typeof overrideTargetScore !== "number") {
-      Alert.alert("Lộ trình", "Hiện chưa có lộ trình khả dụng. Vui lòng thử lại sau.");
+
+    if (chosenPath && !isPathUnlocked(chosenPath)) {
+      handlePromptTestForLockedPath(chosenPath);
       return;
     }
 
@@ -106,7 +183,7 @@ export default function OnboardingScreen() {
       setSubmitting(true);
       await assignRecommendedPath(auth.accessToken, {
         learningPathId: chosenPath?.id,
-        targetScore: chosenPath?.targetScore ?? overrideTargetScore,
+        targetScore: chosenPath?.targetScore ?? overrideTargetScore ?? 300,
       });
       try {
         const profileRes = await getMyProfile(auth.accessToken);
@@ -114,28 +191,31 @@ export default function OnboardingScreen() {
           updateUserProfile(profileRes.data);
         }
       } catch {
-        // Backend already synced targetScore; best-effort client refresh.
+        // Best-effort profile refresh
       }
       replaceRoute("/user/practice");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Không thể kích hoạt lộ trình.";
-      Alert.alert("Lộ trình TOEIC", message);
+      alertCrossPlatform(
+        "Lộ trình TOEIC",
+        error instanceof Error ? error.message : "Không thể kích hoạt lộ trình.",
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleStartQuickTest = async () => {
+  const handleStartQuickTest = async (forPath?: UserLearningPathCatalogItem | null) => {
     if (!auth.accessToken) {
       replaceRoute("/");
       return;
     }
     try {
       setQuizLoading(true);
+      setTargetPathForQuiz(forPath ?? null);
       const res = await getPlacementQuickTest(auth.accessToken);
       const questions = res.data?.questions ?? [];
       if (questions.length === 0) {
-        Alert.alert("Bài test nhanh", "Chưa có câu hỏi kiểm tra trình độ. Bạn có thể tự chọn lộ trình bên dưới.");
+        alertCrossPlatform("Bài test 10 câu", "Chưa tải được câu hỏi. Vui lòng thử lại.");
         return;
       }
       setQuizQuestions(questions);
@@ -144,8 +224,8 @@ export default function OnboardingScreen() {
       setEvalResult(null);
       setStep("quiz");
     } catch (error) {
-      Alert.alert(
-        "Bài test nhanh",
+      alertCrossPlatform(
+        "Bài test 10 câu",
         error instanceof Error ? error.message : "Không thể tải bài kiểm tra trình độ.",
       );
     } finally {
@@ -153,8 +233,35 @@ export default function OnboardingScreen() {
     }
   };
 
-  const handleSkipQuickTest = () => {
-    setStep("catalog");
+  const handleSkipQuickTestTo300 = () => {
+    setUnlockedMaxScore((prev) => Math.max(300, prev));
+    if (path300) {
+      setSelectedPathId(path300.id);
+      void handleAssignPath(path300.id, path300.targetScore);
+    } else {
+      setStep("catalog");
+    }
+  };
+
+  const handlePromptTestForLockedPath = (path: UserLearningPathCatalogItem) => {
+    const needCorrect = path.targetScore <= 650 ? "từ 4 đến 7 câu đúng (≥ 4/10)" : "trên 7 câu đúng (8–10/10)";
+    confirmCrossPlatform(
+      `Mở khóa ${path.title} (${path.targetScore}+)`,
+      `Để mở khóa lộ trình ${path.targetScore}+, bạn cần làm bài test 10 câu (gồm 1 câu Part 1, 1 câu Part 2, 1 câu Part 3 và 7 câu Part 5) và đạt ${needCorrect}.\n\nBắt đầu làm bài test ngay?`,
+      () => {
+        void handleStartQuickTest(path);
+      },
+      "Làm bài test 10 câu",
+      "Để sau",
+    );
+  };
+
+  const handleSelectPathCard = (path: UserLearningPathCatalogItem) => {
+    if (isPathUnlocked(path)) {
+      setSelectedPathId(path.id);
+      return;
+    }
+    handlePromptTestForLockedPath(path);
   };
 
   const handleSelectQuizOption = (questionKey: string, label: string) => {
@@ -175,21 +282,41 @@ export default function OnboardingScreen() {
         questionKey: question.questionKey,
         selectedLabel: quizAnswers[question.questionKey] ?? "",
       }));
-      const res = await evaluatePlacementQuickTest(auth.accessToken, { answers });
+      const res = await evaluatePlacementQuickTest(auth.accessToken, {
+        answers,
+        targetScore: targetPathForQuiz?.targetScore,
+      });
       const evaluation = res.data ?? null;
       if (!evaluation) {
-        Alert.alert("Kết quả", "Không nhận được kết quả đánh giá. Vui lòng thử lại.");
+        alertCrossPlatform("Kết quả", "Không nhận được kết quả đánh giá.");
         return;
       }
+
+      const correct = evaluation.correctCount ?? 0;
+      const newMaxUnlock =
+        evaluation.maxUnlockedTargetScore ??
+        (correct <= 3 ? 300 : correct <= 7 ? 600 : 990);
+
+      setUnlockedMaxScore(newMaxUnlock);
       setEvalResult(evaluation);
-      if (typeof evaluation.recommendedPathId === "number") {
-        setSelectedPathId(evaluation.recommendedPathId);
+
+      // Pick the highest unlocked path or the target path if unlocked
+      if (targetPathForQuiz && targetPathForQuiz.targetScore <= newMaxUnlock) {
+        setSelectedPathId(targetPathForQuiz.id);
+      } else {
+        const bestUnlocked =
+          [...catalog]
+            .filter((p) => p.targetScore <= newMaxUnlock)
+            .sort((a, b) => b.targetScore - a.targetScore)[0] ?? path300;
+        if (bestUnlocked) {
+          setSelectedPathId(bestUnlocked.id);
+        }
       }
       setStep("result");
     } catch (error) {
-      Alert.alert(
-        "Đánh giá trình độ",
-        error instanceof Error ? error.message : "Không thể chấm điểm bài test nhanh.",
+      alertCrossPlatform(
+        "Chấm điểm",
+        error instanceof Error ? error.message : "Không thể chấm điểm bài test.",
       );
     } finally {
       setQuizSubmitting(false);
@@ -197,7 +324,6 @@ export default function OnboardingScreen() {
   };
 
   const currentQuestion = quizQuestions[quizIndex] ?? null;
-  const answeredCount = quizQuestions.filter((q) => Boolean(quizAnswers[q.questionKey])).length;
 
   return (
     <UserScreen contentStyle={styles.outerWrap} hasTabDock={false} scrollable={false}>
@@ -205,7 +331,7 @@ export default function OnboardingScreen() {
         leftIcon="chevron-back-outline"
         onLeftPress={() => safeBack("/user/home")}
         rightSlot={<AvatarBadge label={auth.user?.fullName?.[0]?.toUpperCase() || "A"} />}
-        title="Mục tiêu TOEIC"
+        title="Lộ trình TOEIC"
       />
 
       <ScrollView
@@ -216,62 +342,165 @@ export default function OnboardingScreen() {
       >
         {step === "catalog" ? (
           <>
-            <LiquidCard hero style={styles.heroBanner}>
-              <Text style={[styles.heroTitle, { fontSize: rf(isNarrow ? 19 : 21) }]}>
-                Chọn lộ trình khớp mục tiêu điểm TOEIC của bạn
-              </Text>
-              <Text style={styles.heroSubtitle}>
-                Làm bài test nhanh để hệ thống đo trình độ hiện tại và gợi ý lộ trình phù hợp, hoặc bỏ qua để tự chọn lộ trình ngay.
-                {auth.user?.targetScore ? ` Mục tiêu hiện tại: ${auth.user.targetScore}+.` : ""}
-              </Text>
-              <Pressable hitSlop={8} onPress={() => pushRoute("/user/home")} style={styles.skipLink}>
-                <Text style={styles.skipLinkText}>Để sau, quay lại Trang chủ →</Text>
-              </Pressable>
-            </LiquidCard>
-
-            <SurfaceCard style={styles.placementIntroCard}>
-              <View style={styles.placementIntroHeader}>
+            <SurfaceCard style={styles.testGateCard}>
+              <View style={styles.testGateHeader}>
                 <View style={styles.placementBadge}>
                   <Ionicons color={colors.primary} name="sparkles" size={14} />
-                  <Text style={styles.placementBadgeText}>ĐÁNH GIÁ TRÌNH ĐỘ NHANH</Text>
+                  <Text style={styles.placementBadgeText}>BÀI TEST MỞ KHÓA LỘ TRÌNH</Text>
                 </View>
-                <Text style={styles.placementMeta}>8 câu · ~3 phút</Text>
+                <Text style={styles.placementMeta}>10 câu (Part 1, 2, 3 & 5)</Text>
               </View>
-              <Text style={[styles.goalTitle, { fontSize: rf(15.5) }]}>
-                Kiểm tra nhanh Ngữ pháp · Từ vựng · Đọc hiểu
-              </Text>
-              <Text style={styles.goalDesc}>
-                Phân tích điểm mạnh, Part còn yếu và đề xuất lộ trình + mục tiêu điểm phù hợp nhất với bạn.
-              </Text>
+
+              <View style={styles.ruleBoxesWrap}>
+                <View style={styles.ruleChip}>
+                  <Text style={styles.ruleScoreText}>0–3 câu / Skip</Text>
+                  <Text style={styles.ruleTargetText}>Mở 300+</Text>
+                </View>
+                <View style={[styles.ruleChip, unlockedMaxScore >= 600 && styles.ruleChipUnlocked]}>
+                  <Text style={styles.ruleScoreText}>4–7 câu đúng</Text>
+                  <Text style={styles.ruleTargetText}>Mở 300+ & 600+</Text>
+                </View>
+                <View style={[styles.ruleChip, unlockedMaxScore > 650 && styles.ruleChipUnlocked]}>
+                  <Text style={styles.ruleScoreText}>&gt; 7 câu (8–10)</Text>
+                  <Text style={styles.ruleTargetText}>Mở Full (800+)</Text>
+                </View>
+              </View>
+
               <View style={styles.placementActionRow}>
                 <LiquidButton
                   compact
                   disabled={quizLoading}
-                  label={quizLoading ? "Đang tải câu hỏi..." : "Làm bài test cá nhân hóa"}
+                  label={quizLoading ? "Đang tải..." : "Làm bài test 10 câu"}
                   loading={quizLoading}
-                  onPress={() => void handleStartQuickTest()}
-                  style={{ flex: 1 }}
+                  onPress={() => void handleStartQuickTest(null)}
+                  style={{ flex: 1.2 }}
                   variant="primary"
                 />
                 <Pressable
-                  hitSlop={6}
-                  onPress={handleSkipQuickTest}
+                  disabled={submitting}
+                  onPress={handleSkipQuickTestTo300}
                   style={styles.skipInlineBtn}
                 >
-                  <Text style={styles.skipInlineText}>Bỏ qua, tự chọn</Text>
+                  <Text style={styles.skipInlineText}>Bỏ qua → Học 300+</Text>
                 </Pressable>
               </View>
             </SurfaceCard>
+
+            {loading ? (
+              <SurfaceCard style={styles.emptyCard}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={styles.goalDesc}>Đang tải lộ trình...</Text>
+              </SurfaceCard>
+            ) : errorMessage ? (
+              <SurfaceCard style={styles.emptyCard}>
+                <Text style={styles.goalDesc}>{errorMessage}</Text>
+                <LiquidButton compact label="Thử lại" onPress={() => void loadCatalog()} variant="glass" />
+              </SurfaceCard>
+            ) : (
+              <View style={styles.goalList}>
+                {catalog.map((path) => {
+                  const unlocked = isPathUnlocked(path);
+                  const selected = selectedPath?.id === path.id && unlocked;
+
+                  return (
+                    <Pressable
+                      key={path.id}
+                      onPress={() => handleSelectPathCard(path)}
+                      style={({ pressed }) => [pressed ? { opacity: 0.92 } : null]}
+                    >
+                      <SurfaceCard
+                        style={[
+                          styles.goalCard,
+                          selected ? styles.goalCardSelected : null,
+                          !unlocked ? styles.goalCardLocked : null,
+                        ]}
+                      >
+                        <View style={styles.goalHeaderRow}>
+                          <View
+                            style={[
+                              styles.goalIcon,
+                              {
+                                backgroundColor: unlocked
+                                  ? resolvePathAccent(path.targetScore)
+                                  : colors.surfaceMuted,
+                              },
+                            ]}
+                          >
+                            <Text style={styles.scoreBadgeLabel}>{path.targetScore}+</Text>
+                          </View>
+
+                          <View style={styles.goalHeaderCopy}>
+                            <View style={styles.goalTitleRow}>
+                              <Text numberOfLines={1} style={[styles.goalTitle, { fontSize: rf(15.5) }]}>
+                                {path.title}
+                              </Text>
+                              {path.enrolled ? (
+                                <View style={[styles.popularBadge, { backgroundColor: colors.primary }]}>
+                                  <Text style={styles.popularBadgeText}>Đang học</Text>
+                                </View>
+                              ) : unlocked ? (
+                                <View style={styles.unlockedBadge}>
+                                  <Text style={styles.unlockedBadgeText}>Đã mở ✓</Text>
+                                </View>
+                              ) : (
+                                <View style={styles.lockedBadge}>
+                                  <Ionicons color="#B45309" name="lock-closed" size={11} />
+                                  <Text style={styles.lockedBadgeText}>Khóa</Text>
+                                </View>
+                              )}
+                            </View>
+
+                            <Text style={styles.goalLevel}>
+                              {unlocked
+                                ? `${path.milestoneCount} chặng • ${path.moduleCount} bài học • ${path.videoLessonCount} video`
+                                : requiredCorrectTextForPath(path.targetScore)}
+                            </Text>
+                          </View>
+
+                          <Ionicons
+                            color={
+                              !unlocked
+                                ? "#D97706"
+                                : selected
+                                  ? colors.primary
+                                  : colors.textMuted
+                            }
+                            name={
+                              !unlocked
+                                ? "lock-closed"
+                                : selected
+                                  ? "checkmark-circle"
+                                  : "ellipse-outline"
+                            }
+                            size={21}
+                          />
+                        </View>
+
+                        {!unlocked ? (
+                          <View style={styles.lockedActionStrip}>
+                            <Ionicons color={colors.primaryDark} name="play-circle" size={15} />
+                            <Text style={styles.lockedActionText}>
+                              Bấm vào đây để làm bài test 10 câu mở khóa lộ trình {path.targetScore}+
+                            </Text>
+                          </View>
+                        ) : null}
+                      </SurfaceCard>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
           </>
         ) : step === "quiz" && currentQuestion ? (
           <View style={styles.quizWrap}>
             <SurfaceCard style={styles.quizTopBar}>
               <View style={styles.quizProgressHeader}>
                 <Text style={styles.quizCounter}>
-                  Câu {quizIndex + 1}/{quizQuestions.length} · Đã chọn {answeredCount}/{quizQuestions.length}
+                  Câu {quizIndex + 1}/{quizQuestions.length} · Part {currentQuestion.partNo}
+                  {targetPathForQuiz ? ` · Mở lộ trình ${targetPathForQuiz.targetScore}+` : ""}
                 </Text>
-                <Pressable hitSlop={8} onPress={handleSkipQuickTest} style={styles.skipQuizPill}>
-                  <Text style={styles.skipQuizPillText}>Bỏ qua test</Text>
+                <Pressable hitSlop={8} onPress={handleSkipQuickTestTo300} style={styles.skipQuizPill}>
+                  <Text style={styles.skipQuizPillText}>Bỏ qua → Học 300+</Text>
                 </Pressable>
               </View>
               <View style={styles.quizProgressTrack}>
@@ -286,6 +515,17 @@ export default function OnboardingScreen() {
               </View>
             </SurfaceCard>
 
+            <QuestionMediaBlock
+              audioUrl={currentQuestion.audioUrl}
+              imageUrl={currentQuestion.imageUrl}
+              passageText={
+                currentQuestion.partNo >= 3 && !currentQuestion.audioUrl
+                  ? currentQuestion.passageText
+                  : null
+              }
+              questionGroupCode={null}
+            />
+
             <SurfaceCard style={styles.quizQuestionCard}>
               <View style={styles.quizMetaRow}>
                 <View style={styles.partPill}>
@@ -294,46 +534,62 @@ export default function OnboardingScreen() {
                 <Text style={styles.skillAreaText}>{currentQuestion.skillArea}</Text>
               </View>
 
-              {currentQuestion.passageText ? (
-                <View style={styles.passageBox}>
-                  <Text style={styles.passageText}>{currentQuestion.passageText}</Text>
-                </View>
+              {(currentQuestion.partNo !== 1 && currentQuestion.partNo !== 2) ||
+              (!currentQuestion.audioUrl && !currentQuestion.imageUrl) ? (
+                <Text style={[styles.quizQuestionText, { fontSize: rf(15.5) }]}>
+                  {currentQuestion.questionText}
+                </Text>
               ) : null}
 
-              <Text style={[styles.quizQuestionText, { fontSize: rf(15.5) }]}>
-                {currentQuestion.questionText}
-              </Text>
-
               <View style={styles.optionList}>
-                {currentQuestion.options.map((opt) => {
-                  const chosen = quizAnswers[currentQuestion.questionKey] === opt.label;
-                  return (
-                    <Pressable
-                      key={opt.label}
-                      onPress={() => handleSelectQuizOption(currentQuestion.questionKey, opt.label)}
-                      style={[
-                        styles.optionRow,
-                        chosen ? styles.optionRowSelected : null,
-                      ]}
-                    >
-                      <View style={[styles.optionLabelCircle, chosen ? styles.optionLabelCircleSelected : null]}>
-                        <Text style={[styles.optionLabelText, chosen ? styles.optionLabelTextSelected : null]}>
-                          {opt.label}
+                {currentQuestion.options
+                  .filter((opt) =>
+                    currentQuestion.partNo === 2 ? opt.label.toUpperCase() !== "D" : true,
+                  )
+                  .map((opt) => {
+                    const chosen = quizAnswers[currentQuestion.questionKey] === opt.label;
+                    const hideOptionText =
+                      (currentQuestion.partNo === 1 || currentQuestion.partNo === 2) &&
+                      Boolean(currentQuestion.audioUrl);
+                    return (
+                      <Pressable
+                        key={opt.label}
+                        onPress={() => handleSelectQuizOption(currentQuestion.questionKey, opt.label)}
+                        style={[styles.optionRow, chosen ? styles.optionRowSelected : null]}
+                      >
+                        <View
+                          style={[
+                            styles.optionLabelCircle,
+                            chosen ? styles.optionLabelCircleSelected : null,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.optionLabelText,
+                              chosen ? styles.optionLabelTextSelected : null,
+                            ]}
+                          >
+                            {opt.label}
+                          </Text>
+                        </View>
+                        <Text
+                          style={[
+                            styles.optionBodyText,
+                            chosen ? styles.optionBodyTextSelected : null,
+                          ]}
+                        >
+                          {hideOptionText ? `Đáp án (${opt.label})` : opt.text}
                         </Text>
-                      </View>
-                      <Text style={[styles.optionBodyText, chosen ? styles.optionBodyTextSelected : null]}>
-                        {opt.text}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+                      </Pressable>
+                    );
+                  })}
               </View>
 
               <View style={styles.quizNavRow}>
                 <LiquidButton
                   compact
                   disabled={quizIndex === 0 || quizSubmitting}
-                  label="Câu trước"
+                  label="Trước"
                   onPress={() => setQuizIndex((prev) => Math.max(0, prev - 1))}
                   variant="glass"
                 />
@@ -341,7 +597,9 @@ export default function OnboardingScreen() {
                   <LiquidButton
                     compact
                     label="Câu tiếp →"
-                    onPress={() => setQuizIndex((prev) => Math.min(quizQuestions.length - 1, prev + 1))}
+                    onPress={() =>
+                      setQuizIndex((prev) => Math.min(quizQuestions.length - 1, prev + 1))
+                    }
                     style={{ flex: 1 }}
                     variant="primary"
                   />
@@ -349,7 +607,7 @@ export default function OnboardingScreen() {
                   <LiquidButton
                     compact
                     disabled={quizSubmitting}
-                    label={quizSubmitting ? "Đang chấm điểm..." : "Hoàn thành & Xem lộ trình"}
+                    label={quizSubmitting ? "Đang chấm..." : "Nộp bài & Mở lộ trình"}
                     loading={quizSubmitting}
                     onPress={() => void handleSubmitQuickTest()}
                     style={{ flex: 1 }}
@@ -361,183 +619,94 @@ export default function OnboardingScreen() {
           </View>
         ) : step === "result" && evalResult ? (
           <View style={styles.quizWrap}>
-            <LiquidCard hero style={styles.heroBanner}>
-              <Text style={[styles.heroTitle, { fontSize: rf(20) }]}>
-                Ước lượng ~{evalResult.estimatedScore} điểm · Trình độ {evalResult.levelLabel}
-              </Text>
-              <Text style={styles.heroSubtitle}>
-                Đúng {evalResult.correctCount}/{evalResult.totalQuestions} câu ({Math.round(evalResult.accuracyPercent)}%) · Đề xuất mục tiêu {evalResult.recommendedTargetScore}+ TOEIC
-              </Text>
-            </LiquidCard>
-
             <SurfaceCard style={styles.quizQuestionCard}>
-              <Text style={[styles.goalTitle, { fontSize: rf(15.5) }]}>Phân tích kỹ năng theo Part</Text>
-              <View style={styles.breakdownRow}>
-                {evalResult.partBreakdown.map((item) => (
-                  <View key={item.partNo} style={styles.breakdownChip}>
-                    <Text style={styles.breakdownChipTitle}>Part {item.partNo}</Text>
-                    <Text style={styles.breakdownChipSub}>
-                      {item.correct}/{item.total} ({Math.round(item.accuracyPercent)}%)
-                    </Text>
-                  </View>
-                ))}
+              <View style={styles.resultBadgeRow}>
+                <Ionicons color={colors.primary} name="checkmark-circle" size={28} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.goalTitle, { fontSize: rf(17) }]}>
+                    Kết quả: Đúng {evalResult.correctCount}/{evalResult.totalQuestions} câu
+                  </Text>
+                  <Text style={styles.goalLevel}>
+                    {evalResult.unlockSummary ??
+                      (evalResult.correctCount <= 3
+                        ? "Đúng ≤ 3 câu: Mở khóa Lộ trình 300+"
+                        : evalResult.correctCount <= 7
+                          ? "Đúng 4–7 câu: Mở khóa Lộ trình 300+ & 600+"
+                          : "Đúng > 7 câu: Mở khóa Full Lộ trình (300+, 600+, 800+)")}
+                  </Text>
+                </View>
               </View>
 
-              {evalResult.strengths.length > 0 ? (
-                <Text style={styles.resultBullet}>
-                  Điểm mạnh: {evalResult.strengths.join(" · ")}
-                </Text>
-              ) : null}
-              {evalResult.weakAreas.length > 0 ? (
-                <Text style={styles.resultWeakBullet}>
-                  Cần ưu tiên cải thiện: {evalResult.weakAreas.join(" · ")}
-                </Text>
+              {targetPathForQuiz && targetPathForQuiz.targetScore > unlockedMaxScore ? (
+                <View style={styles.notEnoughBox}>
+                  <Text style={styles.notEnoughText}>
+                    Bạn cần đạt{" "}
+                    {targetPathForQuiz.targetScore <= 650 ? "từ 4/10 câu đúng" : "trên 7/10 câu đúng"}{" "}
+                    để mở {targetPathForQuiz.title}. Hiện tại bạn có thể học lộ trình đã mở hoặc làm lại bài test.
+                  </Text>
+                </View>
               ) : null}
 
               <View style={styles.recommendedBox}>
-                <Text style={styles.recommendedLabel}>Lộ trình đề xuất cho bạn</Text>
+                <Text style={styles.recommendedLabel}>Lộ trình sẵn sàng cho bạn</Text>
                 <Text style={[styles.goalTitle, { fontSize: rf(16) }]}>
-                  {evalResult.recommendedPathTitle ?? `Mục tiêu ${evalResult.recommendedTargetScore}+ TOEIC`}
+                  {selectedPath?.title ?? evalResult.recommendedPathTitle ?? "Lộ trình 300+"}
                 </Text>
               </View>
 
               <LiquidButton
                 disabled={submitting}
-                label={submitting ? "Đang kích hoạt..." : "Kích hoạt lộ trình đề xuất"}
+                label={
+                  submitting
+                    ? "Đang kích hoạt..."
+                    : `Bắt đầu học ${selectedPath?.title ?? "Lộ trình đã mở"}`
+                }
                 loading={submitting}
                 onPress={() =>
-                  void handleAssignPath(evalResult.recommendedPathId, evalResult.recommendedTargetScore)
+                  void handleAssignPath(
+                    selectedPath?.id ?? evalResult.recommendedPathId,
+                    selectedPath?.targetScore ?? evalResult.recommendedTargetScore,
+                  )
                 }
                 variant="primary"
               />
-              <Pressable hitSlop={8} onPress={() => setStep("catalog")} style={styles.reselectBtn}>
-                <Text style={styles.reselectBtnText}>Chọn lại lộ trình khác</Text>
-              </Pressable>
+
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <Pressable
+                  onPress={() => void handleStartQuickTest(targetPathForQuiz)}
+                  style={[styles.reselectBtn, { flex: 1 }]}
+                >
+                  <Text style={styles.reselectBtnText}>Làm lại test 10 câu</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setStep("catalog")}
+                  style={[styles.reselectBtn, { flex: 1 }]}
+                >
+                  <Text style={styles.reselectBtnText}>Xem danh sách lộ trình</Text>
+                </Pressable>
+              </View>
             </SurfaceCard>
           </View>
         ) : null}
-
-        {step === "catalog" && (loading ? (
-          <SurfaceCard style={styles.emptyCard}>
-            <ActivityIndicator color={colors.primary} />
-            <Text style={styles.goalDesc}>Đang tải các lộ trình theo mục tiêu điểm...</Text>
-          </SurfaceCard>
-        ) : errorMessage ? (
-          <SurfaceCard style={styles.emptyCard}>
-            <Text style={styles.goalDesc}>{errorMessage}</Text>
-            <LiquidButton compact label="Thử lại" onPress={() => void loadCatalog()} variant="glass" />
-          </SurfaceCard>
-        ) : catalog.length === 0 ? (
-          <SurfaceCard style={styles.emptyCard}>
-            <Ionicons color={colors.primary} name="map-outline" size={30} />
-            <Text style={[styles.goalTitle, { textAlign: "center" }]}>
-              Chưa có lộ trình đang mở
-            </Text>
-            <Text style={[styles.goalDesc, { textAlign: "center" }]}>
-              Quản trị viên chưa kích hoạt lộ trình học nào. Vui lòng quay lại sau.
-            </Text>
-          </SurfaceCard>
-        ) : (
-          <View style={styles.goalList}>
-            {catalog.map((path) => {
-              const selected = selectedPath?.id === path.id;
-
-              return (
-                <Pressable
-                  key={path.id}
-                  onPress={() => setSelectedPathId(path.id)}
-                  style={({ pressed }) => [pressed ? { opacity: 0.92 } : null]}
-                >
-                  <SurfaceCard
-                    style={[
-                      styles.goalCard,
-                      selected ? styles.goalCardSelected : null,
-                    ]}
-                  >
-                    <View style={styles.goalHeaderRow}>
-                      <View
-                        style={[
-                          styles.goalIcon,
-                          { backgroundColor: resolvePathAccent(path.targetScore) },
-                        ]}
-                      >
-                        <Text style={styles.scoreBadgeLabel}>{path.targetScore}+</Text>
-                      </View>
-
-                      <View style={styles.goalHeaderCopy}>
-                        <View style={styles.goalTitleRow}>
-                          <Text numberOfLines={1} style={[styles.goalTitle, { fontSize: rf(16.5) }]}>
-                            {path.title}
-                          </Text>
-                          {path.enrolled ? (
-                            <View style={[styles.popularBadge, { backgroundColor: colors.primary }]}>
-                              <Text style={styles.popularBadgeText}>Đang học</Text>
-                            </View>
-                          ) : path.recommended ? (
-                            <View style={styles.popularBadge}>
-                              <Text style={styles.popularBadgeText}>Đề xuất</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                        <Text style={styles.goalLevel}>
-                          {path.code} • Mục tiêu {path.targetScore}+ • {path.milestoneCount} chặng •{" "}
-                          {path.moduleCount} bài học
-                        </Text>
-                      </View>
-
-                      <Ionicons
-                        color={selected ? colors.primary : colors.textMuted}
-                        name={selected ? "checkmark-circle" : "ellipse-outline"}
-                        size={22}
-                      />
-                    </View>
-
-                    {path.description ? (
-                      <Text style={[styles.goalDesc, { fontSize: rf(13) }]}>{path.description}</Text>
-                    ) : null}
-
-                    {path.milestoneTitles && path.milestoneTitles.length > 0 ? (
-                      <Text numberOfLines={2} style={styles.milestonePreview}>
-                        Chặng học: {path.milestoneTitles.join(" → ")}
-                      </Text>
-                    ) : null}
-
-                    {path.moduleCount === 0 ? (
-                      <Text style={styles.pendingNote}>
-                        Nội dung chi tiết đang được cập nhật thêm bài học.
-                      </Text>
-                    ) : (
-                      <Text style={styles.resourceFoot}>
-                        Gồm {path.flashcardCount} từ vựng • {path.videoLessonCount} video •{" "}
-                        {path.practiceSetCount} bộ đề • ~{path.estimatedTotalMinutes} phút
-                      </Text>
-                    )}
-                  </SurfaceCard>
-                </Pressable>
-              );
-            })}
-          </View>
-        ))}
       </ScrollView>
 
-      {step === "catalog" ? (
-        <SurfaceCard padding="sm" style={styles.bottomDock}>
-          <View style={styles.dockInfo}>
-            <Text style={styles.dockLabel}>Lộ trình đã chọn</Text>
-            <Text numberOfLines={1} style={[styles.dockValue, { fontSize: rf(15.5) }]}>
-              {selectedPath ? `${selectedPath.targetScore}+ • ${selectedPath.title}` : "Chưa chọn"}
+      {step === "catalog" && selectedPath && isPathUnlocked(selectedPath) ? (
+        <View style={styles.bottomBar}>
+          <View style={styles.bottomInfo}>
+            <Text style={styles.bottomLabel}>Lộ trình đang chọn</Text>
+            <Text numberOfLines={1} style={styles.bottomValue}>
+              {selectedPath.targetScore}+ • {selectedPath.title}
             </Text>
           </View>
           <LiquidButton
             compact
-            disabled={submitting || !selectedPath}
-            label={submitting ? "Đang tạo..." : "Kích hoạt lộ trình"}
+            disabled={submitting}
+            label={submitting ? "Đang mở..." : "Kích hoạt lộ trình"}
             loading={submitting}
-            onPress={() => void handleAssignPath()}
-            style={{ minWidth: isNarrow ? 142 : 166 }}
+            onPress={() => void handleAssignPath(selectedPath.id, selectedPath.targetScore)}
             variant="primary"
           />
-        </SurfaceCard>
+        </View>
       ) : null}
     </UserScreen>
   );
@@ -547,157 +716,24 @@ const createStyles = (colors: LiquidThemeColors) =>
   StyleSheet.create({
     outerWrap: {
       flex: 1,
-      paddingBottom: 14,
     },
     scrollArea: {
       flex: 1,
     },
     scrollBody: {
-      gap: 14,
-      paddingBottom: 14,
-    },
-    heroBanner: {
-      gap: 6,
-    },
-    heroEyebrow: {
-      color: "rgba(255,255,255,0.88)",
-      fontSize: 10.5,
-      fontWeight: "900",
-      letterSpacing: 1,
-    },
-    heroTitle: {
-      color: colors.heroText,
-      fontWeight: "900",
-      lineHeight: 27,
-    },
-    heroSubtitle: {
-      color: colors.heroTextMuted,
-      fontSize: 13,
-      lineHeight: 19,
-    },
-    skipLink: {
-      alignSelf: "flex-start",
-      marginTop: 4,
-    },
-    skipLinkText: {
-      color: colors.accentGradient[0],
-      fontSize: 12.5,
-      fontWeight: "800",
-    },
-    goalList: {
-      gap: 10,
-    },
-    goalCard: {
-      gap: 8,
-    },
-    goalCardSelected: {
-      backgroundColor: colors.primarySoft,
-      borderColor: colors.primary,
-      borderWidth: 1.75,
-    },
-    goalHeaderRow: {
-      alignItems: "center",
-      flexDirection: "row",
-      gap: 10,
-    },
-    goalIcon: {
-      alignItems: "center",
-      borderRadius: 14,
-      height: 44,
-      justifyContent: "center",
-      minWidth: 50,
-      paddingHorizontal: 6,
-    },
-    scoreBadgeLabel: {
-      color: "#1E293B",
-      fontSize: 13,
-      fontWeight: "900",
-    },
-    emptyCard: {
-      alignItems: "center",
-      gap: 8,
-      paddingVertical: 24,
-    },
-    milestonePreview: {
-      color: colors.primary,
-      fontSize: 12,
-      fontWeight: "700",
-      lineHeight: 17,
-    },
-    resourceFoot: {
-      color: colors.textMuted,
-      fontSize: 11.5,
-      fontWeight: "700",
-    },
-    pendingNote: {
-      color: "#D97706",
-      fontSize: 11.5,
-      fontWeight: "700",
-    },
-    goalHeaderCopy: {
-      flex: 1,
-      minWidth: 0,
-    },
-    goalTitleRow: {
-      alignItems: "center",
-      flexDirection: "row",
-      gap: 6,
-    },
-    goalTitle: {
-      color: colors.text,
-      flexShrink: 1,
-      fontWeight: "900",
-    },
-    popularBadge: {
-      backgroundColor: colors.success,
-      borderRadius: radius.pill,
-      paddingHorizontal: 7,
-      paddingVertical: 2,
-    },
-    popularBadgeText: {
-      color: "#FFFFFF",
-      fontSize: 10,
-      fontWeight: "900",
-    },
-    goalLevel: {
-      color: colors.textMuted,
-      fontSize: 11.5,
-      fontWeight: "700",
-      marginTop: 2,
-    },
-    goalDesc: {
-      color: colors.textMuted,
-      lineHeight: 19,
-    },
-    bottomDock: {
-      alignItems: "center",
-      flexDirection: "row",
       gap: 12,
-      justifyContent: "space-between",
-      marginTop: 10,
+      paddingBottom: 110,
+      paddingTop: 6,
     },
-    dockInfo: {
-      flex: 1,
-      minWidth: 0,
-    },
-    dockLabel: {
-      color: colors.textMuted,
-      fontSize: 11,
-      fontWeight: "700",
-    },
-    dockValue: {
-      color: colors.primary,
-      fontWeight: "900",
-      marginTop: 1,
-    },
-    placementIntroCard: {
+    testGateCard: {
       gap: 10,
     },
-    placementIntroHeader: {
+    testGateHeader: {
       alignItems: "center",
       flexDirection: "row",
       justifyContent: "space-between",
-      gap: 8,
+      flexWrap: "wrap",
+      gap: 6,
     },
     placementBadge: {
       alignItems: "center",
@@ -709,36 +745,178 @@ const createStyles = (colors: LiquidThemeColors) =>
       paddingVertical: 4,
     },
     placementBadgeText: {
-      color: colors.primary,
-      fontSize: 10.5,
+      color: colors.primaryDark,
+      fontSize: 11,
       fontWeight: "900",
-      letterSpacing: 0.5,
     },
     placementMeta: {
       color: colors.textMuted,
       fontSize: 12,
       fontWeight: "700",
     },
+    ruleBoxesWrap: {
+      flexDirection: "row",
+      gap: 6,
+    },
+    ruleChip: {
+      backgroundColor: colors.surfaceMuted,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      flex: 1,
+      gap: 2,
+      paddingHorizontal: 8,
+      paddingVertical: 8,
+    },
+    ruleChipUnlocked: {
+      backgroundColor: "#F0FDF4",
+      borderColor: "#86EFAC",
+    },
+    ruleScoreText: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontWeight: "700",
+    },
+    ruleTargetText: {
+      color: colors.primaryDark,
+      fontSize: 12,
+      fontWeight: "900",
+    },
     placementActionRow: {
       alignItems: "center",
       flexDirection: "row",
-      gap: 10,
-      marginTop: 4,
+      gap: 8,
     },
     skipInlineBtn: {
-      paddingHorizontal: 10,
+      backgroundColor: colors.surfaceMuted,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      paddingHorizontal: 12,
       paddingVertical: 10,
     },
     skipInlineText: {
-      color: colors.textMuted,
-      fontSize: 13,
+      color: colors.primaryDark,
+      fontSize: 12.5,
       fontWeight: "800",
     },
+    emptyCard: {
+      alignItems: "center",
+      gap: 10,
+      paddingVertical: 20,
+    },
+    goalList: {
+      gap: 10,
+    },
+    goalCard: {
+      borderColor: colors.border,
+      borderWidth: 1.5,
+      gap: 8,
+    },
+    goalCardSelected: {
+      borderColor: colors.primary,
+      borderWidth: 2,
+    },
+    goalCardLocked: {
+      opacity: 0.88,
+    },
+    goalHeaderRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 10,
+    },
+    goalIcon: {
+      alignItems: "center",
+      borderRadius: 14,
+      height: 48,
+      justifyContent: "center",
+      width: 54,
+    },
+    scoreBadgeLabel: {
+      color: "#0F172A",
+      fontSize: 15,
+      fontWeight: "900",
+    },
+    goalHeaderCopy: {
+      flex: 1,
+      gap: 3,
+    },
+    goalTitleRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+    },
+    goalTitle: {
+      color: colors.text,
+      fontWeight: "900",
+    },
+    goalLevel: {
+      color: colors.textMuted,
+      fontSize: 12,
+      fontWeight: "600",
+    },
+    goalDesc: {
+      color: colors.textMuted,
+      fontSize: 13,
+      lineHeight: 19,
+    },
+    popularBadge: {
+      backgroundColor: colors.primarySoft,
+      borderRadius: radius.pill,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+    },
+    popularBadgeText: {
+      color: "#FFFFFF",
+      fontSize: 10.5,
+      fontWeight: "800",
+    },
+    unlockedBadge: {
+      backgroundColor: "#DCFCE7",
+      borderRadius: radius.pill,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+    },
+    unlockedBadgeText: {
+      color: "#15803D",
+      fontSize: 10.5,
+      fontWeight: "800",
+    },
+    lockedBadge: {
+      alignItems: "center",
+      backgroundColor: "#FEF3C7",
+      borderRadius: radius.pill,
+      flexDirection: "row",
+      gap: 3,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+    },
+    lockedBadgeText: {
+      color: "#B45309",
+      fontSize: 10.5,
+      fontWeight: "800",
+    },
+    lockedActionStrip: {
+      alignItems: "center",
+      backgroundColor: colors.primarySoft,
+      borderRadius: radius.md,
+      flexDirection: "row",
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+    },
+    lockedActionText: {
+      color: colors.primaryDark,
+      flex: 1,
+      fontSize: 12,
+      fontWeight: "700",
+    },
     quizWrap: {
-      gap: 12,
+      gap: 10,
     },
     quizTopBar: {
-      gap: 10,
+      gap: 8,
     },
     quizProgressHeader: {
       alignItems: "center",
@@ -751,20 +929,20 @@ const createStyles = (colors: LiquidThemeColors) =>
       fontWeight: "800",
     },
     skipQuizPill: {
-      backgroundColor: colors.primarySoft,
+      backgroundColor: colors.surfaceMuted,
       borderRadius: radius.pill,
-      paddingHorizontal: 12,
-      paddingVertical: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
     },
     skipQuizPillText: {
-      color: colors.primary,
-      fontSize: 12,
+      color: colors.primaryDark,
+      fontSize: 11.5,
       fontWeight: "800",
     },
     quizProgressTrack: {
-      backgroundColor: colors.primarySoft,
+      backgroundColor: colors.surfaceMuted,
       borderRadius: 99,
-      height: 7,
+      height: 6,
       overflow: "hidden",
     },
     quizProgressFill: {
@@ -787,39 +965,28 @@ const createStyles = (colors: LiquidThemeColors) =>
       paddingVertical: 3,
     },
     partPillText: {
-      color: colors.primary,
+      color: colors.primaryDark,
       fontSize: 11.5,
       fontWeight: "900",
     },
     skillAreaText: {
       color: colors.textMuted,
-      flex: 1,
-      fontSize: 12.5,
+      fontSize: 12,
       fontWeight: "700",
-    },
-    passageBox: {
-      backgroundColor: colors.primarySoft,
-      borderRadius: 12,
-      padding: 12,
-    },
-    passageText: {
-      color: colors.text,
-      fontSize: 13.5,
-      lineHeight: 20,
     },
     quizQuestionText: {
       color: colors.text,
       fontWeight: "800",
-      lineHeight: 23,
+      lineHeight: 22,
     },
     optionList: {
       gap: 8,
     },
     optionRow: {
       alignItems: "center",
-      backgroundColor: colors.surface,
-      borderColor: colors.glassBorder,
-      borderRadius: 12,
+      backgroundColor: colors.surfaceMuted,
+      borderColor: colors.border,
+      borderRadius: radius.md,
       borderWidth: 1,
       flexDirection: "row",
       gap: 10,
@@ -829,21 +996,23 @@ const createStyles = (colors: LiquidThemeColors) =>
     optionRowSelected: {
       backgroundColor: colors.primarySoft,
       borderColor: colors.primary,
-      borderWidth: 1.5,
     },
     optionLabelCircle: {
       alignItems: "center",
-      backgroundColor: colors.primarySoft,
-      borderRadius: 99,
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      borderRadius: 999,
+      borderWidth: 1,
       height: 28,
       justifyContent: "center",
       width: 28,
     },
     optionLabelCircleSelected: {
       backgroundColor: colors.primary,
+      borderColor: colors.primary,
     },
     optionLabelText: {
-      color: colors.primary,
+      color: colors.text,
       fontSize: 12.5,
       fontWeight: "900",
     },
@@ -854,70 +1023,84 @@ const createStyles = (colors: LiquidThemeColors) =>
       color: colors.text,
       flex: 1,
       fontSize: 14,
-      lineHeight: 20,
+      fontWeight: "600",
     },
     optionBodyTextSelected: {
+      color: colors.primaryDark,
       fontWeight: "800",
     },
     quizNavRow: {
       alignItems: "center",
       flexDirection: "row",
       gap: 10,
-      marginTop: 6,
+      marginTop: 4,
     },
-    breakdownRow: {
+    resultBadgeRow: {
+      alignItems: "center",
       flexDirection: "row",
-      flexWrap: "wrap",
-      gap: 8,
+      gap: 10,
     },
-    breakdownChip: {
-      backgroundColor: colors.primarySoft,
-      borderRadius: 12,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
+    notEnoughBox: {
+      backgroundColor: "#FEF3C7",
+      borderColor: "#F59E0B",
+      borderRadius: radius.md,
+      borderWidth: 1,
+      padding: 10,
     },
-    breakdownChipTitle: {
-      color: colors.primary,
-      fontSize: 12,
-      fontWeight: "900",
-    },
-    breakdownChipSub: {
-      color: colors.text,
+    notEnoughText: {
+      color: "#B45309",
       fontSize: 12.5,
       fontWeight: "700",
-      marginTop: 2,
-    },
-    resultBullet: {
-      color: colors.success,
-      fontSize: 13,
-      fontWeight: "700",
-      lineHeight: 19,
-    },
-    resultWeakBullet: {
-      color: "#D97706",
-      fontSize: 13,
-      fontWeight: "700",
-      lineHeight: 19,
+      lineHeight: 18,
     },
     recommendedBox: {
       backgroundColor: colors.primarySoft,
-      borderRadius: 14,
+      borderRadius: radius.md,
       gap: 4,
       padding: 12,
     },
     recommendedLabel: {
-      color: colors.primary,
+      color: colors.primaryDark,
       fontSize: 11.5,
       fontWeight: "800",
-      textTransform: "uppercase",
     },
     reselectBtn: {
       alignItems: "center",
-      paddingVertical: 6,
+      backgroundColor: colors.surfaceMuted,
+      borderRadius: radius.md,
+      paddingVertical: 10,
     },
     reselectBtnText: {
-      color: colors.textMuted,
-      fontSize: 13,
+      color: colors.primaryDark,
+      fontSize: 12.5,
       fontWeight: "800",
+    },
+    bottomBar: {
+      alignItems: "center",
+      backgroundColor: colors.surface,
+      borderTopColor: colors.border,
+      borderTopWidth: 1,
+      bottom: 0,
+      flexDirection: "row",
+      gap: 12,
+      justifyContent: "space-between",
+      left: 0,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      position: "absolute",
+      right: 0,
+    },
+    bottomInfo: {
+      flex: 1,
+    },
+    bottomLabel: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontWeight: "700",
+    },
+    bottomValue: {
+      color: colors.text,
+      fontSize: 14,
+      fontWeight: "900",
     },
   });
