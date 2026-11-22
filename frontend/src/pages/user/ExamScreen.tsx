@@ -86,7 +86,9 @@ export default function ExamScreen() {
   }>();
   const { auth, updateUserProfile } = useAuth();
   const { theme } = useAppTheme();
-  const { gridItemWidth, isNarrow, isTablet, rf } = useResponsiveLayout();
+  const { gridItemWidth, isNarrow, isTablet, isDesktopWeb, rf } = useResponsiveLayout({
+    hideDesktopSidebar: true,
+  });
   const colors = theme.colors;
   const styles = useThemedStyles(createStyles);
 
@@ -269,7 +271,7 @@ export default function ExamScreen() {
 
   if (loading) {
     return (
-      <UserScreen hasTabDock={false}>
+      <UserScreen hasTabDock={false} hideDesktopSidebar>
         <View style={styles.loadingWrap}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
@@ -279,7 +281,7 @@ export default function ExamScreen() {
 
   if (!test || !currentQuestion) {
     return (
-      <UserScreen hasTabDock={false}>
+      <UserScreen hasTabDock={false} hideDesktopSidebar>
         <SurfaceCard style={{ alignItems: "center", gap: 12, marginTop: 24, padding: 20 }}>
           <Ionicons color={colors.primary} name="document-text-outline" size={40} />
           <Text style={{ color: colors.text, fontSize: rf(16), fontWeight: "900", textAlign: "center" }}>
@@ -299,12 +301,60 @@ export default function ExamScreen() {
   }
 
   const selectedOptionLabel = userAnswers[currentQuestion.id];
-  const navCols = isNarrow ? 6 : isTablet ? 10 : 7;
+  const navCols = isDesktopWeb ? 10 : isNarrow ? 6 : isTablet ? 10 : 7;
   const navCellW = gridItemWidth(navCols, 6, true);
   const progressPct = allQuestions.length ? ((currentIndex + 1) / allQuestions.length) * 100 : 0;
+  const hasMediaOrPassage =
+    Boolean(currentQuestion.audioUrl) ||
+    Boolean(currentQuestion.imageUrl) ||
+    ((currentQuestion.partNo ?? 0) >= 6 && Boolean(currentQuestion.passageText));
+
+  const renderQuestionNavigatorGrid = (desktopEmbedded = false) => (
+    <SurfaceCard padding="sm" style={styles.navigatorCard}>
+      {desktopEmbedded ? (
+        <Text style={{ color: colors.textMuted, fontSize: 11.5, fontWeight: "800", marginBottom: 8 }}>
+          Danh sách câu hỏi ({Object.keys(userAnswers).length}/{allQuestions.length})
+        </Text>
+      ) : null}
+      <View style={styles.navigatorGrid}>
+        {allQuestions.map((q, idx) => {
+          const answered = Boolean(userAnswers[q.id]);
+          const flagged = flaggedIds.includes(q.id);
+          const active = idx === currentIndex;
+          return (
+            <Pressable
+              key={q.id}
+              onPress={() => {
+                setCurrentIndex(idx);
+                if (!desktopEmbedded) {
+                  setShowNavigator(false);
+                }
+              }}
+              style={[
+                styles.navCell,
+                desktopEmbedded ? { width: 42 } : { width: navCellW },
+                answered ? styles.navCellAnswered : null,
+                flagged ? styles.navCellFlagged : null,
+                active ? styles.navCellActive : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.navCellText,
+                  answered && !active ? styles.navCellTextAnswered : null,
+                ]}
+              >
+                {idx + 1}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </SurfaceCard>
+  );
 
   return (
-    <UserScreen hasTabDock={false}>
+    <UserScreen hasTabDock={false} hideDesktopSidebar>
       <View style={styles.topBar}>
         <LiquidIconButton accessibilityLabel="Thoát" onPress={() => safeBack("/user/test")}>
           <Ionicons color={colors.primaryDark} name="close" size={20} />
@@ -350,129 +400,116 @@ export default function ExamScreen() {
             />
           </Pressable>
 
-          <Pressable
-            onPress={() => setShowNavigator((prev) => !prev)}
-            style={[styles.toolChip, showNavigator ? styles.toolChipActive : null]}
-          >
-            <Ionicons
-              color={showNavigator ? colors.onPrimary : colors.primaryDark}
-              name="grid-outline"
-              size={15}
-            />
-          </Pressable>
+          {!isDesktopWeb ? (
+            <Pressable
+              onPress={() => setShowNavigator((prev) => !prev)}
+              style={[styles.toolChip, showNavigator ? styles.toolChipActive : null]}
+            >
+              <Ionicons
+                color={showNavigator ? colors.onPrimary : colors.primaryDark}
+                name="grid-outline"
+                size={15}
+              />
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
-      {showNavigator ? (
-        <SurfaceCard padding="sm" style={styles.navigatorCard}>
-          <View style={styles.navigatorGrid}>
-            {allQuestions.map((q, idx) => {
-              const answered = Boolean(userAnswers[q.id]);
-              const flagged = flaggedIds.includes(q.id);
-              const active = idx === currentIndex;
-              return (
-                <Pressable
-                  key={q.id}
-                  onPress={() => {
-                    setCurrentIndex(idx);
-                    setShowNavigator(false);
-                  }}
-                  style={[
-                    styles.navCell,
-                    { width: navCellW },
-                    answered ? styles.navCellAnswered : null,
-                    flagged ? styles.navCellFlagged : null,
-                    active ? styles.navCellActive : null,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.navCellText,
-                      answered && !active ? styles.navCellTextAnswered : null,
-                    ]}
-                  >
-                    {idx + 1}
-                  </Text>
-                </Pressable>
-              );
-            })}
+      {!isDesktopWeb && showNavigator ? renderQuestionNavigatorGrid(false) : null}
+
+      <View style={isDesktopWeb ? { alignItems: "flex-start", flexDirection: "row", gap: 20 } : undefined}>
+        {(!isDesktopWeb || hasMediaOrPassage) ? (
+          <View style={isDesktopWeb ? { flex: 1.05, minWidth: 0 } : undefined}>
+            <QuestionMediaBlock
+              audioUrl={currentQuestion.audioUrl}
+              imageUrl={currentQuestion.imageUrl}
+              passageText={
+                (currentQuestion.partNo ?? 0) >= 6 ? currentQuestion.passageText : null
+              }
+              questionGroupCode={null}
+            />
           </View>
-        </SurfaceCard>
-      ) : null}
+        ) : null}
 
-      <QuestionMediaBlock
-        audioUrl={currentQuestion.audioUrl}
-        imageUrl={currentQuestion.imageUrl}
-        passageText={
-          (currentQuestion.partNo ?? 0) >= 6 ? currentQuestion.passageText : null
-        }
-        questionGroupCode={null}
-      />
+        <View style={isDesktopWeb ? { flex: hasMediaOrPassage ? 0.95 : 1.15, minWidth: 0 } : undefined}>
+          {(currentQuestion.partNo ?? 0) !== 1 && (currentQuestion.partNo ?? 0) !== 2 ? (
+            <SurfaceCard style={styles.promptCard}>
+              <Text style={[styles.prompt, { fontSize: rf(17), lineHeight: rf(25) }]}>
+                {cleanToeicPromptText(currentQuestion.questionText)}
+              </Text>
+            </SurfaceCard>
+          ) : null}
 
-      {(currentQuestion.partNo ?? 0) !== 1 && (currentQuestion.partNo ?? 0) !== 2 ? (
-        <SurfaceCard style={styles.promptCard}>
-          <Text style={[styles.prompt, { fontSize: rf(17), lineHeight: rf(25) }]}>
-            {cleanToeicPromptText(currentQuestion.questionText)}
-          </Text>
-        </SurfaceCard>
-      ) : null}
+          <View style={styles.optionsList}>
+            {(currentQuestion.options ?? [])
+              .filter((option) =>
+                (currentQuestion.partNo ?? 0) === 2
+                  ? option.optionLabel.toUpperCase() !== "D"
+                  : true,
+              )
+              .map((option) => {
+                const selected = selectedOptionLabel === option.optionLabel;
+                const hideOptionDetail =
+                  (currentQuestion.partNo ?? 0) === 1 || (currentQuestion.partNo ?? 0) === 2;
+                return (
+                  <Pressable
+                    key={option.id}
+                    onPress={() => handleSelectOption(option.optionLabel)}
+                    style={[styles.optionCard, selected ? styles.optionSelected : null]}
+                  >
+                    <View style={[styles.optionBadge, selected ? styles.optionBadgeSelected : null]}>
+                      <Text style={[styles.optionBadgeText, selected ? styles.optionBadgeTextSelected : null]}>
+                        {option.optionLabel}
+                      </Text>
+                    </View>
+                    <Text style={[styles.optionText, { fontSize: rf(15) }]}>
+                      {hideOptionDetail ? `Đáp án (${option.optionLabel})` : option.optionText}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+          </View>
 
-      <View style={styles.optionsList}>
-        {(currentQuestion.options ?? [])
-          .filter((option) =>
-            (currentQuestion.partNo ?? 0) === 2
-              ? option.optionLabel.toUpperCase() !== "D"
-              : true,
-          )
-          .map((option) => {
-            const selected = selectedOptionLabel === option.optionLabel;
-            const hideOptionDetail =
-              (currentQuestion.partNo ?? 0) === 1 || (currentQuestion.partNo ?? 0) === 2;
-            return (
-              <Pressable
-                key={option.id}
-                onPress={() => handleSelectOption(option.optionLabel)}
-                style={[styles.optionCard, selected ? styles.optionSelected : null]}
-              >
-                <View style={[styles.optionBadge, selected ? styles.optionBadgeSelected : null]}>
-                  <Text style={[styles.optionBadgeText, selected ? styles.optionBadgeTextSelected : null]}>
-                    {option.optionLabel}
-                  </Text>
-                </View>
-                <Text style={[styles.optionText, { fontSize: rf(15) }]}>
-                  {hideOptionDetail ? `Đáp án (${option.optionLabel})` : option.optionText}
-                </Text>
-              </Pressable>
-            );
-          })}
+          <View style={styles.bottomActions}>
+            <LiquidButton
+              compact
+              disabled={currentIndex === 0}
+              label="Trước"
+              onPress={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
+              style={{ flex: 1 }}
+              variant="glass"
+            />
+            <LiquidButton
+              compact
+              disabled={currentIndex === allQuestions.length - 1}
+              label="Câu tiếp"
+              onPress={() => setCurrentIndex((prev) => Math.min(allQuestions.length - 1, prev + 1))}
+              style={{ flex: 1.2 }}
+              variant="primary"
+            />
+            <LiquidButton
+              compact
+              disabled={submitting}
+              label={submitting ? "Đang nộp..." : "Nộp bài"}
+              onPress={handleSubmit}
+              style={{ flex: 0.9 }}
+              variant="accent"
+            />
+          </View>
+        </View>
+
+        {isDesktopWeb && !hasMediaOrPassage ? (
+          <View style={{ flex: 0.85, minWidth: 0 }}>
+            {renderQuestionNavigatorGrid(true)}
+          </View>
+        ) : null}
       </View>
 
-      <View style={styles.bottomActions}>
-        <LiquidButton
-          compact
-          disabled={currentIndex === 0}
-          label="Trước"
-          onPress={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
-          style={{ flex: 1 }}
-          variant="glass"
-        />
-        <LiquidButton
-          compact
-          disabled={currentIndex === allQuestions.length - 1}
-          label="Câu tiếp"
-          onPress={() => setCurrentIndex((prev) => Math.min(allQuestions.length - 1, prev + 1))}
-          style={{ flex: 1.2 }}
-          variant="primary"
-        />
-        <LiquidButton
-          compact
-          disabled={submitting}
-          label={submitting ? "Đang nộp..." : "Nộp bài"}
-          onPress={handleSubmit}
-          style={{ flex: 0.9 }}
-          variant="accent"
-        />
-      </View>
+      {isDesktopWeb && hasMediaOrPassage ? (
+        <View style={{ marginTop: 14 }}>
+          {renderQuestionNavigatorGrid(true)}
+        </View>
+      ) : null}
 
       <Modal
         animationType="fade"

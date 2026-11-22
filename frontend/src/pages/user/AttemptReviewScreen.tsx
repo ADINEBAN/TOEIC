@@ -31,7 +31,7 @@ export default function AttemptReviewScreen() {
   const params = useLocalSearchParams<{ attemptId?: string }>();
   const { auth } = useAuth();
   const { theme } = useAppTheme();
-  const { gridItemWidth, rf } = useResponsiveLayout();
+  const { gridItemWidth, isDesktopWeb, rf } = useResponsiveLayout();
   const colors = theme.colors;
   const styles = useThemedStyles(createStyles);
 
@@ -146,6 +146,124 @@ export default function AttemptReviewScreen() {
   }
 
   const statW = gridItemWidth(3, 8, true);
+  const desktopTwoColSummary = isDesktopWeb && Boolean(attempt.partBreakdown?.length);
+  const statCardSizingStyle = isDesktopWeb ? { flex: 1 } : { width: statW };
+
+  const heroBlock = (
+    <LiquidCard hero style={styles.heroCard}>
+      <View style={styles.heroTopRow}>
+        <View style={styles.heroCopy}>
+          <Text numberOfLines={2} style={[styles.heroTitle, { fontSize: rf(19) }]}>
+            {attempt.testTitle}
+          </Text>
+          <Text style={styles.heroMeta}>Nộp bài: {formatDateTime(attempt.submittedAt)}</Text>
+        </View>
+        <View style={styles.scoreRing}>
+          <Text style={styles.scoreRingValue}>{scorePercent}%</Text>
+          <Text style={styles.scoreRingLabel}>Điểm</Text>
+        </View>
+      </View>
+
+      <View style={styles.statGrid}>
+        <View style={[styles.statCard, styles.statCardSuccess, statCardSizingStyle]}>
+          <Text style={styles.statValue}>{attempt.correctCount ?? 0}</Text>
+          <Text style={styles.statLabel}>Câu đúng</Text>
+        </View>
+        <View style={[styles.statCard, styles.statCardDanger, statCardSizingStyle]}>
+          <Text style={styles.statValue}>{incorrectCount}</Text>
+          <Text style={styles.statLabel}>Câu sai</Text>
+        </View>
+        <View style={[styles.statCard, statCardSizingStyle]}>
+          <Text style={styles.statValue}>{attempt.toeicScore ?? attempt.totalQuestions}</Text>
+          <Text style={styles.statLabel}>{attempt.toeicScore ? "TOEIC" : "Tổng"}</Text>
+        </View>
+      </View>
+
+      {attempt.toeicScore != null ? (
+        <View style={styles.toeicBandRow}>
+          <View style={styles.toeicBandPill}>
+            <Text style={styles.toeicBandText}>Listening: {attempt.listeningScore ?? 5}/495</Text>
+          </View>
+          <View style={styles.toeicBandPill}>
+            <Text style={styles.toeicBandText}>Reading: {attempt.readingScore ?? 5}/495</Text>
+          </View>
+          {skippedCount > 0 ? (
+            <View style={styles.toeicBandPill}>
+              <Text style={styles.toeicBandText}>Bỏ trống: {skippedCount} câu</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {attempt.testId ? (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+          {incorrectCount > 0 ? (
+            <Pressable
+              onPress={() => {
+                const wrongIds = answers.filter((a) => !a.correct).map((a) => a.testPartQuestionId);
+                pushRoute(`/user/exam?testId=${attempt.testId}&retryIds=${wrongIds.join(",")}`);
+              }}
+              style={{
+                backgroundColor: "rgba(255,255,255,0.22)",
+                borderRadius: 999,
+                paddingHorizontal: 14,
+                paddingVertical: 8,
+              }}
+            >
+              <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "800" }}>
+                ↺ Làm lại {incorrectCount} câu sai
+              </Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            onPress={() => pushRoute(`/user/exam?testId=${attempt.testId}`)}
+            style={{
+              backgroundColor: "rgba(255,255,255,0.14)",
+              borderRadius: 999,
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+            }}
+          >
+            <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "800" }}>
+              Làm lại toàn đề
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </LiquidCard>
+  );
+
+  const breakdownBlock = attempt.partBreakdown?.length ? (
+    <>
+      <SectionTitle title="Phân tích theo Part" />
+      <SurfaceCard style={styles.partBreakdownCard}>
+        {attempt.partBreakdown.map((part) => {
+          const weak = part.accuracy < 60;
+          return (
+            <View key={`part-${part.partNo}`} style={styles.partRow}>
+              <View style={styles.partHeaderRow}>
+                <Text style={styles.partNameText}>
+                  Part {part.partNo || "?"} ({part.partSection})
+                </Text>
+                <Text style={[styles.partStatText, weak ? styles.partWeakText : null]}>
+                  {part.correctCount}/{part.totalCount} ({Math.round(part.accuracy)}%)
+                </Text>
+              </View>
+              <View style={styles.partTrack}>
+                <View
+                  style={[
+                    styles.partFill,
+                    weak ? styles.partFillWeak : null,
+                    { width: `${Math.max(4, Math.min(100, part.accuracy))}%` },
+                  ]}
+                />
+              </View>
+            </View>
+          );
+        })}
+      </SurfaceCard>
+    </>
+  ) : null;
 
   return (
     <UserScreen hasTabDock={false}>
@@ -156,119 +274,17 @@ export default function AttemptReviewScreen() {
         title="Xem lại bài thi"
       />
 
-      <LiquidCard hero style={styles.heroCard}>
-        <View style={styles.heroTopRow}>
-          <View style={styles.heroCopy}>
-            <Text numberOfLines={2} style={[styles.heroTitle, { fontSize: rf(19) }]}>
-              {attempt.testTitle}
-            </Text>
-            <Text style={styles.heroMeta}>Nộp bài: {formatDateTime(attempt.submittedAt)}</Text>
-          </View>
-          <View style={styles.scoreRing}>
-            <Text style={styles.scoreRingValue}>{scorePercent}%</Text>
-            <Text style={styles.scoreRingLabel}>Điểm</Text>
-          </View>
+      {desktopTwoColSummary ? (
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 20 }}>
+          <View style={{ flex: 1.05, minWidth: 0 }}>{heroBlock}</View>
+          <View style={{ flex: 0.95, minWidth: 0 }}>{breakdownBlock}</View>
         </View>
-
-        <View style={styles.statGrid}>
-          <View style={[styles.statCard, styles.statCardSuccess, { width: statW }]}>
-            <Text style={styles.statValue}>{attempt.correctCount ?? 0}</Text>
-            <Text style={styles.statLabel}>Câu đúng</Text>
-          </View>
-          <View style={[styles.statCard, styles.statCardDanger, { width: statW }]}>
-            <Text style={styles.statValue}>{incorrectCount}</Text>
-            <Text style={styles.statLabel}>Câu sai</Text>
-          </View>
-          <View style={[styles.statCard, { width: statW }]}>
-            <Text style={styles.statValue}>{attempt.toeicScore ?? attempt.totalQuestions}</Text>
-            <Text style={styles.statLabel}>{attempt.toeicScore ? "TOEIC" : "Tổng"}</Text>
-          </View>
-        </View>
-
-        {attempt.toeicScore != null ? (
-          <View style={styles.toeicBandRow}>
-            <View style={styles.toeicBandPill}>
-              <Text style={styles.toeicBandText}>Listening: {attempt.listeningScore ?? 5}/495</Text>
-            </View>
-            <View style={styles.toeicBandPill}>
-              <Text style={styles.toeicBandText}>Reading: {attempt.readingScore ?? 5}/495</Text>
-            </View>
-            {skippedCount > 0 ? (
-              <View style={styles.toeicBandPill}>
-                <Text style={styles.toeicBandText}>Bỏ trống: {skippedCount} câu</Text>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-
-        {attempt.testId ? (
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-            {incorrectCount > 0 ? (
-              <Pressable
-                onPress={() => {
-                  const wrongIds = answers.filter((a) => !a.correct).map((a) => a.testPartQuestionId);
-                  pushRoute(`/user/exam?testId=${attempt.testId}&retryIds=${wrongIds.join(",")}`);
-                }}
-                style={{
-                  backgroundColor: "rgba(255,255,255,0.22)",
-                  borderRadius: 999,
-                  paddingHorizontal: 14,
-                  paddingVertical: 8,
-                }}
-              >
-                <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "800" }}>
-                  ↺ Làm lại {incorrectCount} câu sai
-                </Text>
-              </Pressable>
-            ) : null}
-            <Pressable
-              onPress={() => pushRoute(`/user/exam?testId=${attempt.testId}`)}
-              style={{
-                backgroundColor: "rgba(255,255,255,0.14)",
-                borderRadius: 999,
-                paddingHorizontal: 14,
-                paddingVertical: 8,
-              }}
-            >
-              <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "800" }}>
-                Làm lại toàn đề
-              </Text>
-            </Pressable>
-          </View>
-        ) : null}
-      </LiquidCard>
-
-      {attempt.partBreakdown?.length ? (
+      ) : (
         <>
-          <SectionTitle title="Phân tích theo Part" />
-          <SurfaceCard style={styles.partBreakdownCard}>
-            {attempt.partBreakdown.map((part) => {
-              const weak = part.accuracy < 60;
-              return (
-                <View key={`part-${part.partNo}`} style={styles.partRow}>
-                  <View style={styles.partHeaderRow}>
-                    <Text style={styles.partNameText}>
-                      Part {part.partNo || "?"} ({part.partSection})
-                    </Text>
-                    <Text style={[styles.partStatText, weak ? styles.partWeakText : null]}>
-                      {part.correctCount}/{part.totalCount} ({Math.round(part.accuracy)}%)
-                    </Text>
-                  </View>
-                  <View style={styles.partTrack}>
-                    <View
-                      style={[
-                        styles.partFill,
-                        weak ? styles.partFillWeak : null,
-                        { width: `${Math.max(4, Math.min(100, part.accuracy))}%` },
-                      ]}
-                    />
-                  </View>
-                </View>
-              );
-            })}
-          </SurfaceCard>
+          {heroBlock}
+          {breakdownBlock}
         </>
-      ) : null}
+      )}
 
       <SectionTitle title="Chi tiết từng câu hỏi" />
       <View style={styles.answersCol}>

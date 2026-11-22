@@ -425,7 +425,7 @@ function formatTimestampBadge(seconds: number) {
 export default function LessonScreen() {
   const { auth, isHydrated, updateUserProfile } = useAuth();
   const { theme } = useAppTheme();
-  const { rf } = useResponsiveLayout();
+  const { rf, isDesktopWeb } = useResponsiveLayout({ hideDesktopSidebar: true });
   const colors = theme.colors;
   const styles = useThemedStyles(createStyles);
   const params = useLocalSearchParams<{ moduleId?: string; lessonId?: string; seekSeconds?: string }>();
@@ -958,7 +958,7 @@ export default function LessonScreen() {
   );
 
   return (
-    <UserScreen hasTabDock={false}>
+    <UserScreen hasTabDock={false} hideDesktopSidebar>
       <AppHeader
         leftIcon="chevron-back-outline"
         onLeftPress={() => safeBack(selectedModuleId ? `/user/roadmap?moduleId=${selectedModuleId}` : "/user/practice")}
@@ -967,176 +967,182 @@ export default function LessonScreen() {
         title={currentLesson?.lessonTitle ?? "Video Lesson"}
       />
 
-      <SurfaceCard padding="sm" style={styles.playerCard}>
-        {renderVideoPlayer()}
+      <View style={isDesktopWeb ? { alignItems: "flex-start", flexDirection: "row", gap: 20 } : undefined}>
+        <View style={isDesktopWeb ? { flex: 1.35, minWidth: 0 } : undefined}>
+          <SurfaceCard padding="sm" style={styles.playerCard}>
+            {renderVideoPlayer()}
 
-        <View style={styles.metaRow}>
-          <Text style={styles.metaText}>
-            {currentLesson ? formatDuration(effectiveDuration) : "--"} •{" "}
-            {formatStatus(currentLesson?.progressStatus ?? "NOT_STARTED")}
-          </Text>
-          <Text style={styles.percentText}>{completionValue}%</Text>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaText}>
+                {currentLesson ? formatDuration(effectiveDuration) : "--"} •{" "}
+                {formatStatus(currentLesson?.progressStatus ?? "NOT_STARTED")}
+              </Text>
+              <Text style={styles.percentText}>{completionValue}%</Text>
+            </View>
+
+            <ProgressBar accentColor={colors.success} value={completionValue} />
+
+            {currentLesson && !isYoutubeLesson ? (
+              <Text style={styles.watchRuleHint}>
+                Đã xem thực tế {formatTimestampBadge(displayedWatchedSeconds)} / {formatTimestampBadge(effectiveDuration)} •{" "}
+                {currentLesson.progressStatus === "COMPLETED"
+                  ? "Đã đạt yêu cầu qua bài ✓"
+                  : "Đạt ≥80% thời lượng thực để qua bài (kéo tua không tính giờ)"}
+              </Text>
+            ) : null}
+
+            {currentLesson?.lessonDescription ? (
+              <Text style={styles.descText}>{currentLesson.lessonDescription}</Text>
+            ) : null}
+
+            <View style={[styles.actionRow, { flexWrap: "wrap" }]}>
+              <Pressable onPress={openVideoUrl} style={styles.toolBtn}>
+                <Ionicons color={colors.primaryDark} name="open-outline" size={15} />
+                <Text style={styles.toolBtnText}>Mở link</Text>
+              </Pressable>
+              <Pressable onPress={() => pushRoute("/user/youtube-studio")} style={styles.toolBtn}>
+                <Ionicons color="#E53935" name="logo-youtube" size={15} />
+                <Text style={styles.toolBtnText}>Thư viện Video</Text>
+              </Pressable>
+              <Pressable onPress={() => pushRoute("/user/notebook")} style={styles.toolBtn}>
+                <Ionicons color={colors.primaryDark} name="bookmarks-outline" size={15} />
+                <Text style={styles.toolBtnText}>Sổ tay</Text>
+              </Pressable>
+              {(isYoutubeLesson || (completionValue >= 80 && currentLesson?.progressStatus !== "COMPLETED")) &&
+                currentLesson?.progressStatus !== "COMPLETED" ? (
+                <LiquidButton
+                  compact
+                  disabled={updatingProgress}
+                  label="Hoàn thành bài"
+                  onPress={() => void handleManualCompleteLesson()}
+                  style={{ flex: 1, minWidth: 130 }}
+                  variant="primary"
+                />
+              ) : null}
+            </View>
+          </SurfaceCard>
         </View>
 
-        <ProgressBar accentColor={colors.success} value={completionValue} />
+        <View style={isDesktopWeb ? { flex: 0.9, minWidth: 0 } : undefined}>
+          {currentLesson ? (
+            <SurfaceCard style={styles.notesCard}>
+              <View style={styles.notesHeader}>
+                <Text style={styles.notesTitle}>Ghi chú @ {formatTimestampBadge(currentSecond)}</Text>
+                <Text style={styles.notesCount}>{notes.length} mục</Text>
+              </View>
 
-        {currentLesson && !isYoutubeLesson ? (
-          <Text style={styles.watchRuleHint}>
-            Đã xem thực tế {formatTimestampBadge(displayedWatchedSeconds)} / {formatTimestampBadge(effectiveDuration)} •{" "}
-            {currentLesson.progressStatus === "COMPLETED"
-              ? "Đã đạt yêu cầu qua bài ✓"
-              : "Đạt ≥80% thời lượng thực để qua bài (kéo tua không tính giờ)"}
-          </Text>
-        ) : null}
+              <View style={styles.noteInputRow}>
+                <TextInput
+                  onChangeText={setNoteText}
+                  placeholder="Thêm ghi chú tại mốc giây này..."
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.noteInput}
+                  value={noteText}
+                />
+                <Pressable
+                  disabled={savingNote || !noteText.trim()}
+                  onPress={() => void handleSaveNote()}
+                  style={[styles.saveNoteBtn, !noteText.trim() ? { opacity: 0.5 } : null]}
+                >
+                  <Text style={styles.saveNoteBtnText}>{savingNote ? "..." : "Lưu"}</Text>
+                </Pressable>
+              </View>
 
-        {currentLesson?.lessonDescription ? (
-          <Text style={styles.descText}>{currentLesson.lessonDescription}</Text>
-        ) : null}
+              {notes.map((n) => (
+                <View key={n.id} style={styles.noteRow}>
+                  <Pressable onPress={() => void handleSeekToSecond(n.timestampSeconds)} style={styles.noteChip}>
+                    <Text style={styles.noteChipText}>{formatTimestampBadge(n.timestampSeconds)}</Text>
+                  </Pressable>
+                  <Text style={styles.noteBodyText}>{n.noteText}</Text>
+                  <Pressable hitSlop={8} onPress={() => void handleDeleteNote(n.id)}>
+                    <Ionicons color={colors.danger} name="trash-outline" size={16} />
+                  </Pressable>
+                </View>
+              ))}
+            </SurfaceCard>
+          ) : null}
 
-        <View style={[styles.actionRow, { flexWrap: "wrap" }]}>
-          <Pressable onPress={openVideoUrl} style={styles.toolBtn}>
-            <Ionicons color={colors.primaryDark} name="open-outline" size={15} />
-            <Text style={styles.toolBtnText}>Mở link</Text>
-          </Pressable>
-          <Pressable onPress={() => pushRoute("/user/youtube-studio")} style={styles.toolBtn}>
-            <Ionicons color="#E53935" name="logo-youtube" size={15} />
-            <Text style={styles.toolBtnText}>Thư viện Video</Text>
-          </Pressable>
-          <Pressable onPress={() => pushRoute("/user/notebook")} style={styles.toolBtn}>
-            <Ionicons color={colors.primaryDark} name="bookmarks-outline" size={15} />
-            <Text style={styles.toolBtnText}>Sổ tay</Text>
-          </Pressable>
-          {(isYoutubeLesson || (completionValue >= 80 && currentLesson?.progressStatus !== "COMPLETED")) &&
-            currentLesson?.progressStatus !== "COMPLETED" ? (
+          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
+          <SectionTitle title="Danh sách bài học" />
+
+          {loading ? (
+            <View style={styles.loadingWrap}>
+              <ActivityIndicator color={colors.primary} />
+              <Text style={styles.loadingText}>Đang tải danh sách bài học...</Text>
+            </View>
+          ) : null}
+
+          {!loading && lessons.length === 0 ? (
+            <SurfaceCard>
+              <Text style={styles.emptyText}>Module này chưa có bài học video.</Text>
+            </SurfaceCard>
+          ) : (
+            <View style={styles.lessonList}>
+              {lessons.map((lesson, idx) => {
+                const active = lesson.lessonId === currentLesson?.lessonId;
+                const userTier = (auth.user?.planTier ?? (auth.user?.premium ? "PRO" : "FREE")).toUpperCase();
+                const isLockedForFree =
+                  userTier === "FREE" && idx > 0 && lesson.free === false;
+                return (
+                  <Pressable
+                    key={lesson.lessonId}
+                    onPress={() => {
+                      if (isLockedForFree) {
+                        alertCrossPlatform(
+                          "Bài giảng dành cho gói PLUS / PRO",
+                          "Bài giảng video nâng cao này yêu cầu nâng cấp gói PLUS (10.000đ/30 ngày) hoặc PRO. Đang chuyển tới trang nâng cấp..."
+                        );
+                        pushRoute("/user/subscription");
+                        return;
+                      }
+                      setNativePlayerReady(false);
+                      setSelectedLessonId(lesson.lessonId);
+                    }}
+                    style={[styles.lessonRow, active ? styles.lessonRowActive : null]}
+                  >
+                    <View style={[styles.orderTag, active ? styles.orderTagActive : null]}>
+                      <Text style={[styles.orderTagText, active ? styles.orderTagTextActive : null]}>
+                        #{lesson.sortOrder}
+                      </Text>
+                    </View>
+                    <View style={styles.lessonInfo}>
+                      <Text numberOfLines={1} style={[styles.lessonTitle, { fontSize: rf(14) }]}>
+                        {lesson.lessonTitle}
+                      </Text>
+                      <Text style={styles.lessonSub}>
+                        {isLockedForFree
+                          ? "🔒 Gói PLUS / PRO"
+                          : formatStatus(lesson.progressStatus)}{" "}
+                        • {formatDuration(lesson.durationSeconds)}
+                      </Text>
+                    </View>
+                    {isLockedForFree ? (
+                      <Ionicons color="#7C3AED" name="lock-closed" size={17} />
+                    ) : lesson.progressStatus === "COMPLETED" ? (
+                      <Ionicons color={colors.success} name="checkmark-circle" size={18} />
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+
+          {allLessonsCompleted ? (
             <LiquidButton
-              compact
-              disabled={updatingProgress}
-              label="Hoàn thành bài"
-              onPress={() => void handleManualCompleteLesson()}
-              style={{ flex: 1, minWidth: 130 }}
+              disabled={!currentLesson || updatingProgress}
+              label="Hoàn thành video • Sang luyện từ vựng"
+              onPress={handleCompleteVideosAndGoCards}
+              style={{ marginTop: 14 }}
               variant="primary"
             />
-          ) : null}
+          ) : (
+            <Text style={styles.requirementHint}>
+              Xem tất cả video trong module ({"\u2265"}80%) để mở khóa bước từ vựng.
+            </Text>
+          )}
         </View>
-      </SurfaceCard>
-
-      {currentLesson ? (
-        <SurfaceCard style={styles.notesCard}>
-          <View style={styles.notesHeader}>
-            <Text style={styles.notesTitle}>Ghi chú @ {formatTimestampBadge(currentSecond)}</Text>
-            <Text style={styles.notesCount}>{notes.length} mục</Text>
-          </View>
-
-          <View style={styles.noteInputRow}>
-            <TextInput
-              onChangeText={setNoteText}
-              placeholder="Thêm ghi chú tại mốc giây này..."
-              placeholderTextColor={colors.textMuted}
-              style={styles.noteInput}
-              value={noteText}
-            />
-            <Pressable
-              disabled={savingNote || !noteText.trim()}
-              onPress={() => void handleSaveNote()}
-              style={[styles.saveNoteBtn, !noteText.trim() ? { opacity: 0.5 } : null]}
-            >
-              <Text style={styles.saveNoteBtnText}>{savingNote ? "..." : "Lưu"}</Text>
-            </Pressable>
-          </View>
-
-          {notes.map((n) => (
-            <View key={n.id} style={styles.noteRow}>
-              <Pressable onPress={() => void handleSeekToSecond(n.timestampSeconds)} style={styles.noteChip}>
-                <Text style={styles.noteChipText}>{formatTimestampBadge(n.timestampSeconds)}</Text>
-              </Pressable>
-              <Text style={styles.noteBodyText}>{n.noteText}</Text>
-              <Pressable hitSlop={8} onPress={() => void handleDeleteNote(n.id)}>
-                <Ionicons color={colors.danger} name="trash-outline" size={16} />
-              </Pressable>
-            </View>
-          ))}
-        </SurfaceCard>
-      ) : null}
-
-      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-
-      <SectionTitle title="Danh sách bài học" />
-
-      {loading ? (
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator color={colors.primary} />
-          <Text style={styles.loadingText}>Đang tải danh sách bài học...</Text>
-        </View>
-      ) : null}
-
-      {!loading && lessons.length === 0 ? (
-        <SurfaceCard>
-          <Text style={styles.emptyText}>Module này chưa có bài học video.</Text>
-        </SurfaceCard>
-      ) : (
-        <View style={styles.lessonList}>
-          {lessons.map((lesson, idx) => {
-            const active = lesson.lessonId === currentLesson?.lessonId;
-            const userTier = (auth.user?.planTier ?? (auth.user?.premium ? "PRO" : "FREE")).toUpperCase();
-            const isLockedForFree =
-              userTier === "FREE" && idx > 0 && lesson.free === false;
-            return (
-              <Pressable
-                key={lesson.lessonId}
-                onPress={() => {
-                  if (isLockedForFree) {
-                    alertCrossPlatform(
-                      "Bài giảng dành cho gói PLUS / PRO",
-                      "Bài giảng video nâng cao này yêu cầu nâng cấp gói PLUS (10.000đ/30 ngày) hoặc PRO. Đang chuyển tới trang nâng cấp..."
-                    );
-                    pushRoute("/user/subscription");
-                    return;
-                  }
-                  setNativePlayerReady(false);
-                  setSelectedLessonId(lesson.lessonId);
-                }}
-                style={[styles.lessonRow, active ? styles.lessonRowActive : null]}
-              >
-                <View style={[styles.orderTag, active ? styles.orderTagActive : null]}>
-                  <Text style={[styles.orderTagText, active ? styles.orderTagTextActive : null]}>
-                    #{lesson.sortOrder}
-                  </Text>
-                </View>
-                <View style={styles.lessonInfo}>
-                  <Text numberOfLines={1} style={[styles.lessonTitle, { fontSize: rf(14) }]}>
-                    {lesson.lessonTitle}
-                  </Text>
-                  <Text style={styles.lessonSub}>
-                    {isLockedForFree
-                      ? "🔒 Gói PLUS / PRO"
-                      : formatStatus(lesson.progressStatus)}{" "}
-                    • {formatDuration(lesson.durationSeconds)}
-                  </Text>
-                </View>
-                {isLockedForFree ? (
-                  <Ionicons color="#7C3AED" name="lock-closed" size={17} />
-                ) : lesson.progressStatus === "COMPLETED" ? (
-                  <Ionicons color={colors.success} name="checkmark-circle" size={18} />
-                ) : null}
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
-
-      {allLessonsCompleted ? (
-        <LiquidButton
-          disabled={!currentLesson || updatingProgress}
-          label="Hoàn thành video • Sang luyện từ vựng"
-          onPress={handleCompleteVideosAndGoCards}
-          style={{ marginTop: 14 }}
-          variant="primary"
-        />
-      ) : (
-        <Text style={styles.requirementHint}>
-          Xem tất cả video trong module ({"\u2265"}80%) để mở khóa bước từ vựng.
-        </Text>
-      )}
+      </View>
     </UserScreen>
   );
 }
