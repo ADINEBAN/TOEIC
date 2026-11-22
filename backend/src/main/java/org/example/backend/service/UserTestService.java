@@ -341,7 +341,7 @@ public class UserTestService {
 
     public static int calculateToeicSectionScore(int correctCount, int totalCount, boolean listeningSection) {
         if (totalCount <= 0) {
-            return 5;
+            return 0;
         }
         int safeCorrect = Math.max(0, Math.min(totalCount, correctCount));
         int scaledRaw100 = totalCount == 100
@@ -378,7 +378,7 @@ public class UserTestService {
                 || test.getTestType() == null
                 || "FULL_TEST".equalsIgnoreCase(test.getTestType().trim());
 
-        if (test != null && test.getParts() != null) {
+        if (test != null && test.getParts() != null && !test.getParts().isEmpty()) {
             for (TestPart p : test.getParts()) {
                 int rawPartCount = p.getQuestionCount() != null ? p.getQuestionCount() : 0;
                 int limit = AdminTestService.standardToeicPartQuestionLimit(p.getPartNumber());
@@ -393,8 +393,19 @@ public class UserTestService {
             }
         }
 
-        int effectiveListeningTotal = testListeningTotal > 0 ? testListeningTotal : (isFullTest ? 100 : answeredListeningTotal);
-        int effectiveReadingTotal = testReadingTotal > 0 ? testReadingTotal : (isFullTest ? 100 : answeredReadingTotal);
+        int attemptTotal = attempt.getTotalQuestions() != null ? attempt.getTotalQuestions() : 0;
+        int effectiveListeningTotal;
+        int effectiveReadingTotal;
+        if (testListeningTotal > 0 || testReadingTotal > 0) {
+            effectiveListeningTotal = testListeningTotal;
+            effectiveReadingTotal = testReadingTotal;
+        } else if (isFullTest && attemptTotal >= 100) {
+            effectiveListeningTotal = attemptTotal / 2;
+            effectiveReadingTotal = attemptTotal - effectiveListeningTotal;
+        } else {
+            effectiveListeningTotal = answeredListeningTotal;
+            effectiveReadingTotal = answeredReadingTotal;
+        }
 
         Integer listeningScore = effectiveListeningTotal > 0
                 ? calculateToeicSectionScore(listeningCorrect, effectiveListeningTotal, true)
@@ -412,7 +423,7 @@ public class UserTestService {
         } else if (readingScore != null) {
             attempt.setToeicScore(readingScore);
         } else {
-            attempt.setToeicScore(10);
+            attempt.setToeicScore(0);
         }
     }
 
