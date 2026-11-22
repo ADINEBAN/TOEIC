@@ -464,17 +464,43 @@ export type QuestionMediaUploadApiItem = {
 };
 
 export type QuestionMediaUploadResponse = ApiResponse<QuestionMediaUploadApiItem>;
+export type AdminRecentOrderSummary = {
+  orderCode: string;
+  userEmail: string | null;
+  userName: string | null;
+  planCode: string;
+  planTier: string;
+  amountVnd: number;
+  paidAt: string | null;
+};
+
 export type AdminAnalyticsOverviewApiItem = {
   totalUsers: number;
   activeUsers: number;
+  blockedUsers?: number;
+  verifiedUsers?: number;
+  freeUsers?: number;
+  plusUsers?: number;
+  proUsers?: number;
   premiumUsers: number;
   usersWithStreak: number;
   totalQuestions: number;
   totalTests: number;
   publishedTests: number;
   totalTestAttempts: number;
+  attemptsLast7Days?: number;
   averageAccuracyPercent: number;
   averageToeicScore: number;
+  highestToeicScore?: number;
+  bandUnder450?: number;
+  band450To649?: number;
+  band650To849?: number;
+  band850Plus?: number;
+  paidOrdersCount?: number;
+  pendingOrdersCount?: number;
+  totalRevenueVnd?: number;
+  revenueLast30DaysVnd?: number;
+  recentPaidOrders?: AdminRecentOrderSummary[];
 };
 
 export type AdminUserApiItem = {
@@ -485,7 +511,13 @@ export type AdminUserApiItem = {
   currentLevel: string | null;
   targetScore: number | null;
   premium: boolean;
+  planTier?: 'FREE' | 'PLUS' | 'PRO' | string;
+  planExpiresAt?: string | null;
   verified?: boolean;
+  diamonds?: number;
+  currentLoginStreak?: number;
+  longestLoginStreak?: number;
+  learningXp?: number;
   role: string;
   status: 'ACTIVE' | 'BLOCKED' | 'DELETED' | string;
   createdAt: string;

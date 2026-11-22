@@ -13,4 +13,8 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Long
     Optional<PaymentOrder> findBySepayTransactionId(Long sepayTransactionId);
 
     List<PaymentOrder> findTop20ByUserIdOrderByCreatedAtDesc(Long userId);
+
+    List<PaymentOrder> findAllByStatusOrderByPaidAtDesc(String status);
+
+    long countByStatus(String status);
 }

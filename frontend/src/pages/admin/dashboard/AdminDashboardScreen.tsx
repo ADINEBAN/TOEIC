@@ -118,6 +118,26 @@ function yesNo(value: boolean | null | undefined) {
   return value ? "Yes" : "No";
 }
 
+function formatVnd(amount: number | null | undefined) {
+  const safe = Number.isFinite(Number(amount)) ? Math.max(0, Math.round(Number(amount))) : 0;
+  return `${safe.toLocaleString("vi-VN")}đ`;
+}
+
+function formatShortDate(value?: string | null) {
+  if (!value) return "--";
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return "--";
+  return dt.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function resolveUserPlanTier(user: AdminUserApiItem): "FREE" | "PLUS" | "PRO" {
+  const tier = (user.planTier ?? "").trim().toUpperCase();
+  if (tier === "PRO" || tier === "PLUS" || tier === "FREE") {
+    return tier;
+  }
+  return user.premium ? "PRO" : "FREE";
+}
+
 function probeBrowserVideoDuration(file: File): Promise<number | null> {
   if (typeof document === "undefined" || typeof URL === "undefined") {
     return Promise.resolve(null);
@@ -506,6 +526,7 @@ export default function AdminDashboardScreen() {
     useState<AdminAnalyticsOverviewApiItem | null>(null);
   const [adminUsers, setAdminUsers] = useState<AdminUserApiItem[]>([]);
   const [userSearch, setUserSearch] = useState("");
+  const [userPlanFilter, setUserPlanFilter] = useState<"ALL" | "PRO" | "PLUS" | "FREE" | "VERIFIED" | "BLOCKED">("ALL");
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [bulkImportRaw, setBulkImportRaw] = useState(SAMPLE_BULK_JSON);
   const [bulkImporting, setBulkImporting] = useState(false);
@@ -521,6 +542,7 @@ export default function AdminDashboardScreen() {
   const [showPracticePickerModal, setShowPracticePickerModal] = useState(false);
   const [savingPracticeQuestions, setSavingPracticeQuestions] = useState(false);
   const [testsSubTab, setTestsSubTab] = useState<"list" | "builder">("list");
+  const [showTestGuide, setShowTestGuide] = useState(false);
   const [showTestPartPickerModal, setShowTestPartPickerModal] = useState(false);
   const [savingTestPartQuestions, setSavingTestPartQuestions] = useState(false);
   const [autoPopulatePrefix, setAutoPopulatePrefix] = useState("");
@@ -1544,7 +1566,7 @@ export default function AdminDashboardScreen() {
                 </View>
               ) : (
                 <Text style={styles.infoFlowText}>
-                  Mô-đun này chưa được gắn vào Lộ trình / Chặng nào.
+                  Chưa gắn vào Lộ trình nào.
                 </Text>
               )}
             </View>
@@ -1593,10 +1615,7 @@ export default function AdminDashboardScreen() {
             <View style={styles.uploadBox}>
               <View style={styles.uploadHeaderRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.uploadTitle}>Import từ vựng từ Excel / Word</Text>
-                  <Text style={styles.uploadSubtitle}>
-                    Hỗ trợ .xlsx, .xls, .docx, .doc, .csv, .txt (có thể chỉ gồm cột/dòng từ tiếng Anh hoặc đủ 4 cột English | Meaning VI | Pronunciation | Example).
-                  </Text>
+                  <Text style={styles.uploadTitle}>Import từ vựng (Excel / Word / CSV)</Text>
                 </View>
                 {flashcardImportSummary ? (
                   <View style={styles.uploadStatusPill}>
@@ -1717,11 +1736,6 @@ export default function AdminDashboardScreen() {
               )
             }
             records={flashcards}
-            subtitle={
-              selectedModule
-                ? `Mô-đun #${selectedModule.id}: ${selectedModule.title}`
-                : "Vui lòng chọn mô-đun"
-            }
             title="Quản lý Thẻ từ vựng (Flashcards)"
             working={working}
           />
@@ -1733,10 +1747,7 @@ export default function AdminDashboardScreen() {
             <View style={styles.uploadBox}>
               <View style={styles.uploadHeaderRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.uploadTitle}>Tải video từ máy tính lên hệ thống</Text>
-                  <Text style={styles.uploadSubtitle}>
-                    Hỗ trợ MP4, MOV, WebM (tối đa 1GB). Upload xong hệ thống tự điền URL & thời lượng thật để bạn bấm “+ Thêm mới”.
-                  </Text>
+                  <Text style={styles.uploadTitle}>Tải video lên hệ thống</Text>
                 </View>
                 {uploadedVideoUrl ? (
                   <View style={styles.uploadStatusPill}>
@@ -1874,7 +1885,6 @@ export default function AdminDashboardScreen() {
                 )
               }
               records={videos}
-              subtitle="Danh sách bài giảng video gắn với mô-đun đang chọn."
               title="Bài giảng Video"
               working={working}
             />
@@ -1963,7 +1973,6 @@ export default function AdminDashboardScreen() {
               )
             }
             records={practiceSets}
-            subtitle="Quản lý các bộ luyện tập & đánh giá đầu vào."
             title="Bộ bài tập thực hành"
             working={working}
           />
@@ -1971,12 +1980,9 @@ export default function AdminDashboardScreen() {
               <View style={styles.bulkHeaderRow}>
                 <View style={{ flex: 1, minWidth: 220 }}>
                   <Text style={styles.uploadTitle}>
-                    Câu hỏi trong Bộ thực hành ({practiceSetQuestions.length})
-                  </Text>
-                  <Text style={styles.uploadSubtitle}>
                     {selectedPracticeSet
-                      ? `Đang chọn bộ #${selectedPracticeSet.id}: "${selectedPracticeSet.title}". Chọn hàng loạt bằng checkbox hoặc đổi thứ tự nhanh.`
-                      : "Tạo hoặc chọn một bộ bài tập phía trên để gán câu hỏi."}
+                      ? `Câu hỏi: ${selectedPracticeSet.title} (${practiceSetQuestions.length})`
+                      : `Câu hỏi trong Bộ thực hành (${practiceSetQuestions.length})`}
                   </Text>
                 </View>
                 <Pressable
@@ -2167,7 +2173,6 @@ export default function AdminDashboardScreen() {
           )
         }
         records={grammars}
-        subtitle="Nhấn biểu tượng Sửa ở cột Thao tác để chỉnh sửa nội dung chi tiết."
         title="Bảng chủ điểm Ngữ pháp"
         working={working}
       />
@@ -2220,9 +2225,6 @@ export default function AdminDashboardScreen() {
           <View style={styles.uploadHeaderRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.uploadTitle}>Import câu hỏi TOEIC (Excel / Word / PDF / ZIP)</Text>
-              <Text style={styles.uploadSubtitle}>
-                Hỗ trợ .xlsx, .xls, .docx, .doc, .pdf, .csv, .txt hoặc file .zip đóng gói kèm audio & ảnh.
-              </Text>
             </View>
             {questionImportSummary ? (
               <View style={styles.uploadStatusPill}>
@@ -2275,9 +2277,6 @@ export default function AdminDashboardScreen() {
           <View style={styles.uploadHeaderRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.uploadTitle}>Upload Audio / Ảnh hàng loạt & Tự khớp câu hỏi</Text>
-              <Text style={styles.uploadSubtitle}>
-                Chọn nhiều file (.mp3, .wav, .jpg, .png...) hoặc 1 file .zip. Hệ thống tự khớp theo tên file/nhóm đã import (Part 3–4 dùng chung audio tự gán đủ 3 câu).
-              </Text>
             </View>
             {questionMediaBatchSummary ? (
               <View style={styles.uploadStatusPill}>
@@ -2554,7 +2553,6 @@ export default function AdminDashboardScreen() {
             )
           }
           records={filteredQuestions}
-          subtitle="Kho câu hỏi Part 1–7 dùng chung (việc gán vào Bộ thực hành đã chuyển sang Nội dung Mô-đun → Bộ bài tập)."
           title="Ngân hàng câu hỏi TOEIC"
           working={working}
         />
@@ -2575,7 +2573,6 @@ export default function AdminDashboardScreen() {
       loading={loading}
       onRefresh={loadBaseData}
       records={permissions}
-      subtitle="Danh sách quyền hạn và vai trò hiện hành trong hệ thống."
       title="Phân quyền hệ thống"
       working={working}
     />
@@ -2583,33 +2580,92 @@ export default function AdminDashboardScreen() {
 
   const renderUsers = () => {
     const query = userSearch.trim().toLowerCase();
-    const filteredUsers = query
-      ? adminUsers.filter(
-          (u) =>
-            u.email.toLowerCase().includes(query) ||
-            (u.fullName ?? "").toLowerCase().includes(query) ||
-            u.role.toLowerCase().includes(query),
-        )
-      : adminUsers;
+    const tierCounts = {
+      ALL: adminUsers.length,
+      PRO: adminUsers.filter((u) => resolveUserPlanTier(u) === "PRO").length,
+      PLUS: adminUsers.filter((u) => resolveUserPlanTier(u) === "PLUS").length,
+      FREE: adminUsers.filter((u) => resolveUserPlanTier(u) === "FREE").length,
+      VERIFIED: adminUsers.filter((u) => Boolean(u.verified)).length,
+      BLOCKED: adminUsers.filter((u) => u.status === "BLOCKED").length,
+    };
+
+    const filteredUsers = adminUsers.filter((u) => {
+      const tier = resolveUserPlanTier(u);
+      if (userPlanFilter === "PRO" && tier !== "PRO") return false;
+      if (userPlanFilter === "PLUS" && tier !== "PLUS") return false;
+      if (userPlanFilter === "FREE" && tier !== "FREE") return false;
+      if (userPlanFilter === "VERIFIED" && !u.verified) return false;
+      if (userPlanFilter === "BLOCKED" && u.status !== "BLOCKED") return false;
+      if (!query) return true;
+      return (
+        u.email.toLowerCase().includes(query) ||
+        (u.fullName ?? "").toLowerCase().includes(query) ||
+        u.role.toLowerCase().includes(query) ||
+        tier.toLowerCase().includes(query)
+      );
+    });
+
+    const totalUsersCount = analyticsOverview?.totalUsers ?? adminUsers.length;
+    const plusUsersCount = analyticsOverview?.plusUsers ?? tierCounts.PLUS;
+    const proUsersCount = analyticsOverview?.proUsers ?? tierCounts.PRO;
+    const freeUsersCount =
+      analyticsOverview?.freeUsers ??
+      Math.max(0, totalUsersCount - plusUsersCount - proUsersCount);
+    const paidUsersCount = plusUsersCount + proUsersCount;
+    const attemptsTotal = analyticsOverview?.totalTestAttempts ?? 0;
+
+    const pct = (part: number, whole: number) =>
+      whole > 0 ? Math.round((part / whole) * 100) : 0;
+
+    const scoreBands = [
+      { key: "<450", label: "< 450 TOEIC", count: analyticsOverview?.bandUnder450 ?? 0, color: "#94A3B8" },
+      { key: "450-649", label: "450–649 TOEIC", count: analyticsOverview?.band450To649 ?? 0, color: "#3B82F6" },
+      { key: "650-849", label: "650–849 TOEIC", count: analyticsOverview?.band650To849 ?? 0, color: "#14B8A6" },
+      { key: "850+", label: "850+ TOEIC", count: analyticsOverview?.band850Plus ?? 0, color: "#7C3AED" },
+    ];
+
+    const planFilterTabs: {
+      id: "ALL" | "PRO" | "PLUS" | "FREE" | "VERIFIED" | "BLOCKED";
+      label: string;
+    }[] = [
+      { id: "ALL", label: `Tất cả (${tierCounts.ALL})` },
+      { id: "PRO", label: `PRO (${tierCounts.PRO})` },
+      { id: "PLUS", label: `PLUS (${tierCounts.PLUS})` },
+      { id: "FREE", label: `FREE (${tierCounts.FREE})` },
+      { id: "VERIFIED", label: `Tích xanh (${tierCounts.VERIFIED})` },
+      { id: "BLOCKED", label: `Đã khóa (${tierCounts.BLOCKED})` },
+    ];
 
     return (
       <View style={styles.stack}>
         <View style={styles.summaryRow}>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>Tổng người dùng</Text>
-            <Text style={styles.summaryValue}>{analyticsOverview?.totalUsers ?? adminUsers.length}</Text>
+            <Text style={styles.summaryValue}>{totalUsersCount}</Text>
+            <Text style={styles.summarySub}>
+              {`Hoạt động: ${analyticsOverview?.activeUsers ?? 0} · Khóa: ${analyticsOverview?.blockedUsers ?? tierCounts.BLOCKED}`}
+            </Text>
           </View>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Đang hoạt động</Text>
-            <Text style={styles.summaryValue}>{analyticsOverview?.activeUsers ?? 0}</Text>
+            <Text style={styles.summaryLabel}>Gói trả phí</Text>
+            <Text style={styles.summaryValue}>{paidUsersCount}</Text>
+            <Text style={styles.summarySub}>
+              {`PLUS: ${plusUsersCount} · PRO: ${proUsersCount} · Tích xanh: ${analyticsOverview?.verifiedUsers ?? tierCounts.VERIFIED}`}
+            </Text>
           </View>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Premium</Text>
-            <Text style={styles.summaryValue}>{analyticsOverview?.premiumUsers ?? 0}</Text>
+            <Text style={styles.summaryLabel}>Doanh thu SePay</Text>
+            <Text style={styles.summaryValue}>
+              {formatVnd(analyticsOverview?.totalRevenueVnd)}
+            </Text>
+            <Text style={styles.summarySub}>
+              {`${analyticsOverview?.paidOrdersCount ?? 0} đơn thành công · ${analyticsOverview?.pendingOrdersCount ?? 0} chờ`}
+            </Text>
           </View>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Có Streak</Text>
+            <Text style={styles.summaryLabel}>Streak đang giữ</Text>
             <Text style={styles.summaryValue}>{analyticsOverview?.usersWithStreak ?? 0}</Text>
+            <Text style={styles.summarySub}>Duy trì hôm nay / hôm qua</Text>
           </View>
         </View>
 
@@ -2619,28 +2675,122 @@ export default function AdminDashboardScreen() {
             <Text style={styles.summaryValue}>{analyticsOverview?.totalQuestions ?? questions.length}</Text>
           </View>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Đề thi (Published/All)</Text>
+            <Text style={styles.summaryLabel}>Đề thi (Bật / Tổng)</Text>
             <Text style={styles.summaryValue}>
               {analyticsOverview?.publishedTests ?? 0}/{analyticsOverview?.totalTests ?? tests.length}
             </Text>
           </View>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Lượt làm bài</Text>
-            <Text style={styles.summaryValue}>{analyticsOverview?.totalTestAttempts ?? 0}</Text>
+            <Text style={styles.summaryLabel}>Lượt nộp bài</Text>
+            <Text style={styles.summaryValue}>{attemptsTotal}</Text>
+            <Text style={styles.summarySub}>
+              {`7 ngày qua: +${analyticsOverview?.attemptsLast7Days ?? 0} lượt`}
+            </Text>
           </View>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>Điểm TB TOEIC</Text>
             <Text style={styles.summaryValue}>
-              {analyticsOverview ? `${Math.round(analyticsOverview.averageToeicScore)} (${analyticsOverview.averageAccuracyPercent.toFixed(1)}%)` : "--"}
+              {attemptsTotal > 0 ? `${Math.round(analyticsOverview?.averageToeicScore ?? 0)} / 990` : "--"}
+            </Text>
+            <Text style={styles.summarySub}>
+              {attemptsTotal > 0
+                ? `Cao nhất: ${analyticsOverview?.highestToeicScore ?? 0} · Đúng TB: ${(analyticsOverview?.averageAccuracyPercent ?? 0).toFixed(1)}%`
+                : "Chưa có lượt nộp bài"}
             </Text>
           </View>
         </View>
+
+        <View style={styles.analyticsGridRow}>
+          <View style={styles.analyticsCard}>
+            <Text style={styles.analyticsCardTitle}>Phân bổ gói hội viên (FREE / PLUS / PRO)</Text>
+            <View style={styles.stackedBarTrack}>
+              {freeUsersCount > 0 ? (
+                <View style={{ flex: freeUsersCount, backgroundColor: "#CBD5E1" }} />
+              ) : null}
+              {plusUsersCount > 0 ? (
+                <View style={{ flex: plusUsersCount, backgroundColor: "#0EA5E9" }} />
+              ) : null}
+              {proUsersCount > 0 ? (
+                <View style={{ flex: proUsersCount, backgroundColor: "#7C3AED" }} />
+              ) : null}
+              {totalUsersCount === 0 ? (
+                <View style={{ flex: 1, backgroundColor: "#E2E8F0" }} />
+              ) : null}
+            </View>
+            {[
+              { label: "FREE", count: freeUsersCount, color: "#64748B" },
+              { label: "PLUS", count: plusUsersCount, color: "#0284C7" },
+              { label: "PRO", count: proUsersCount, color: "#7C3AED" },
+            ].map((item) => (
+              <View key={item.label} style={styles.analyticsLegendRow}>
+                <View style={styles.analyticsLegendLeft}>
+                  <View style={[styles.analyticsDot, { backgroundColor: item.color }]} />
+                  <Text style={styles.analyticsLegendLabel}>{item.label}</Text>
+                </View>
+                <Text style={styles.analyticsLegendValue}>
+                  {`${item.count} (${pct(item.count, totalUsersCount)}%)`}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.analyticsCard}>
+            <Text style={styles.analyticsCardTitle}>Phổ điểm bài thi TOEIC</Text>
+            {scoreBands.map((band) => {
+              const bandPct = pct(band.count, attemptsTotal);
+              return (
+                <View key={band.key} style={styles.bandRow}>
+                  <View style={styles.analyticsLegendRow}>
+                    <Text style={styles.analyticsLegendLabel}>{band.label}</Text>
+                    <Text style={styles.analyticsLegendValue}>
+                      {`${band.count} (${bandPct}%)`}
+                    </Text>
+                  </View>
+                  <View style={styles.bandTrack}>
+                    <View
+                      style={[
+                        styles.bandFill,
+                        { backgroundColor: band.color, width: `${Math.max(band.count > 0 ? 6 : 0, bandPct)}%` },
+                      ]}
+                    />
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+
+        {(analyticsOverview?.recentPaidOrders?.length ?? 0) > 0 ? (
+          <View style={styles.analyticsCard}>
+            <Text style={styles.analyticsCardTitle}>Giao dịch nâng cấp SePay gần nhất</Text>
+            <View style={styles.recentOrdersWrap}>
+              {analyticsOverview!.recentPaidOrders!.map((order) => (
+                <View key={order.orderCode} style={styles.recentOrderRow}>
+                  <View style={{ flex: 1, minWidth: 180 }}>
+                    <Text style={styles.userNameText}>
+                      {`${order.orderCode} · ${order.planTier} (${order.planCode})`}
+                    </Text>
+                    <Text style={styles.summarySub}>
+                      {`${order.userName ? `${order.userName} · ` : ""}${order.userEmail ?? "--"}`}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={[styles.userNameText, { color: "#0F766E" }]}>
+                      {`+${formatVnd(order.amountVnd)}`}
+                    </Text>
+                    <Text style={styles.summarySub}>{formatShortDate(order.paidAt)}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
 
         <View style={styles.bulkCard}>
           <View style={styles.usersToolbar}>
             <TextInput
               onChangeText={setUserSearch}
-              placeholder="Tìm theo email, tên hoặc role..."
+              placeholder="Tìm theo email, tên, role hoặc gói (FREE / PLUS / PRO)..."
               placeholderTextColor={colors.textMuted}
               style={styles.userSearchInput}
               value={userSearch}
@@ -2650,10 +2800,28 @@ export default function AdminDashboardScreen() {
             </Pressable>
           </View>
 
+          <View style={[styles.chipRow, { marginBottom: spacing.md }]}>
+            {planFilterTabs.map((tab) => {
+              const active = userPlanFilter === tab.id;
+              return (
+                <Pressable
+                  key={tab.id}
+                  onPress={() => setUserPlanFilter(tab.id)}
+                  style={[styles.selectorChip, active ? styles.selectorChipActive : null]}
+                >
+                  <Text style={[styles.selectorText, active ? styles.selectorTextActive : null]}>
+                    {tab.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
           <View style={styles.usersTable}>
             {filteredUsers.map((user) => {
               const isSelf = user.id === auth.user?.id;
               const isBlocked = user.status === "BLOCKED";
+              const tier = resolveUserPlanTier(user);
               return (
                 <View key={user.id} style={styles.userRowCard}>
                   <View style={styles.userInfoCol}>
@@ -2670,15 +2838,34 @@ export default function AdminDashboardScreen() {
                       >
                         <Text style={styles.statusPillText}>{user.status}</Text>
                       </View>
-                      {user.premium ? (
-                        <View style={styles.premiumPill}>
-                          <Text style={styles.premiumPillText}>PREMIUM</Text>
-                        </View>
-                      ) : null}
+                      <View
+                        style={[
+                          styles.tierPill,
+                          tier === "PRO"
+                            ? styles.tierPillPro
+                            : tier === "PLUS"
+                              ? styles.tierPillPlus
+                              : styles.tierPillFree,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.tierPillText,
+                            tier === "PRO"
+                              ? styles.tierPillProText
+                              : tier === "PLUS"
+                                ? styles.tierPillPlusText
+                                : styles.tierPillFreeText,
+                          ]}
+                        >
+                          {tier === "FREE" || !user.planExpiresAt
+                            ? tier
+                            : `${tier} · HSD ${formatShortDate(user.planExpiresAt)}`}
+                        </Text>
+                      </View>
                     </View>
                     <Text style={styles.uploadSubtitle}>
-                      {user.email} • Role: {user.role} • Level: {user.currentLevel || "--"} • Target:{" "}
-                      {user.targetScore ?? "--"}
+                      {`${user.email} • ${user.role} • Target: ${user.targetScore ?? "--"} • Streak: ${user.currentLoginStreak ?? 0}d • ${user.learningXp ?? 0} XP • ${user.diamonds ?? 0} 💎`}
                     </Text>
                   </View>
 
@@ -2701,27 +2888,63 @@ export default function AdminDashboardScreen() {
                       ]}
                     >
                       <Text style={styles.userActionBtnText}>
-                        {isSelf ? "Tài khoản của bạn" : isBlocked ? "Mở khóa" : "Khóa"}
+                        {isSelf ? "Bạn" : isBlocked ? "Mở khóa" : "Khóa"}
                       </Text>
                     </Pressable>
 
-                    <Pressable
-                      disabled={working}
-                      onPress={() =>
-                        void runAction(
-                          () =>
-                            services!.analytics
-                              .updateUserPremium(user.id, !user.premium)
-                              .then(() => undefined),
-                          loadUsersAndAnalytics,
-                        )
-                      }
-                      style={[styles.userActionBtn, styles.userPremiumBtn]}
-                    >
-                      <Text style={styles.userActionBtnText}>
-                        {user.premium ? "Hủy Premium" : "Cấp Premium"}
-                      </Text>
-                    </Pressable>
+                    {tier !== "PLUS" ? (
+                      <Pressable
+                        disabled={working}
+                        onPress={() =>
+                          void runAction(
+                            () =>
+                              services!.analytics
+                                .updateUserPlan(user.id, "PLUS", 30)
+                                .then(() => undefined),
+                            loadUsersAndAnalytics,
+                          )
+                        }
+                        style={[styles.userActionBtn, styles.userPlusBtn]}
+                      >
+                        <Text style={styles.userActionBtnText}>Cấp PLUS</Text>
+                      </Pressable>
+                    ) : null}
+
+                    {tier !== "PRO" ? (
+                      <Pressable
+                        disabled={working}
+                        onPress={() =>
+                          void runAction(
+                            () =>
+                              services!.analytics
+                                .updateUserPlan(user.id, "PRO", 30)
+                                .then(() => undefined),
+                            loadUsersAndAnalytics,
+                          )
+                        }
+                        style={[styles.userActionBtn, styles.userPremiumBtn]}
+                      >
+                        <Text style={styles.userActionBtnText}>Cấp PRO</Text>
+                      </Pressable>
+                    ) : null}
+
+                    {tier !== "FREE" ? (
+                      <Pressable
+                        disabled={working}
+                        onPress={() =>
+                          void runAction(
+                            () =>
+                              services!.analytics
+                                .updateUserPlan(user.id, "FREE")
+                                .then(() => undefined),
+                            loadUsersAndAnalytics,
+                          )
+                        }
+                        style={[styles.userActionBtn, styles.userFreeBtn]}
+                      >
+                        <Text style={styles.userActionBtnText}>Về FREE</Text>
+                      </Pressable>
+                    ) : null}
 
                     <Pressable
                       disabled={working}
@@ -2740,7 +2963,7 @@ export default function AdminDashboardScreen() {
                       ]}
                     >
                       <Text style={styles.userActionBtnText}>
-                        {user.verified ? "Gỡ tích xanh" : "Cấp tích xanh"}
+                        {user.verified ? "Gỡ tích" : "Tích xanh"}
                       </Text>
                     </Pressable>
                   </View>
@@ -2771,48 +2994,61 @@ export default function AdminDashboardScreen() {
     );
     return (
       <View style={styles.stack}>
-        <View style={styles.infoFlow}>
-          <Text style={styles.infoFlowTitle}>Quy trình tạo Đề thi TOEIC chuẩn 3 bước</Text>
-          <Text style={styles.infoFlowText}>
-            1) Import câu hỏi & media (MP3 + ảnh) ở mục Ngân hàng câu hỏi → 2) Bấm “+ Thêm mới” chọn FULL_TEST (120 phút) → 3) Chọn prefix bộ đề (vd T1_) rồi bấm “⚡ Tự tạo 7 Part & Gán câu” để chia đúng Part 1–7 tự động.
-          </Text>
-        </View>
-        <View style={styles.contentTabRow}>
-          <Pressable
-            onPress={() => setTestsSubTab("list")}
-            style={[
-              styles.contentTabBtn,
-              testsSubTab === "list" ? styles.contentTabBtnActive : null,
-            ]}
-          >
-            <Text
+        <View style={styles.testsHeaderRow}>
+          <View style={[styles.contentTabRow, { flex: 1 }]}>
+            <Pressable
+              onPress={() => setTestsSubTab("list")}
               style={[
-                styles.contentTabText,
-                testsSubTab === "list" ? styles.contentTabTextActive : null,
+                styles.contentTabBtn,
+                testsSubTab === "list" ? styles.contentTabBtnActive : null,
               ]}
             >
-              {`1. Danh sách Đề thi (${tests.length})`}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setTestsSubTab("builder")}
-            style={[
-              styles.contentTabBtn,
-              testsSubTab === "builder" ? styles.contentTabBtnActive : null,
-            ]}
-          >
-            <Text
+              <Text
+                style={[
+                  styles.contentTabText,
+                  testsSubTab === "list" ? styles.contentTabTextActive : null,
+                ]}
+              >
+                {`1. Danh sách Đề thi (${tests.length})`}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setTestsSubTab("builder")}
               style={[
-                styles.contentTabText,
-                testsSubTab === "builder" ? styles.contentTabTextActive : null,
+                styles.contentTabBtn,
+                testsSubTab === "builder" ? styles.contentTabBtnActive : null,
               ]}
             >
-              {selectedTest
-                ? `2. Cấu hình Part & Câu hỏi (#${selectedTest.id})`
-                : "2. Cấu hình Part & Câu hỏi"}
+              <Text
+                style={[
+                  styles.contentTabText,
+                  testsSubTab === "builder" ? styles.contentTabTextActive : null,
+                ]}
+              >
+                {selectedTest
+                  ? `2. Cấu hình Part & Câu hỏi (#${selectedTest.id})`
+                  : "2. Cấu hình Part & Câu hỏi"}
+              </Text>
+            </Pressable>
+          </View>
+          <Pressable
+            onPress={() => setShowTestGuide((prev) => !prev)}
+            style={[styles.guideToggleBtn, showTestGuide ? styles.guideToggleBtnActive : null]}
+          >
+            <Text style={[styles.guideToggleText, showTestGuide ? styles.guideToggleTextActive : null]}>
+              {showTestGuide ? "✕ Ẩn hướng dẫn" : "? Hướng dẫn"}
             </Text>
           </Pressable>
         </View>
+
+        {showTestGuide ? (
+          <View style={styles.infoFlow}>
+            <Text style={styles.infoFlowTitle}>Quy trình tạo Đề thi TOEIC 3 bước</Text>
+            <Text style={styles.infoFlowText}>
+              1) Import câu hỏi & media ở Ngân hàng câu hỏi → 2) Bấm “+ Thêm mới” chọn FULL_TEST (120 phút) → 3) Chọn prefix (vd T1_) rồi bấm “⚡ Tự tạo Part & Gán câu”.
+            </Text>
+          </View>
+        ) : null}
 
         {testsSubTab === "list" ? (
           <>
@@ -2884,7 +3120,6 @@ export default function AdminDashboardScreen() {
                 )
               }
               records={tests}
-              subtitle="Bước 1: Tạo đề thi rồi bấm vào đề bên dưới để soạn Part & gán câu hỏi."
               title="Quản lý Đề thi TOEIC"
               working={working}
             />
@@ -2979,7 +3214,7 @@ export default function AdminDashboardScreen() {
               {selectedTestId ? (
                 <View style={styles.autoPopulateBox}>
                   <Text style={styles.autoPopulateLabel}>
-                    Gán tự động vào đúng Part 1–7 từ Kho (không cần tick tay từng Part):
+                    Gán nhanh Part 1–7 theo prefix:
                   </Text>
                   {detectedGroupPrefixes.length > 0 ? (
                     <View style={styles.chipRow}>
@@ -3121,7 +3356,6 @@ export default function AdminDashboardScreen() {
                 )
               }
               records={testParts}
-              subtitle="Có thể bấm “⚡ Tạo nhanh Part chuẩn TOEIC” phía trên hoặc tự thêm từng Part."
               title="Danh sách Part trong đề thi"
               working={working}
             />
@@ -3133,9 +3367,6 @@ export default function AdminDashboardScreen() {
                     {selectedTestPart
                       ? `Câu hỏi trong Part ${selectedTestPart.partNumber}: ${selectedTestPart.partName} (${testPartQuestions.length})`
                       : "Chọn một Part bên dưới để gán câu hỏi"}
-                  </Text>
-                  <Text style={styles.uploadSubtitle}>
-                    Chọn hàng loạt câu hỏi bằng checkbox (tự lọc theo đúng Part) và sắp xếp thứ tự nhanh.
                   </Text>
                 </View>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -4278,19 +4509,150 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: "800",
   },
-  premiumPill: {
-    backgroundColor: colors.warningSoft,
+  testsHeaderRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  guideToggleBtn: {
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.borderStrong,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  guideToggleBtnActive: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary,
+  },
+  guideToggleText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  guideToggleTextActive: {
+    color: colors.primaryDark,
+    fontWeight: "800",
+  },
+  summarySub: {
+    color: colors.textMuted,
+    fontSize: 11.5,
+    fontWeight: "600",
+    marginTop: 4,
+  },
+  analyticsGridRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
+  },
+  analyticsCard: {
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flex: 1,
+    gap: 10,
+    minWidth: 280,
+    padding: spacing.md,
+  },
+  analyticsCardTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  stackedBarTrack: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 999,
+    flexDirection: "row",
+    height: 12,
+    overflow: "hidden",
+  },
+  analyticsLegendRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  analyticsLegendLeft: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  analyticsDot: {
+    borderRadius: 999,
+    height: 9,
+    width: 9,
+  },
+  analyticsLegendLabel: {
+    color: colors.textSecondary,
+    fontSize: 12.5,
+    fontWeight: "700",
+  },
+  analyticsLegendValue: {
+    color: colors.text,
+    fontSize: 12.5,
+    fontWeight: "800",
+  },
+  bandRow: {
+    gap: 4,
+  },
+  bandTrack: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 999,
+    height: 8,
+    overflow: "hidden",
+  },
+  bandFill: {
+    borderRadius: 999,
+    height: "100%",
+  },
+  recentOrdersWrap: {
+    gap: 8,
+  },
+  recentOrderRow: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  tierPill: {
     borderRadius: 999,
     paddingHorizontal: 9,
     paddingVertical: 3,
   },
-  premiumPillText: {
-    color: "#B45309",
+  tierPillText: {
     fontSize: 10.5,
     fontWeight: "800",
   },
+  tierPillFree: {
+    backgroundColor: "#E2E8F0",
+  },
+  tierPillFreeText: {
+    color: "#475569",
+  },
+  tierPillPlus: {
+    backgroundColor: "#E0F2FE",
+  },
+  tierPillPlusText: {
+    color: "#0369A1",
+  },
+  tierPillPro: {
+    backgroundColor: "#EDE9FE",
+  },
+  tierPillProText: {
+    color: "#6D28D9",
+  },
   userActionsCol: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
   userActionBtn: {
@@ -4304,8 +4666,14 @@ const styles = StyleSheet.create({
   userUnlockBtn: {
     backgroundColor: colors.success,
   },
+  userPlusBtn: {
+    backgroundColor: "#0284C7",
+  },
   userPremiumBtn: {
-    backgroundColor: colors.primary,
+    backgroundColor: "#7C3AED",
+  },
+  userFreeBtn: {
+    backgroundColor: "#64748B",
   },
   userVerifiedBtn: {
     backgroundColor: "#1D9BF0",
