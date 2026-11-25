@@ -8,5 +8,7 @@ public class ArenaMatchmakingStatusResponse {
     private String mode; // VOCAB, PART5
     private int waitedSeconds;
     private int queueSize;
+    private int targetPlayers;
+    private int currentQueueCount;
     private ArenaRoomResponse room;
 }

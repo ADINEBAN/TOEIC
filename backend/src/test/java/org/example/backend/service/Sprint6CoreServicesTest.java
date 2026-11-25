@@ -818,5 +818,100 @@ class Sprint6CoreServicesTest {
             ArenaLeaderboardResponse lb = arenaService.getLeaderboard("alice@toeic.test");
             assertEquals(2, lb.getEntries().size());
         }
+
+        @org.junit.jupiter.api.Test
+        void threePlayerVocabRoomAndMatchmaking_waitsUntilThreeAndHandlesMidMatchLeave() {
+            User p1 = buildUser(30L, "p1@toeic.test", "PlayerOne");
+            p1.setDiamonds(50);
+            p1.setArenaElo(1000);
+            User p2 = buildUser(31L, "p2@toeic.test", "PlayerTwo");
+            p2.setDiamonds(50);
+            p2.setArenaElo(1000);
+            User p3 = buildUser(32L, "p3@toeic.test", "PlayerThree");
+            p3.setDiamonds(50);
+            p3.setArenaElo(1000);
+
+            Vocabulary v1 = new Vocabulary();
+            v1.setId(951L);
+            v1.setWord("deadline");
+            v1.setPartOfSpeech("noun");
+            v1.setIpa("/ˈded.laɪn/");
+            v1.setMeaningVi("hạn chót");
+            v1.setMeaningEn("A time or day by which something must be done.");
+            v1.setExampleSentence("We must meet the deadline tomorrow.");
+            v1.setExampleTranslation("Chúng ta phải kịp hạn chót vào ngày mai.");
+
+            VocabularyRepository vocabRepo = mock(VocabularyRepository.class);
+            when(vocabRepo.findAllByOrderByIdAsc()).thenReturn(List.of(v1));
+            org.springframework.test.util.ReflectionTestUtils.setField(arenaService, "vocabularyRepository", vocabRepo);
+
+            when(userRepository.findByEmail("p1@toeic.test")).thenReturn(Optional.of(p1));
+            when(userRepository.findByEmail("p2@toeic.test")).thenReturn(Optional.of(p2));
+            when(userRepository.findByEmail("p3@toeic.test")).thenReturn(Optional.of(p3));
+
+            // 1. Custom 3-player room stays WAITING at 2/3, starts at 3/3
+            ArenaCreateRoomRequest trioReq = new ArenaCreateRoomRequest();
+            trioReq.setMode("VOCAB");
+            trioReq.setQuestionCount(3);
+            trioReq.setMaxPlayers(3);
+            ArenaRoomResponse createdTrio = arenaService.createRoom("p1@toeic.test", trioReq);
+            assertEquals("WAITING", createdTrio.getStatus());
+            assertEquals(3, createdTrio.getMaxPlayers());
+
+            ArenaRoomResponse afterSecond = arenaService.joinRoom("p2@toeic.test", createdTrio.getRoomCode());
+            assertEquals("WAITING", afterSecond.getStatus());
+            assertEquals(2, afterSecond.getPlayers().size());
+
+            ArenaRoomResponse afterThird = arenaService.joinRoom("p3@toeic.test", createdTrio.getRoomCode());
+            assertEquals("IN_PROGRESS", afterThird.getStatus());
+            assertEquals("QUESTION", afterThird.getRoundPhase());
+            assertEquals(3, afterThird.getPlayers().size());
+            assertEquals(3, afterThird.getMaxPlayers());
+
+            // 4th player rejected cleanly when 3/3 full
+            User p4 = buildUser(33L, "p4@toeic.test", "Extra");
+            when(userRepository.findByEmail("p4@toeic.test")).thenReturn(Optional.of(p4));
+            assertThrows(AppException.class, () -> arenaService.joinRoom("p4@toeic.test", createdTrio.getRoomCode()));
+
+            // P3 solves word -> P3 wins diamonds from BOTH P1 and P2
+            ArenaAnswerRequest solveReq = new ArenaAnswerRequest();
+            solveReq.setQuestionId(951L);
+            solveReq.setTextAnswer("deadline");
+            ArenaRoomResponse afterSolve = arenaService.submitAnswer("p3@toeic.test", createdTrio.getRoomCode(),
+                    solveReq);
+            assertEquals("REVEAL", afterSolve.getRoundPhase());
+            assertEquals("PlayerThree", afterSolve.getRoundWinnerName());
+
+            // P2 abandons mid-match -> 3-player match continues between P1 and P3!
+            arenaService.leaveRoom("p2@toeic.test", createdTrio.getRoomCode());
+            ArenaRoomResponse continuing = arenaService.getRoom("p1@toeic.test", createdTrio.getRoomCode());
+            assertEquals("IN_PROGRESS", continuing.getStatus());
+            assertEquals(2, continuing.getPlayers().size());
+
+            arenaService.leaveRoom("p1@toeic.test", createdTrio.getRoomCode());
+
+            // 2. 3-player random matchmaking stays isolated from 1v1 queue and pairs 3 players
+            ArenaMatchmakingRequest trioMm = new ArenaMatchmakingRequest();
+            trioMm.setMode("VOCAB");
+            trioMm.setQuestionCount(3);
+            trioMm.setMaxPlayers(3);
+
+            ArenaMatchmakingStatusResponse mm1 = arenaService.joinMatchmaking("p1@toeic.test", trioMm);
+            assertEquals("SEARCHING", mm1.getStatus());
+            assertEquals(3, mm1.getTargetPlayers());
+            assertEquals(1, mm1.getCurrentQueueCount());
+
+            ArenaMatchmakingStatusResponse mm2 = arenaService.joinMatchmaking("p2@toeic.test", trioMm);
+            assertEquals("SEARCHING", mm2.getStatus());
+            assertEquals(3, mm2.getTargetPlayers());
+            assertEquals(2, mm2.getCurrentQueueCount());
+
+            ArenaMatchmakingStatusResponse mm3 = arenaService.joinMatchmaking("p3@toeic.test", trioMm);
+            assertEquals("MATCHED", mm3.getStatus());
+            assertNotNull(mm3.getRoom());
+            assertEquals(3, mm3.getRoom().getMaxPlayers());
+            assertEquals(3, mm3.getRoom().getPlayers().size());
+            assertEquals("IN_PROGRESS", mm3.getRoom().getStatus());
+        }
     }
 }

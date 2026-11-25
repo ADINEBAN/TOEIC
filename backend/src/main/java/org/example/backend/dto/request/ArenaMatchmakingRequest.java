@@ -6,4 +6,5 @@ import lombok.Data;
 public class ArenaMatchmakingRequest {
     private String mode; // VOCAB | PART5
     private Integer questionCount;
+    private Integer maxPlayers; // 2 or 3
 }

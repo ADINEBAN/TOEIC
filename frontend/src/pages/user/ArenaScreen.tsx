@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ComponentRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ComponentRef, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -83,6 +83,7 @@ export default function ArenaScreen() {
 
   // Lobby & Matchmaking Config
   const [selectedMode, setSelectedMode] = useState<ArenaMode>("VOCAB");
+  const [selectedMaxPlayers, setSelectedMaxPlayers] = useState<2 | 3>(2);
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [createPrivate, setCreatePrivate] = useState(false);
   const [createPassword, setCreatePassword] = useState("");
@@ -105,6 +106,10 @@ export default function ArenaScreen() {
   // Matchmaking Queue State ("SEARCHING")
   const [searching, setSearching] = useState(false);
   const [searchWaitedSec, setSearchWaitedSec] = useState(0);
+  const [searchQueueInfo, setSearchQueueInfo] = useState<{ current: number; target: number }>({
+    current: 1,
+    target: 2,
+  });
 
   // Active Room & Round Gameplay State
   const [activeRoom, setActiveRoom] = useState<ArenaRoomItem | null>(null);
@@ -117,6 +122,7 @@ export default function ArenaScreen() {
   const [emoteCooldown, setEmoteCooldown] = useState(false);
   const [p1EmoteScale] = useState(() => new Animated.Value(1));
   const [p2EmoteScale] = useState(() => new Animated.Value(1));
+  const [p3EmoteScale] = useState(() => new Animated.Value(1));
 
   // Smooth local countdown clock synchronized with server remainingSeconds
   const [tickOffsetSec, setTickOffsetSec] = useState(0);
@@ -263,6 +269,11 @@ export default function ArenaScreen() {
             applyRoomSnapshot(data.room);
             setPickedPart5ByRound({});
             setVocabGuess("");
+          } else if (data.status === "SEARCHING") {
+            setSearchQueueInfo((prev) => ({
+              current: data.currentQueueCount ?? data.queueSize ?? prev.current,
+              target: data.targetPlayers ?? prev.target,
+            }));
           } else if (data.status === "IDLE") {
             setSearching(false);
           }
@@ -286,6 +297,7 @@ export default function ArenaScreen() {
     try {
       const res = await createArenaRoom(auth.accessToken, {
         isPrivate: createPrivate,
+        maxPlayers: selectedMaxPlayers,
         mode: selectedMode,
         password: createPrivate ? cleanPwd : undefined,
         questionCount,
@@ -339,8 +351,10 @@ export default function ArenaScreen() {
     if (!auth.accessToken) return;
     try {
       setSearchWaitedSec(0);
+      setSearchQueueInfo({ current: 1, target: selectedMaxPlayers });
       setSearching(true);
       const res = await joinArenaMatchmaking(auth.accessToken, {
+        maxPlayers: selectedMaxPlayers,
         mode: selectedMode,
         questionCount,
       });
@@ -350,6 +364,11 @@ export default function ArenaScreen() {
         applyRoomSnapshot(data.room);
         setPickedPart5ByRound({});
         setVocabGuess("");
+      } else if (data?.status === "SEARCHING") {
+        setSearchQueueInfo({
+          current: data.currentQueueCount ?? data.queueSize ?? 1,
+          target: data.targetPlayers ?? selectedMaxPlayers,
+        });
       }
     } catch (error) {
       setSearching(false);
@@ -483,12 +502,13 @@ export default function ArenaScreen() {
     const list = activeRoom?.players ?? [];
     if (list.length <= 1) return list;
     const mine = list.find((p) => p.email.toLowerCase() === myEmail);
-    const opp = list.find((p) => p.email.toLowerCase() !== myEmail);
-    return mine && opp ? [mine, opp] : list;
+    const others = list.filter((p) => p.email.toLowerCase() !== myEmail);
+    return mine ? [mine, ...others] : list;
   }, [activeRoom?.players, myEmail]);
 
   const myActiveEmoteId = orderedPlayers[0]?.activeEmote?.id ?? null;
   const oppActiveEmoteId = orderedPlayers[1]?.activeEmote?.id ?? null;
+  const thirdActiveEmoteId = orderedPlayers[2]?.activeEmote?.id ?? null;
 
   useEffect(() => {
     if (myActiveEmoteId == null) return;
@@ -511,6 +531,17 @@ export default function ArenaScreen() {
       useNativeDriver: true,
     }).start();
   }, [oppActiveEmoteId, p2EmoteScale]);
+
+  useEffect(() => {
+    if (thirdActiveEmoteId == null) return;
+    p3EmoteScale.setValue(0.84);
+    Animated.spring(p3EmoteScale, {
+      friction: 5,
+      tension: 150,
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+  }, [thirdActiveEmoteId, p3EmoteScale]);
 
   const handleSendEmote = async (emoteCode: string) => {
     if (!auth.accessToken || !activeRoom?.roomCode || emoteCooldown) return;
@@ -563,6 +594,8 @@ export default function ArenaScreen() {
   // VIEW A: SEARCHING FOR OPPONENT (RANDOM MATCHMAKING)
   // =========================================================================
   if (searching && !activeRoom) {
+    const searchTarget = Math.max(2, searchQueueInfo.target || selectedMaxPlayers);
+    const modeFormatLabel = searchTarget >= 3 ? "Đấu 3 người" : "1v1";
     return (
       <UserScreen hasTabDock={false}>
         <AppHeader
@@ -574,7 +607,7 @@ export default function ArenaScreen() {
               <Text style={styles.diamondHeaderText}>{myDiamonds}</Text>
             </View>
           }
-          subtitle={selectedMode === "VOCAB" ? "Chế độ Từ vựng 1v1" : "Chế độ Part 5 1v1"}
+          subtitle={selectedMode === "VOCAB" ? `Chế độ Từ vựng • ${modeFormatLabel}` : `Chế độ Part 5 • ${modeFormatLabel}`}
           title="Tìm trận ngẫu nhiên"
         />
 
@@ -583,10 +616,14 @@ export default function ArenaScreen() {
             <Ionicons color={colors.primary} name="flash" size={40} />
           </View>
           <Text style={[styles.searchingTitle, { fontSize: rf(19) }]}>
-            Đang tìm đối thủ...
+            {searchTarget >= 3
+              ? `Đang gom phòng ${searchQueueInfo.current}/${searchTarget} người...`
+              : "Đang tìm đối thủ..."}
           </Text>
           <Text style={styles.searchingSub}>
-            Hệ thống sẽ ghép tự động khi có người thứ 2 cùng tìm chế độ{" "}
+            {searchTarget >= 3
+              ? `Hệ thống sẽ mở trận ngay khi đủ 3 người cùng tìm chế độ `
+              : "Hệ thống sẽ ghép tự động khi có người thứ 2 cùng tìm chế độ "}
             <Text style={{ color: colors.primary, fontWeight: "900" }}>
               {selectedMode === "VOCAB" ? "Từ vựng" : "TOEIC Part 5"}
             </Text>
@@ -613,6 +650,9 @@ export default function ArenaScreen() {
   if (activeRoom) {
     const player1: ArenaPlayerState | undefined = orderedPlayers[0];
     const player2: ArenaPlayerState | undefined = orderedPlayers[1];
+    const player3: ArenaPlayerState | undefined = orderedPlayers[2];
+    const targetPlayers = Math.max(2, activeRoom.maxPlayers ?? 2);
+    const isThreePlayerRoom = targetPlayers >= 3 || orderedPlayers.length >= 3;
     const totalQ = activeRoom.totalQuestions || activeRoom.questions?.length || 10;
     const currentRoundIdx = activeRoom.currentRoundIndex ?? 0;
     const currentQ = activeRoom.questions?.[currentRoundIdx];
@@ -635,7 +675,7 @@ export default function ArenaScreen() {
                 <Text style={styles.diamondHeaderText}>{player1?.diamonds ?? myDiamonds}</Text>
               </View>
             }
-            subtitle={isVocabMode ? "Từ vựng 1v1 • Chờ đối thủ" : "TOEIC Part 5 • Chờ đối thủ"}
+            subtitle={`${isVocabMode ? "Từ vựng" : "TOEIC Part 5"} ${targetPlayers >= 3 ? "Đấu 3" : "1v1"} • ${orderedPlayers.length}/${targetPlayers} người`}
             title={`Phòng ${activeRoom.roomCode}`}
           />
 
@@ -644,6 +684,12 @@ export default function ArenaScreen() {
               <View style={styles.modeTagPill}>
                 <Ionicons color="#FFFFFF" name={isVocabMode ? "book" : "document-text"} size={13} />
                 <Text style={styles.modeTagText}>{isVocabMode ? "Từ vựng" : "Part 5"} • {totalQ} câu</Text>
+              </View>
+              <View style={styles.modeTagPill}>
+                <Ionicons color="#FFFFFF" name="people" size={13} />
+                <Text style={styles.modeTagText}>
+                  {orderedPlayers.length}/{targetPlayers} người
+                </Text>
               </View>
               <View style={styles.modeTagPill}>
                 <Ionicons color="#FFFFFF" name={activeRoom.isPrivate ? "lock-closed" : "earth"} size={13} />
@@ -668,30 +714,56 @@ export default function ArenaScreen() {
           </LiquidCard>
 
           <SurfaceCard style={styles.waitingMatchCard}>
-            <View style={styles.duelSlotRow}>
-              <View style={styles.duelSlotBox}>
-                <View style={styles.avatarCirclePrimary}>
-                  <Text style={styles.avatarInitial}>{(player1?.fullName?.[0] || "B").toUpperCase()}</Text>
-                </View>
-                <View style={{ alignItems: "center", flexDirection: "row", gap: 4, justifyContent: "center" }}>
-                  <Text numberOfLines={1} style={[styles.slotName, { flexShrink: 1 }]}>{player1?.fullName || "Bạn"}</Text>
-                  <VerifiedBadge size={14} verified={player1?.verified} />
-                </View>
-                <Text style={styles.slotSub}>💎 {player1?.diamonds ?? myDiamonds}</Text>
-              </View>
-
-              <View style={styles.vsBadge}>
-                <Text style={styles.vsBadgeText}>VS</Text>
-              </View>
-
-              <View style={[styles.duelSlotBox, styles.duelSlotEmpty]}>
-                <ActivityIndicator color={colors.primary} size="small" />
-                <Text style={styles.slotWaitingText}>Đang đợi đối thủ vô...</Text>
-              </View>
+            <View style={[styles.duelSlotRow, targetPlayers >= 3 ? { gap: 6 } : null]}>
+              {Array.from({ length: targetPlayers }).map((_, slotIdx) => {
+                const slotPlayer = orderedPlayers[slotIdx];
+                return (
+                  <Fragment key={slotPlayer?.email ?? `empty-${slotIdx}`}>
+                    {slotIdx > 0 ? (
+                      <View style={[styles.vsBadge, targetPlayers >= 3 ? styles.vsBadgeCompact : null]}>
+                        <Text style={[styles.vsBadgeText, targetPlayers >= 3 ? { fontSize: 10.5 } : null]}>VS</Text>
+                      </View>
+                    ) : null}
+                    {slotPlayer ? (
+                      <View style={[styles.duelSlotBox, targetPlayers >= 3 ? { paddingVertical: 12 } : null]}>
+                        <View
+                          style={[
+                            styles.avatarCirclePrimary,
+                            slotIdx === 1 ? { backgroundColor: "#059669" } : null,
+                            slotIdx === 2 ? { backgroundColor: "#D97706" } : null,
+                          ]}
+                        >
+                          <Text style={styles.avatarInitial}>{(slotPlayer.fullName?.[0] || "P").toUpperCase()}</Text>
+                        </View>
+                        <View style={{ alignItems: "center", flexDirection: "row", gap: 4, justifyContent: "center" }}>
+                          <Text numberOfLines={1} style={[styles.slotName, { flexShrink: 1 }]}>
+                            {slotPlayer.fullName}
+                          </Text>
+                          <VerifiedBadge size={13} verified={slotPlayer.verified} />
+                        </View>
+                        <Text style={styles.slotSub}>💎 {slotPlayer.diamonds ?? 50}</Text>
+                      </View>
+                    ) : (
+                      <View
+                        style={[
+                          styles.duelSlotBox,
+                          styles.duelSlotEmpty,
+                          targetPlayers >= 3 ? { paddingVertical: 12 } : null,
+                        ]}
+                      >
+                        <ActivityIndicator color={colors.primary} size="small" />
+                        <Text style={styles.slotWaitingText}>Đang đợi...</Text>
+                      </View>
+                    )}
+                  </Fragment>
+                );
+              })}
             </View>
 
             <Text style={styles.waitNote}>
-              Trận đấu sẽ tự động bắt đầu đếm giây ngay khi đối thủ tham gia phòng!
+              {targetPlayers >= 3
+                ? `Trận đấu 3 người sẽ tự động bắt đầu ngay khi đủ 3 người tham gia phòng (${orderedPlayers.length}/3)!`
+                : "Trận đấu sẽ tự động bắt đầu đếm giây ngay khi đối thủ tham gia phòng!"}
             </Text>
 
             <LiquidButton
@@ -710,6 +782,13 @@ export default function ArenaScreen() {
       const me = player1;
       const didWin = activeRoom.winnerEmail && activeRoom.winnerEmail.toLowerCase() === myEmail;
       const isDraw = !activeRoom.winnerEmail;
+      const rankedPlayers = [...orderedPlayers].sort((a, b) => {
+        if ((b.roundWins ?? 0) !== (a.roundWins ?? 0)) return (b.roundWins ?? 0) - (a.roundWins ?? 0);
+        if ((b.correctCount ?? 0) !== (a.correctCount ?? 0)) return (b.correctCount ?? 0) - (a.correctCount ?? 0);
+        if ((b.score ?? 0) !== (a.score ?? 0)) return (b.score ?? 0) - (a.score ?? 0);
+        return (a.totalResponseMs ?? 0) - (b.totalResponseMs ?? 0);
+      });
+      const rankMedals = ["🥇 Hạng 1", "🥈 Hạng 2", "🥉 Hạng 3"];
       return (
         <UserScreen hasTabDock={false}>
           <AppHeader
@@ -735,42 +814,57 @@ export default function ArenaScreen() {
               {isDraw ? "Hòa ngang tài ngang sức!" : didWin ? "Bạn đã chiến thắng!" : `${activeRoom.winnerName} chiến thắng!`}
             </Text>
             <Text style={styles.finishScoreLine}>
-              Tỷ số: {player1?.roundWins ?? 0} - {player2?.roundWins ?? 0} • Tổng thời gian: {activeRoom.elapsedMatchSeconds}s
+              Tỷ số: {rankedPlayers.map((p) => p.roundWins ?? 0).join(" - ")} • Tổng thời gian: {activeRoom.elapsedMatchSeconds}s
             </Text>
 
-            <View style={styles.finishStatsGrid}>
-              {(orderedPlayers ?? []).map((p, idx) => (
-                <View key={p.email} style={styles.finishPlayerCard}>
-                  {p.activeEmote ? (
-                    <Animated.View
+            <View style={[styles.finishStatsGrid, rankedPlayers.length >= 3 ? { flexWrap: "wrap" } : null]}>
+              {rankedPlayers.map((p, rankIdx) => {
+                const seatIdx = orderedPlayers.findIndex((op) => op.email === p.email);
+                const emoteScale = seatIdx === 0 ? p1EmoteScale : seatIdx === 1 ? p2EmoteScale : p3EmoteScale;
+                return (
+                  <View
+                    key={p.email}
+                    style={[styles.finishPlayerCard, rankedPlayers.length >= 3 ? { minWidth: 112 } : null]}
+                  >
+                    {p.activeEmote ? (
+                      <Animated.View
+                        style={[
+                          styles.tauntBubble,
+                          seatIdx === 0
+                            ? styles.tauntBubbleMine
+                            : seatIdx === 2
+                              ? styles.tauntBubbleThird
+                              : styles.tauntBubbleOpp,
+                          { transform: [{ scale: emoteScale }] },
+                        ]}
+                      >
+                        <Text style={styles.tauntBubbleEmoji}>{p.activeEmote.emoji}</Text>
+                        <Text numberOfLines={1} style={styles.tauntBubbleText}>
+                          {p.activeEmote.label}
+                        </Text>
+                      </Animated.View>
+                    ) : null}
+                    {rankedPlayers.length >= 3 ? (
+                      <Text style={styles.finishRankBadge}>{rankMedals[rankIdx] ?? `#${rankIdx + 1}`}</Text>
+                    ) : null}
+                    <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                      <Text numberOfLines={1} style={[styles.finishPlayerName, { flexShrink: 1 }]}>{p.fullName}</Text>
+                      <VerifiedBadge size={14} verified={p.verified} />
+                    </View>
+                    <Text style={styles.finishStatText}>Thắng vòng: {p.roundWins ?? 0} câu</Text>
+                    <Text style={styles.finishStatText}>Đúng: {p.correctCount}/{totalQ} câu</Text>
+                    <Text style={styles.finishStatText}>Tốc độ: {formatReactionSeconds(p.totalResponseMs)}</Text>
+                    <Text
                       style={[
-                        styles.tauntBubble,
-                        idx === 0 ? styles.tauntBubbleMine : styles.tauntBubbleOpp,
-                        { transform: [{ scale: idx === 0 ? p1EmoteScale : p2EmoteScale }] },
+                        styles.finishDiamondDelta,
+                        { color: p.diamondDelta >= 0 ? "#10B981" : "#EF4444" },
                       ]}
                     >
-                      <Text style={styles.tauntBubbleEmoji}>{p.activeEmote.emoji}</Text>
-                      <Text numberOfLines={1} style={styles.tauntBubbleText}>
-                        {p.activeEmote.label}
-                      </Text>
-                    </Animated.View>
-                  ) : null}
-                  <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
-                    <Text numberOfLines={1} style={[styles.finishPlayerName, { flexShrink: 1 }]}>{p.fullName}</Text>
-                    <VerifiedBadge size={14} verified={p.verified} />
+                      {p.diamondDelta >= 0 ? `+${p.diamondDelta}` : p.diamondDelta} 💎 (Hiện có: {p.diamonds} 💎)
+                    </Text>
                   </View>
-                  <Text style={styles.finishStatText}>Đúng: {p.correctCount}/{totalQ} câu</Text>
-                  <Text style={styles.finishStatText}>Tốc độ: {formatReactionSeconds(p.totalResponseMs)}</Text>
-                  <Text
-                    style={[
-                      styles.finishDiamondDelta,
-                      { color: p.diamondDelta >= 0 ? "#10B981" : "#EF4444" },
-                    ]}
-                  >
-                    {p.diamondDelta >= 0 ? `+${p.diamondDelta}` : p.diamondDelta} 💎 (Hiện có: {p.diamonds} 💎)
-                  </Text>
-                </View>
-              ))}
+                );
+              })}
             </View>
 
             {renderTauntStrip(false)}
@@ -797,9 +891,10 @@ export default function ArenaScreen() {
       );
     }
 
-    // ACTIVE LIVE DUEL (VOCAB BATTLE or TOEIC PART 5)
+    // ACTIVE LIVE DUEL (VOCAB BATTLE or TOEIC PART 5 — 2P or 3P)
     const p1ProgressRatio = totalQ > 0 ? Math.min(1, (player1?.roundWins ?? 0) / totalQ) : 0;
     const p2ProgressRatio = totalQ > 0 ? Math.min(1, (player2?.roundWins ?? 0) / totalQ) : 0;
+    const p3ProgressRatio = totalQ > 0 ? Math.min(1, (player3?.roundWins ?? 0) / totalQ) : 0;
     const hintChars = (currentQ?.hintMask ?? "_".repeat(currentQ?.wordLength || 6)).split("");
     const revealWord = activeRoom.currentRevealWord || "";
     const revealSaved = Boolean(revealWord && savedWordsMap[revealWord.toLowerCase()]);
@@ -827,105 +922,166 @@ export default function ArenaScreen() {
               </Text>
             </View>
           }
-          subtitle={`${isVocabMode ? "Từ vựng 1v1" : "TOEIC Part 5"} • Tổng ${activeRoom.elapsedMatchSeconds}s`}
+          subtitle={`${isVocabMode ? "Từ vựng" : "TOEIC Part 5"} ${isThreePlayerRoom ? "Trio 3 người" : "1v1"} • Tổng ${activeRoom.elapsedMatchSeconds}s`}
           title={`Phòng ${activeRoom.roomCode}`}
         />
 
-        {/* Player Comparison HUD Header (like Parroto screenshot 3-5) */}
+        {/* Player Comparison HUD Header (2P 1v1 symmetrical bar OR 3P Trio compact columns) */}
         <SurfaceCard padding="sm" style={styles.matchHudCard}>
-          {(player1?.activeEmote || player2?.activeEmote) ? (
-            <View style={styles.emoteBubbleRow}>
-              <View style={styles.emoteBubbleSlotLeft}>
-                {player1?.activeEmote ? (
-                  <Animated.View
-                    style={[
-                      styles.tauntBubble,
-                      styles.tauntBubbleMine,
-                      { transform: [{ scale: p1EmoteScale }] },
-                    ]}
-                  >
-                    <Text style={styles.tauntBubbleEmoji}>{player1.activeEmote.emoji}</Text>
-                    <Text numberOfLines={1} style={styles.tauntBubbleText}>
-                      {player1.activeEmote.label}
-                    </Text>
-                  </Animated.View>
-                ) : null}
-              </View>
-              <View style={styles.emoteBubbleSlotRight}>
-                {player2?.activeEmote ? (
-                  <Animated.View
-                    style={[
-                      styles.tauntBubble,
-                      styles.tauntBubbleOpp,
-                      { transform: [{ scale: p2EmoteScale }] },
-                    ]}
-                  >
-                    <Text style={styles.tauntBubbleEmoji}>{player2.activeEmote.emoji}</Text>
-                    <Text numberOfLines={1} style={styles.tauntBubbleText}>
-                      {player2.activeEmote.label}
-                    </Text>
-                  </Animated.View>
-                ) : null}
-              </View>
+          {isThreePlayerRoom ? (
+            <View style={styles.trioHudGrid}>
+              {[player1, player2, player3].map((p, seatIdx) => {
+                if (!p) return null;
+                const accent = seatIdx === 0 ? "#7C3AED" : seatIdx === 1 ? "#059669" : "#D97706";
+                const scaleAnim = seatIdx === 0 ? p1EmoteScale : seatIdx === 1 ? p2EmoteScale : p3EmoteScale;
+                return (
+                  <View key={p.email} style={[styles.trioHudCol, { borderTopColor: accent }]}>
+                    {p.activeEmote ? (
+                      <Animated.View
+                        style={[
+                          styles.tauntBubble,
+                          seatIdx === 0
+                            ? styles.tauntBubbleMine
+                            : seatIdx === 2
+                              ? styles.tauntBubbleThird
+                              : styles.tauntBubbleOpp,
+                          { transform: [{ scale: scaleAnim }], paddingHorizontal: 7, paddingVertical: 2 },
+                        ]}
+                      >
+                        <Text style={[styles.tauntBubbleEmoji, { fontSize: 12 }]}>{p.activeEmote.emoji}</Text>
+                        <Text numberOfLines={1} style={[styles.tauntBubbleText, { fontSize: 10 }]}>
+                          {p.activeEmote.label}
+                        </Text>
+                      </Animated.View>
+                    ) : null}
+                    <View style={{ alignItems: "center", flexDirection: "row", gap: 6, width: "100%" }}>
+                      <UserAvatarWithFrame
+                        avatarUrl={p.avatarUrl}
+                        frameId={p.equippedFrameId}
+                        fullName={p.fullName}
+                        level={p.level}
+                        showCornerBadge={false}
+                        size={30}
+                      />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <View style={{ alignItems: "center", flexDirection: "row", gap: 2 }}>
+                          <Text numberOfLines={1} style={[styles.hudPlayerName, { flexShrink: 1, fontSize: 11.5 }]}>
+                            {p.fullName}
+                          </Text>
+                          <VerifiedBadge size={11} verified={p.verified} />
+                        </View>
+                        <View style={styles.trioMetaRow}>
+                          <Text style={[styles.trioScorePill, { color: accent }]}>
+                            {p.roundWins ?? 0}đ
+                          </Text>
+                          <View style={styles.hudDiamondRow}>
+                            <Ionicons color="#0EA5E9" name="diamond" size={11} />
+                            <Text style={[styles.hudDiamondNum, { fontSize: 11 }]}>{p.diamonds ?? 50}</Text>
+                          </View>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
-          ) : null}
+          ) : (
+            <>
+              {(player1?.activeEmote || player2?.activeEmote) ? (
+                <View style={styles.emoteBubbleRow}>
+                  <View style={styles.emoteBubbleSlotLeft}>
+                    {player1?.activeEmote ? (
+                      <Animated.View
+                        style={[
+                          styles.tauntBubble,
+                          styles.tauntBubbleMine,
+                          { transform: [{ scale: p1EmoteScale }] },
+                        ]}
+                      >
+                        <Text style={styles.tauntBubbleEmoji}>{player1.activeEmote.emoji}</Text>
+                        <Text numberOfLines={1} style={styles.tauntBubbleText}>
+                          {player1.activeEmote.label}
+                        </Text>
+                      </Animated.View>
+                    ) : null}
+                  </View>
+                  <View style={styles.emoteBubbleSlotRight}>
+                    {player2?.activeEmote ? (
+                      <Animated.View
+                        style={[
+                          styles.tauntBubble,
+                          styles.tauntBubbleOpp,
+                          { transform: [{ scale: p2EmoteScale }] },
+                        ]}
+                      >
+                        <Text style={styles.tauntBubbleEmoji}>{player2.activeEmote.emoji}</Text>
+                        <Text numberOfLines={1} style={styles.tauntBubbleText}>
+                          {player2.activeEmote.label}
+                        </Text>
+                      </Animated.View>
+                    ) : null}
+                  </View>
+                </View>
+              ) : null}
 
-          <View style={styles.matchHudRow}>
-            <View style={styles.hudPlayerCol}>
-              <UserAvatarWithFrame
-                avatarUrl={player1?.avatarUrl}
-                frameId={player1?.equippedFrameId}
-                fullName={player1?.fullName || "Bạn"}
-                level={player1?.level}
-                showCornerBadge={false}
-                size={36}
-              />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <View style={{ alignItems: "center", flexDirection: "row", gap: 3 }}>
-                  <Text numberOfLines={1} style={[styles.hudPlayerName, { flexShrink: 1 }]}>
-                    {player1?.fullName || "Bạn"}
+              <View style={styles.matchHudRow}>
+                <View style={styles.hudPlayerCol}>
+                  <UserAvatarWithFrame
+                    avatarUrl={player1?.avatarUrl}
+                    frameId={player1?.equippedFrameId}
+                    fullName={player1?.fullName || "Bạn"}
+                    level={player1?.level}
+                    showCornerBadge={false}
+                    size={36}
+                  />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={{ alignItems: "center", flexDirection: "row", gap: 3 }}>
+                      <Text numberOfLines={1} style={[styles.hudPlayerName, { flexShrink: 1 }]}>
+                        {player1?.fullName || "Bạn"}
+                      </Text>
+                      <VerifiedBadge size={13} verified={player1?.verified} />
+                    </View>
+                    <View style={styles.hudDiamondRow}>
+                      <Ionicons color="#0EA5E9" name="diamond" size={12} />
+                      <Text style={styles.hudDiamondNum}>{player1?.diamonds ?? 50}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.hudCenterScore}>
+                  <Text style={styles.hudScoreText}>
+                    <Text style={{ color: "#7C3AED" }}>{player1?.roundWins ?? 0}</Text>
+                    {" - "}
+                    <Text style={{ color: "#059669" }}>{player2?.roundWins ?? 0}</Text>
                   </Text>
-                  <VerifiedBadge size={13} verified={player1?.verified} />
+                  <Text style={styles.hudScoreCaption}>Score</Text>
                 </View>
-                <View style={styles.hudDiamondRow}>
-                  <Ionicons color="#0EA5E9" name="diamond" size={12} />
-                  <Text style={styles.hudDiamondNum}>{player1?.diamonds ?? 50}</Text>
+
+                <View style={[styles.hudPlayerCol, { justifyContent: "flex-end" }]}>
+                  <View style={{ flex: 1, minWidth: 0, alignItems: "flex-end" }}>
+                    <View style={{ alignItems: "center", flexDirection: "row", gap: 3, justifyContent: "flex-end" }}>
+                      <VerifiedBadge size={13} verified={player2?.verified} />
+                      <Text numberOfLines={1} style={[styles.hudPlayerName, { flexShrink: 1 }]}>
+                        {player2?.fullName || "Đối thủ"}
+                      </Text>
+                    </View>
+                    <View style={styles.hudDiamondRow}>
+                      <Text style={styles.hudDiamondNum}>{player2?.diamonds ?? 50}</Text>
+                      <Ionicons color="#0EA5E9" name="diamond" size={12} />
+                    </View>
+                  </View>
+                  <UserAvatarWithFrame
+                    avatarUrl={player2?.avatarUrl}
+                    frameId={player2?.equippedFrameId}
+                    fullName={player2?.fullName || "O"}
+                    level={player2?.level}
+                    showCornerBadge={false}
+                    size={36}
+                  />
                 </View>
               </View>
-            </View>
-
-            <View style={styles.hudCenterScore}>
-              <Text style={styles.hudScoreText}>
-                <Text style={{ color: "#7C3AED" }}>{player1?.roundWins ?? 0}</Text>
-                {" - "}
-                <Text style={{ color: "#059669" }}>{player2?.roundWins ?? 0}</Text>
-              </Text>
-              <Text style={styles.hudScoreCaption}>Score</Text>
-            </View>
-
-            <View style={[styles.hudPlayerCol, { justifyContent: "flex-end" }]}>
-              <View style={{ flex: 1, minWidth: 0, alignItems: "flex-end" }}>
-                <View style={{ alignItems: "center", flexDirection: "row", gap: 3, justifyContent: "flex-end" }}>
-                  <VerifiedBadge size={13} verified={player2?.verified} />
-                  <Text numberOfLines={1} style={[styles.hudPlayerName, { flexShrink: 1 }]}>
-                    {player2?.fullName || "Đối thủ"}
-                  </Text>
-                </View>
-                <View style={styles.hudDiamondRow}>
-                  <Text style={styles.hudDiamondNum}>{player2?.diamonds ?? 50}</Text>
-                  <Ionicons color="#0EA5E9" name="diamond" size={12} />
-                </View>
-              </View>
-              <UserAvatarWithFrame
-                avatarUrl={player2?.avatarUrl}
-                frameId={player2?.equippedFrameId}
-                fullName={player2?.fullName || "O"}
-                level={player2?.level}
-                showCornerBadge={false}
-                size={36}
-              />
-            </View>
-          </View>
+            </>
+          )}
         </SurfaceCard>
 
         {/* Quick 1-Tap Taunt / Reaction Strip */}
@@ -1009,18 +1165,44 @@ export default function ArenaScreen() {
 
         {/* Battle Arena Split: Vertical Space Race Track + Question Stage Card */}
         <View style={styles.battleArenaRow}>
-          {/* Space Race Rocket Track (like screenshots 3-5) */}
-          <View style={styles.raceTrackCol}>
+          {/* Space Race Rocket Track (2P or 3P) */}
+          <View style={[styles.raceTrackCol, isThreePlayerRoom ? { width: 52 } : null]}>
             <Ionicons color="#FBBF24" name="flag" size={14} />
             <Text style={styles.raceFinishNum}>{totalQ}</Text>
             <View style={styles.raceLineWrap}>
               <View style={styles.raceDottedLine} />
-              <View style={[styles.rocketDot, styles.rocketDotP1, { bottom: `${Math.round(p1ProgressRatio * 82)}%` }]}>
-                <Ionicons color="#FFFFFF" name="rocket" size={12} />
+              <View
+                style={[
+                  styles.rocketDot,
+                  isThreePlayerRoom ? styles.rocketDotCompact : null,
+                  styles.rocketDotP1,
+                  { bottom: `${Math.round(p1ProgressRatio * 82)}%` },
+                ]}
+              >
+                <Ionicons color="#FFFFFF" name="rocket" size={isThreePlayerRoom ? 10 : 12} />
               </View>
-              <View style={[styles.rocketDot, styles.rocketDotP2, { bottom: `${Math.round(p2ProgressRatio * 82)}%` }]}>
-                <Ionicons color="#FFFFFF" name="rocket" size={12} />
+              <View
+                style={[
+                  styles.rocketDot,
+                  isThreePlayerRoom ? styles.rocketDotCompact : null,
+                  isThreePlayerRoom ? styles.rocketDotP2Trio : styles.rocketDotP2,
+                  { bottom: `${Math.round(p2ProgressRatio * 82)}%` },
+                ]}
+              >
+                <Ionicons color="#FFFFFF" name="rocket" size={isThreePlayerRoom ? 10 : 12} />
               </View>
+              {player3 ? (
+                <View
+                  style={[
+                    styles.rocketDot,
+                    styles.rocketDotCompact,
+                    styles.rocketDotP3,
+                    { bottom: `${Math.round(p3ProgressRatio * 82)}%` },
+                  ]}
+                >
+                  <Ionicons color="#FFFFFF" name="rocket" size={10} />
+                </View>
+              ) : null}
             </View>
             <Text style={styles.raceStartTxt}>START</Text>
           </View>
@@ -1268,7 +1450,7 @@ export default function ArenaScreen() {
             <Text style={styles.diamondHeaderText}>{myDiamonds}</Text>
           </View>
         }
-        title="Đấu trường 1v1"
+        title="Đấu trường TOEIC"
       />
 
       {/* Mode & Question Count Selection */}
@@ -1285,9 +1467,9 @@ export default function ArenaScreen() {
               size={20}
             />
             <Text style={[styles.modePickTitle, selectedMode === "VOCAB" && { color: colors.primary }]}>
-              Từ vựng 1v1
+              Đấu Từ vựng
             </Text>
-            <Text style={styles.modePickSub}>20s/vòng • Đoán ô chữ</Text>
+            <Text style={styles.modePickSub}>20s/vòng • 1v1 hoặc 3 người</Text>
           </Pressable>
 
           <Pressable
@@ -1304,6 +1486,21 @@ export default function ArenaScreen() {
             </Text>
             <Text style={styles.modePickSub}>15s/vòng • Trắc nghiệm</Text>
           </Pressable>
+        </View>
+
+        <View style={[styles.countPillsRow, { flexWrap: "wrap" }]}>
+          <Text style={styles.countRowLabel}>Thể thức:</Text>
+          {([2, 3] as const).map((cnt) => (
+            <Pressable
+              key={cnt}
+              onPress={() => setSelectedMaxPlayers(cnt)}
+              style={[styles.countChip, selectedMaxPlayers === cnt && styles.countChipActive]}
+            >
+              <Text style={[styles.countChipText, selectedMaxPlayers === cnt && styles.countChipTextActive]}>
+                {cnt === 2 ? "1v1 (2 người)" : "Đấu 3 người 🔥"}
+              </Text>
+            </Pressable>
+          ))}
         </View>
 
         <View style={styles.countPillsRow}>
@@ -1330,7 +1527,8 @@ export default function ArenaScreen() {
               Tìm đối thủ trực tuyến
             </Text>
             <Text style={styles.findMatchDesc}>
-              Hai người bấm tìm trận cùng lúc sẽ tự ghép vào phòng đấu {selectedMode === "VOCAB" ? "Từ vựng" : "Part 5"} ngay!
+              {selectedMaxPlayers === 3 ? "Ba người" : "Hai người"} bấm tìm trận cùng lúc sẽ tự ghép vào phòng đấu{" "}
+              {selectedMode === "VOCAB" ? "Từ vựng" : "Part 5"} ({selectedMaxPlayers} người) ngay!
             </Text>
           </View>
         </View>
@@ -1383,7 +1581,7 @@ export default function ArenaScreen() {
         ) : null}
 
         <LiquidButton
-          label={`Tạo phòng ${createPrivate ? "Riêng tư 🔒" : "Công khai"} (${questionCount} câu)`}
+          label={`Tạo phòng ${selectedMaxPlayers} người ${createPrivate ? "Riêng tư 🔒" : "Công khai"} (${questionCount} câu)`}
           leftIcon={<Ionicons color={colors.onPrimary} name="add-circle" size={17} />}
           onPress={() => void handleCreateRoom()}
           variant="primary"
@@ -1441,13 +1639,16 @@ export default function ArenaScreen() {
                   </Text>
                 </View>
                 <Text style={styles.roomMeta}>
-                  {r.mode === "VOCAB" ? "Từ vựng" : "Part 5"} • {r.players.length}/2 người •{" "}
+                  {r.mode === "VOCAB" ? "Từ vựng" : "Part 5"} • {r.players.length}/{r.maxPlayers ?? 2} người •{" "}
                   {r.status === "WAITING" ? "Đang đợi" : "Đang đấu"}
                 </Text>
               </View>
               <LiquidButton
                 compact
-                disabled={r.players.length >= 2 && !r.players.some((p) => p.email.toLowerCase() === myEmail)}
+                disabled={
+                  r.players.length >= (r.maxPlayers ?? 2) &&
+                  !r.players.some((p) => p.email.toLowerCase() === myEmail)
+                }
                 label={r.hasPassword ? "🔒 Vào" : "Tham gia"}
                 onPress={() => handleJoinRoomCard(r)}
                 variant="primary"
@@ -1762,6 +1963,7 @@ const createStyles = (colors: LiquidThemeColors) =>
       justifyContent: "center",
       width: 36,
     },
+    vsBadgeCompact: { height: 26, width: 26 },
     vsBadgeText: { color: "#B45309", fontSize: 13, fontWeight: "900" },
     waitNote: { color: colors.textMuted, fontSize: 12.5, lineHeight: 18, textAlign: "center" },
     liveTimerBadge: {
@@ -1779,6 +1981,20 @@ const createStyles = (colors: LiquidThemeColors) =>
     liveTimerBadgeText: { color: "#EA580C", fontSize: 13, fontWeight: "900" },
     matchHudCard: { borderColor: "#E9D5FF", borderWidth: 1.5, marginBottom: 10 },
     matchHudRow: { alignItems: "center", flexDirection: "row", gap: 6 },
+    trioHudGrid: { flexDirection: "row", gap: 6 },
+    trioHudCol: {
+      backgroundColor: colors.glassFill,
+      borderColor: colors.glassBorder,
+      borderRadius: 12,
+      borderTopWidth: 3,
+      borderWidth: 1,
+      flex: 1,
+      gap: 4,
+      minWidth: 0,
+      padding: 6,
+    },
+    trioMetaRow: { alignItems: "center", flexDirection: "row", gap: 6, marginTop: 2 },
+    trioScorePill: { fontSize: 12, fontWeight: "900" },
     hudPlayerCol: { alignItems: "center", flex: 1, flexDirection: "row", gap: 7, minWidth: 0 },
     hudAvatarPurple: {
       alignItems: "center",
@@ -1875,8 +2091,11 @@ const createStyles = (colors: LiquidThemeColors) =>
       position: "absolute",
       width: 20,
     },
+    rocketDotCompact: { height: 16, width: 16 },
     rocketDotP1: { backgroundColor: "#8B5CF6", left: 3 },
     rocketDotP2: { backgroundColor: "#EC4899", right: 3 },
+    rocketDotP2Trio: { backgroundColor: "#10B981", left: 18 },
+    rocketDotP3: { backgroundColor: "#F59E0B", right: 3 },
     raceStartTxt: { color: "#94A3B8", fontSize: 8.5, fontWeight: "900" },
     questionStageCard: { flex: 1, gap: 10 },
     countdownBarBg: { backgroundColor: "#E2E8F0", borderRadius: 999, height: 6, overflow: "hidden", width: "100%" },
@@ -2021,6 +2240,7 @@ const createStyles = (colors: LiquidThemeColors) =>
       padding: 12,
     },
     finishPlayerName: { color: colors.text, fontSize: 13.5, fontWeight: "900" },
+    finishRankBadge: { color: "#D97706", fontSize: 11.5, fontWeight: "900" },
     finishStatText: { color: colors.textMuted, fontSize: 12, fontWeight: "700" },
     finishDiamondDelta: { fontSize: 12.5, fontWeight: "900", marginTop: 2 },
     finishActionRow: { flexDirection: "row", gap: 10, marginTop: 6, width: "100%" },
@@ -2049,6 +2269,10 @@ const createStyles = (colors: LiquidThemeColors) =>
     tauntBubbleOpp: {
       backgroundColor: "#FEF3C7",
       borderColor: "#F59E0B",
+    },
+    tauntBubbleThird: {
+      backgroundColor: "#D1FAE5",
+      borderColor: "#10B981",
     },
     tauntBubbleEmoji: { fontSize: 15 },
     tauntBubbleText: { color: "#1E293B", flexShrink: 1, fontSize: 11.5, fontWeight: "900" },
