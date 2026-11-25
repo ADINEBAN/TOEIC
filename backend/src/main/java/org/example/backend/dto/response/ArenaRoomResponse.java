@@ -12,6 +12,7 @@ public class ArenaRoomResponse {
     private String status; // WAITING, IN_PROGRESS, FINISHED
     private String mode; // VOCAB, PART5
     private String matchType; // ROOM, RANDOM
+    private int maxPlayers;
     @JsonProperty("isPrivate")
     private boolean privateRoom;
     @JsonProperty("hasPassword")

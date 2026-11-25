@@ -665,6 +665,7 @@ export type ArenaRoomItem = {
   status: "WAITING" | "IN_PROGRESS" | "FINISHED" | string;
   mode: ArenaMode | string;
   matchType?: "ROOM" | "RANDOM" | string;
+  maxPlayers?: number;
   isPrivate?: boolean;
   hasPassword?: boolean;
   hostName: string;
@@ -699,6 +700,8 @@ export type ArenaMatchmakingStatusData = {
   mode?: ArenaMode | string;
   waitedSeconds?: number;
   queueSize?: number;
+  targetPlayers?: number;
+  currentQueueCount?: number;
   room?: ArenaRoomItem | null;
 };
 

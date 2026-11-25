@@ -96,13 +96,15 @@ public class ArenaService {
         int count = request != null && request.getQuestionCount() != null
                 ? Math.max(3, Math.min(15, request.getQuestionCount()))
                 : 10;
+        int maxPlayers = normalizeMaxPlayers(request != null ? request.getMaxPlayers() : null);
         boolean isPrivate = request != null && Boolean.TRUE.equals(request.getPrivateRoom());
         String rawPassword = request != null && request.getPassword() != null ? request.getPassword().trim() : "";
         if (isPrivate && rawPassword.isEmpty()) {
             throw new AppException(ErrorCode.ARENA_ROOM_PASSWORD_REQUIRED);
         }
 
-        RoomState state = buildRoomState(host, mode, count, "ROOM", isPrivate, isPrivate ? rawPassword : null);
+        RoomState state = buildRoomState(host, mode, count, "ROOM", maxPlayers, isPrivate,
+                isPrivate ? rawPassword : null);
         state.status = "WAITING";
         state.roundPhase = "WAITING";
         rooms.put(state.roomCode, state);
@@ -128,7 +130,7 @@ public class ArenaService {
 
             boolean alreadyJoined = state.players.containsKey(player.getEmail());
             if (!alreadyJoined) {
-                if ("FINISHED".equals(state.status) || state.players.size() >= 2) {
+                if ("FINISHED".equals(state.status) || state.players.size() >= state.maxPlayers) {
                     throw new AppException(ErrorCode.ARENA_ROOM_INVALID);
                 }
                 if (state.privateRoom) {
@@ -141,9 +143,13 @@ public class ArenaService {
                     }
                 }
                 state.players.put(player.getEmail(), newPlayerState(player));
+                if ("WAITING".equals(state.status) && state.players.size() < state.maxPlayers) {
+                    state.feedbackMessage = resolveDisplayName(player) + " đã vào phòng (" + state.players.size() + "/"
+                            + state.maxPlayers + ") — đang chờ thêm đối thủ!";
+                }
             }
 
-            if ("WAITING".equals(state.status) && state.players.size() >= 2) {
+            if ("WAITING".equals(state.status) && state.players.size() >= state.maxPlayers) {
                 startFirstRound(state, now);
             }
 
@@ -178,6 +184,27 @@ public class ArenaService {
             }
 
             if ("IN_PROGRESS".equals(state.status)) {
+                ArenaRoomResponse.ArenaPlayerState leaver = state.players.get(user.getEmail());
+                if (state.players.size() > 2 && leaver != null) {
+                    state.players.remove(user.getEmail());
+                    persistAbandonPenalty(leaver);
+                    state.feedbackMessage = resolveDisplayName(user) + " đã rời trận — "
+                            + state.players.size() + " người còn lại tiếp tục thi đấu!";
+                    if (MODE_PART5.equals(state.mode) && "QUESTION".equals(state.roundPhase)) {
+                        Map<String, RoundSubmission> roundSubs = state.roundSubmissionsByRound
+                                .get(state.currentRoundIndex);
+                        if (roundSubs != null && roundSubs.size() >= state.players.size()
+                                && state.currentRoundIndex >= 0
+                                && state.currentRoundIndex < state.questions.size()) {
+                            resolvePart5RoundWinner(state, state.questions.get(state.currentRoundIndex), roundSubs);
+                            enterRevealPhase(state, now);
+                        }
+                    }
+                    ArenaRoomResponse snapshot = toResponse(state, user.getEmail());
+                    broadcastRoom(state.roomCode, toResponse(state, null));
+                    return snapshot;
+                }
+
                 // Remaining opponent wins if one player abandons mid-match
                 ArenaRoomResponse.ArenaPlayerState remaining = state.players.values().stream()
                         .filter(p -> !p.getEmail().equalsIgnoreCase(user.getEmail()))
@@ -202,7 +229,7 @@ public class ArenaService {
     }
 
     // =========================================================================
-    // RANDOM 1v1 MATCHMAKING QUEUE
+    // RANDOM MATCHMAKING QUEUE (2-PLAYER 1v1 & 3-PLAYER TRIO)
     // =========================================================================
 
     @Transactional
@@ -212,6 +239,8 @@ public class ArenaService {
         int count = request != null && request.getQuestionCount() != null
                 ? Math.max(3, Math.min(15, request.getQuestionCount()))
                 : 10;
+        int maxPlayers = normalizeMaxPlayers(request != null ? request.getMaxPlayers() : null);
+        String queueKey = buildMatchmakingQueueKey(mode, maxPlayers);
 
         synchronized (matchmakingLock) {
             long now = System.currentTimeMillis();
@@ -224,6 +253,8 @@ public class ArenaService {
                     ArenaMatchmakingStatusResponse res = new ArenaMatchmakingStatusResponse();
                     res.setStatus("MATCHED");
                     res.setMode(existing.mode);
+                    res.setTargetPlayers(existing.maxPlayers);
+                    res.setCurrentQueueCount(existing.players.size());
                     res.setRoom(toResponse(existing, user.getEmail()));
                     return res;
                 }
@@ -231,26 +262,51 @@ public class ArenaService {
             }
 
             removeUserFromAllQueuesLocked(user.getEmail());
-            Deque<QueueTicket> queue = matchmakingQueues.computeIfAbsent(mode, ignored -> new ArrayDeque<>());
+            Deque<QueueTicket> queue = matchmakingQueues.computeIfAbsent(queueKey, ignored -> new ArrayDeque<>());
 
-            QueueTicket opponentTicket = null;
-            while (!queue.isEmpty()) {
-                QueueTicket candidate = queue.pollFirst();
-                if (candidate != null && !candidate.email.equalsIgnoreCase(user.getEmail())) {
-                    opponentTicket = candidate;
-                    break;
+            int neededOpponents = maxPlayers - 1;
+            List<QueueTicket> matchedTickets = new ArrayList<>();
+            for (QueueTicket candidate : queue) {
+                if (candidate == null || candidate.email.equalsIgnoreCase(user.getEmail())) {
+                    continue;
+                }
+                boolean alreadyPicked = matchedTickets.stream()
+                        .anyMatch(t -> t.email.equalsIgnoreCase(candidate.email));
+                if (!alreadyPicked) {
+                    matchedTickets.add(candidate);
+                    if (matchedTickets.size() >= neededOpponents) {
+                        break;
+                    }
                 }
             }
 
-            if (opponentTicket != null) {
-                User opponent = findUser(opponentTicket.email);
-                int finalCount = Math.max(3, Math.min(15, Math.max(count, opponentTicket.questionCount)));
-                RoomState room = buildRoomState(opponent, mode, finalCount, "RANDOM", false, null);
+            if (matchedTickets.size() == neededOpponents) {
+                for (QueueTicket t : matchedTickets) {
+                    queue.remove(t);
+                }
+
+                List<User> matchedOpponents = new ArrayList<>();
+                int maxQuestionCount = count;
+                for (QueueTicket t : matchedTickets) {
+                    matchedOpponents.add(findUser(t.email));
+                    maxQuestionCount = Math.max(maxQuestionCount, t.questionCount);
+                }
+
+                User firstOpponent = matchedOpponents.get(0);
+                int finalCount = Math.max(3, Math.min(15, maxQuestionCount));
+                RoomState room = buildRoomState(firstOpponent, mode, finalCount, "RANDOM", maxPlayers, false, null);
+                for (int i = 1; i < matchedOpponents.size(); i++) {
+                    User extra = matchedOpponents.get(i);
+                    room.players.put(extra.getEmail(), newPlayerState(extra));
+                }
                 room.players.put(user.getEmail(), newPlayerState(user));
+
                 startFirstRound(room, now);
                 rooms.put(room.roomCode, room);
 
-                matchedRoomByEmail.put(opponent.getEmail(), room.roomCode);
+                for (User opp : matchedOpponents) {
+                    matchedRoomByEmail.put(opp.getEmail(), room.roomCode);
+                }
                 matchedRoomByEmail.put(user.getEmail(), room.roomCode);
 
                 ArenaRoomResponse snapshot = toResponse(room, null);
@@ -261,11 +317,13 @@ public class ArenaService {
                 status.setMode(mode);
                 status.setWaitedSeconds(0);
                 status.setQueueSize(queue.size());
+                status.setTargetPlayers(maxPlayers);
+                status.setCurrentQueueCount(room.players.size());
                 status.setRoom(toResponse(room, user.getEmail()));
                 return status;
             }
 
-            QueueTicket selfTicket = new QueueTicket(user.getEmail(), mode, count, now, now);
+            QueueTicket selfTicket = new QueueTicket(user.getEmail(), mode, count, maxPlayers, now, now);
             queue.addLast(selfTicket);
 
             ArenaMatchmakingStatusResponse status = new ArenaMatchmakingStatusResponse();
@@ -273,6 +331,8 @@ public class ArenaService {
             status.setMode(mode);
             status.setWaitedSeconds(0);
             status.setQueueSize(queue.size());
+            status.setTargetPlayers(maxPlayers);
+            status.setCurrentQueueCount(queue.size());
             return status;
         }
     }
@@ -294,6 +354,8 @@ public class ArenaService {
                     ArenaMatchmakingStatusResponse res = new ArenaMatchmakingStatusResponse();
                     res.setStatus("MATCHED");
                     res.setMode(room.mode);
+                    res.setTargetPlayers(room.maxPlayers);
+                    res.setCurrentQueueCount(room.players.size());
                     res.setRoom(toResponse(room, user.getEmail()));
                     return res;
                 }
@@ -309,6 +371,8 @@ public class ArenaService {
                         res.setMode(ticket.mode);
                         res.setWaitedSeconds(Math.max(0, (int) ((now - ticket.joinedAtMs) / 1000L)));
                         res.setQueueSize(entry.getValue().size());
+                        res.setTargetPlayers(ticket.maxPlayers);
+                        res.setCurrentQueueCount(entry.getValue().size());
                         return res;
                     }
                 }
@@ -499,7 +563,8 @@ public class ArenaService {
             state.roundWinnerEmail = null;
             state.roundWinnerName = null;
             state.roundDiamondReward = 0;
-            state.feedbackMessage = "Cả hai chưa chọn đúng đáp án (" + q.correctLabel + ").";
+            state.feedbackMessage = (state.players.size() > 2 ? "Chưa ai chọn đúng đáp án (" : "Cả hai chưa chọn đúng đáp án (")
+                    + q.correctLabel + ").";
         }
     }
 
@@ -609,7 +674,14 @@ public class ArenaService {
         state.rewardsPersisted = true;
 
         boolean isDraw = state.winnerEmail == null;
-        for (ArenaRoomResponse.ArenaPlayerState ps : state.players.values()) {
+        List<ArenaRoomResponse.ArenaPlayerState> ranked = new ArrayList<>(state.players.values());
+        ranked.sort(Comparator.comparingInt(ArenaRoomResponse.ArenaPlayerState::getRoundWins).reversed()
+                .thenComparing(Comparator.comparingInt(ArenaRoomResponse.ArenaPlayerState::getCorrectCount).reversed())
+                .thenComparing(Comparator.comparingInt(ArenaRoomResponse.ArenaPlayerState::getScore).reversed())
+                .thenComparingLong(ArenaRoomResponse.ArenaPlayerState::getTotalResponseMs));
+
+        for (int idx = 0; idx < ranked.size(); idx++) {
+            ArenaRoomResponse.ArenaPlayerState ps = ranked.get(idx);
             int bonus = 0;
             int eloDelta = 0;
             boolean won = false;
@@ -620,8 +692,11 @@ public class ArenaService {
                 eloDelta = 3;
             } else if (ps.getEmail().equalsIgnoreCase(state.winnerEmail)) {
                 bonus = MATCH_WIN_BONUS_DIAMONDS;
-                eloDelta = 18;
+                eloDelta = ranked.size() >= 3 ? 22 : 18;
                 won = true;
+            } else if (ranked.size() >= 3 && idx == 1) {
+                bonus = MATCH_DRAW_BONUS_DIAMONDS;
+                eloDelta = 4;
             } else {
                 eloDelta = -10;
                 lost = true;
@@ -640,7 +715,7 @@ public class ArenaService {
                 if (dbUser != null) {
                     int baseDiamonds = dbUser.getDiamonds() != null ? dbUser.getDiamonds() : 50;
                     dbUser.setDiamonds(Math.max(0, baseDiamonds + ps.getDiamondDelta()));
-                    int matchXp = won ? 40 : (isDraw ? 25 : 15);
+                    int matchXp = won ? 40 : (isDraw || (ranked.size() >= 3 && idx == 1) ? 25 : 15);
                     int updatedXp = Math.max(0, (dbUser.getLearningXp() != null ? dbUser.getLearningXp() : 0) + matchXp);
                     dbUser.setLearningXp(updatedXp);
                     ps.setLevel(LevelCalculator.fromXp(updatedXp).level());
@@ -657,6 +732,22 @@ public class ArenaService {
                 // Keep in-memory state intact even in strict mocked test contexts
             }
             matchedRoomByEmail.remove(ps.getEmail());
+        }
+    }
+
+    private void persistAbandonPenalty(ArenaRoomResponse.ArenaPlayerState leaver) {
+        matchedRoomByEmail.remove(leaver.getEmail());
+        try {
+            User dbUser = userRepository.findByEmail(leaver.getEmail()).orElse(null);
+            if (dbUser != null) {
+                int baseDiamonds = dbUser.getDiamonds() != null ? dbUser.getDiamonds() : 50;
+                dbUser.setDiamonds(Math.max(0, baseDiamonds + leaver.getDiamondDelta()));
+                dbUser.setArenaElo(
+                        Math.max(100, (dbUser.getArenaElo() != null ? dbUser.getArenaElo() : 1000) - 10));
+                dbUser.setArenaLosses((dbUser.getArenaLosses() != null ? dbUser.getArenaLosses() : 0) + 1);
+                userRepository.save(dbUser);
+            }
+        } catch (Exception ignored) {
         }
     }
 
@@ -751,6 +842,7 @@ public class ArenaService {
             String mode,
             int count,
             String matchType,
+            int maxPlayers,
             boolean isPrivate,
             String password) {
         String code = generateUniqueRoomCode();
@@ -758,6 +850,7 @@ public class ArenaService {
         state.roomCode = code;
         state.mode = mode;
         state.matchType = matchType;
+        state.maxPlayers = normalizeMaxPlayers(maxPlayers);
         state.privateRoom = isPrivate;
         state.password = password;
         state.hostName = resolveDisplayName(host);
@@ -1040,6 +1133,7 @@ public class ArenaService {
         res.setStatus(state.status);
         res.setMode(state.mode);
         res.setMatchType(state.matchType);
+        res.setMaxPlayers(state.maxPlayers);
         res.setPrivateRoom(state.privateRoom);
         res.setHasPassword(state.privateRoom);
         res.setHostName(state.hostName);
@@ -1256,6 +1350,14 @@ public class ArenaService {
         return MODE_VOCAB.equals(upper) ? MODE_VOCAB : MODE_PART5;
     }
 
+    private int normalizeMaxPlayers(Integer rawMaxPlayers) {
+        return (rawMaxPlayers != null && rawMaxPlayers == 3) ? 3 : 2;
+    }
+
+    private String buildMatchmakingQueueKey(String mode, int maxPlayers) {
+        return mode + ":" + maxPlayers;
+    }
+
     private String generateUniqueRoomCode() {
         for (int i = 0; i < 10; i++) {
             String code = UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase(Locale.ROOT);
@@ -1290,6 +1392,7 @@ public class ArenaService {
         String roomCode;
         String mode = MODE_PART5;
         String matchType = "ROOM";
+        int maxPlayers = 2;
         boolean privateRoom;
         String password;
         String status = "WAITING";
@@ -1314,7 +1417,7 @@ public class ArenaService {
         AtomicLong emoteSeq = new AtomicLong(0);
         ArenaRoomResponse.ArenaEmoteEvent latestEmote;
         List<RoundQuestion> questions = new ArrayList<>();
-        Map<String, ArenaRoomResponse.ArenaPlayerState> players = new ConcurrentHashMap<>();
+        Map<String, ArenaRoomResponse.ArenaPlayerState> players = new LinkedHashMap<>();
         Map<Integer, Map<String, RoundSubmission>> roundSubmissionsByRound = new ConcurrentHashMap<>();
     }
 
@@ -1348,13 +1451,16 @@ public class ArenaService {
         final String email;
         final String mode;
         final int questionCount;
+        final int maxPlayers;
         final long joinedAtMs;
         long lastHeartbeatMs;
 
-        QueueTicket(String email, String mode, int questionCount, long joinedAtMs, long lastHeartbeatMs) {
+        QueueTicket(String email, String mode, int questionCount, int maxPlayers, long joinedAtMs,
+                long lastHeartbeatMs) {
             this.email = email;
             this.mode = mode;
             this.questionCount = questionCount;
+            this.maxPlayers = maxPlayers;
             this.joinedAtMs = joinedAtMs;
             this.lastHeartbeatMs = lastHeartbeatMs;
         }

@@ -548,6 +548,7 @@ export function createArenaRoom(
         mode?: ArenaMode;
         isPrivate?: boolean;
         password?: string;
+        maxPlayers?: number;
       } = 10,
 ) {
   const body = typeof payload === "number" ? { questionCount: payload } : payload;
@@ -607,7 +608,7 @@ export function sendArenaEmote(accessToken: string, roomCode: string, emoteCode:
 
 export function joinArenaMatchmaking(
   accessToken: string,
-  payload: { mode: ArenaMode; questionCount?: number },
+  payload: { mode: ArenaMode; questionCount?: number; maxPlayers?: number },
 ) {
   return apiRequest<ArenaMatchmakingStatusResponse>("/api/users/arena/matchmaking/join", {
     body: JSON.stringify(payload),
